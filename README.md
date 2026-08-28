@@ -116,36 +116,35 @@ CREATE TABLE IF NOT EXISTS bot_admins (
 
 ---
 
-## 🤖 Telegram Bot 管理员查分配置
+## 🤖 Telegram Bot 管理员查分系统
 
-本项目内置专属 **Telegram Bot 管理员后端**（运行于 Cloudflare Pages Functions `/api/telegram`），支持随时在手机 Telegram 中查看玩家积分、全服排行榜与对局流水。
+本项目内置专属 **Telegram Bot 管理员后端**（运行于 Cloudflare Pages Functions `/api/telegram`），无需通过网页查看数据，直接在手机 Telegram 对话框中即可随时查询玩家积分、全服排行榜与对局流水。
 
-### 1. 申请 Telegram Bot
-1. 在 Telegram 中搜索并打开 **@BotFather**。
-2. 发送 `/newbot`，按提示设置机器人名称（例如 `ThirteenWaterBot`）。
-3. 复制生成的 **API Token**（如 `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`）。
-
-### 2. 在 Cloudflare Pages 中配置环境变量
+### 1. 快速配置环境变量
 在 Cloudflare 控制台 -> **Pages** -> 你的项目 -> **Settings** -> **Environment variables** 添加：
-- `TELEGRAM_BOT_TOKEN`: 你的 Bot API Token
-- `TELEGRAM_ADMIN_PASSWORD`: 管理员授权密码（例如 `13poker888` 或自定义密码）
-- `TELEGRAM_ADMIN_IDS`: 可选，预授权的 Telegram Chat/User ID 列表（以逗号分隔）
+- `TELEGRAM_BOT_TOKEN`: 你的 Bot API Token（从 Telegram @BotFather 获取）
+- `TELEGRAM_ADMIN_IDS`: 允许查分的管理员 Telegram Chat/User ID（支持多个，以逗号分隔，例如 `123456789,987654321`）
 
-### 3. 一键绑定 Webhook
-- 打开游戏网页，点击顶部导航栏的 **【🤖 TG 管理员】** 按钮。
-- 点击 **【一键绑定 Webhook】**（系统将自动绑定 `https://你的域名.pages.dev/api/telegram`）。
+*(注：系统将直接识别 `TELEGRAM_ADMIN_IDS` 中的账号并自动赋予管理查分权限，无需设置或输入任何密码！)*
 
-### 4. 手机端管理员指令列表
+### 2. 自动启动 Webhook
+系统已内置**全自动 Webhook 同步引擎**：
+- 当您配置好 `TELEGRAM_BOT_TOKEN` 后，任何请求或访问后台接口均会自动将 Webhook 注册到 `https://你的域名.pages.dev/api/telegram`。
+- 您也可以随时在浏览器中访问一次 `https://你的域名.pages.dev/api/telegram`，系统将即刻自检并自动激活 Webhook，返回 Bot 运行状态。
 
-管理员在 Telegram 对话窗口中发送以下指令即可实时监控数据：
+### 3. Telegram Bot 管理员指令列表
 
-| 指令 | 说明 | 示例 |
+配置好 ID 的管理员在 Telegram 对话窗口中发送以下指令即可实时监控数据：
+
+| 指令 / 操作 | 说明 | 示例 |
 |---|---|---|
-| `/auth <密码>` | 验证管理员身份并绑定当前 TG 账号 | `/auth 13poker888` |
-| `/score <玩家名>` | **精确查询指定玩家的净胜积分、胜率及近5局流水** | `/score 雀圣阿旺` |
-| `/rank [数量]` | **查看全服风云积分排行榜 (Top 10)** | `/rank` 或 `/rank 20` |
-| `/players` | 查看全服所有活跃玩家名录及积分 | `/players` |
-| `/stats` | 查看服务器对局总量、特殊牌总数及 D1 状态 | `/stats` |
+| **直接发送玩家名** | 极速免指令查分（直接发送名字即可展示战绩卡） | `雀圣阿旺` |
+| `/score <玩家名>` | 精确/模糊查询指定玩家的净胜积分、胜率及近5局明细 | `/score 雀圣阿旺` |
+| `/rank [数量]` | 查看全服风云积分排行榜 (Top 10 / Top 20) | `/rank` 或 `/rank 20` |
+| `/players` | 查看全服所有活跃玩家名录及当前净胜分 | `/players` |
+| `/stats` | 查看服务器总对局量、特殊牌总数及 D1 状态 | `/stats` |
 | `/history [数量]` | 查看全服最新完成的对局明细流水 | `/history` |
-| `/help` | 查看所有指令及 Telegram 快捷交互按钮 | `/help` |
+| `/id` 或 `/myid` | 查看当前账号的 Telegram ID 与授权状态 | `/id` |
+| `/help` | 查看所有可用指令及交互式快捷按钮 | `/help` |
+
 

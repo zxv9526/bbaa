@@ -91,6 +91,28 @@ export async function onRequest(context) {
       ON CONFLICT(key) DO UPDATE SET value = datetime('now'), updated_at = datetime('now')
     `).run();
 
+    // Auto-configure Telegram webhook if bot token is present
+    const botToken = env.TELEGRAM_BOT_TOKEN || env.BOT_TOKEN;
+    let botWebhookStatus = null;
+    if (botToken) {
+      try {
+        const urlObj = new URL(context.request.url);
+        const webhookUrl = `${urlObj.origin}/api/telegram`;
+        const hookCheck = await fetch(`https://api.telegram.org/bot${botToken}/getWebhookInfo`);
+        const hookData = await hookCheck.json();
+        if (hookData?.result?.url !== webhookUrl) {
+          const syncRes = await fetch(
+            `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(webhookUrl)}&drop_pending_updates=true`
+          );
+          botWebhookStatus = await syncRes.json();
+        } else {
+          botWebhookStatus = { ok: true, activeUrl: webhookUrl };
+        }
+      } catch (err) {
+        botWebhookStatus = { ok: false, error: err.message };
+      }
+    }
+
     // Query stats to confirm
     const recordsCountResult = await db.prepare("SELECT COUNT(*) as count FROM game_records").first();
     const playersCountResult = await db.prepare("SELECT COUNT(*) as count FROM players").first();
@@ -102,6 +124,7 @@ export async function onRequest(context) {
         d1Bound: true,
         tablesCreated: true,
         message: 'Cloudflare D1 tables verified and initialized successfully!',
+        botWebhookStatus,
         stats: {
           totalGames: recordsCountResult?.count || 0,
           totalPlayers: playersCountResult?.count || 0,

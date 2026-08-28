@@ -1,6 +1,6 @@
 {
-  "name": "Chinese Poker (Thirteen Water)",
-  "description": "A Chinese Poker (十三水) game built for Cloudflare Pages.",
+  "name": "十三水 · 经典扑克对决 (Chinese Poker)",
+  "description": "经典十三水 (Chinese Poker) 游戏大厅与智谋比拼，支持四人对决、双人单挑与多人联机。",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

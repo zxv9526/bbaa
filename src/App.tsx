@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
-import { Card, GameRecord, PlayerArrangement, PlayerScoreDetail, SpecialHandType } from './types';
+import { Card, GameRecord, PlayerArrangement, PlayerScoreDetail, SpecialHandType, PlayerStats } from './types';
 import {
   createDeck,
   shuffle,
@@ -16,12 +16,10 @@ import {
 import { CardView } from './components/CardView';
 import { HandSummary } from './components/HandSummary';
 import { SpecialHandBanner } from './components/SpecialHandBanner';
-import { D1StatusModal } from './components/D1StatusModal';
 import { RuleModal } from './components/RuleModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { MultiplayerRoom } from './components/MultiplayerRoom';
-import { TelegramAdminModal } from './components/TelegramAdminModal';
-import { ApiClient, InitResponse } from './api';
+import { ApiClient } from './api';
 import { sounds } from './sound';
 import {
   Play,
@@ -30,19 +28,17 @@ import {
   BookOpen,
   Volume2,
   VolumeX,
-  Database,
-  RefreshCw,
   Sparkles,
   RotateCcw,
   CheckCircle2,
   AlertTriangle,
   Flame,
   ArrowRight,
-  ShieldCheck,
-  ChevronRight,
   User,
   Plus,
-  Bot
+  Compass,
+  Zap,
+  Swords
 } from 'lucide-react';
 
 type GameMode = 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer' | 'practice';
@@ -60,12 +56,9 @@ export default function App() {
   // Audio mute state
   const [isMuted, setIsMuted] = useState(false);
 
-  // D1 Database Auto Init Status & Modals
-  const [d1Status, setD1Status] = useState<InitResponse | null>(null);
-  const [showD1Modal, setShowD1Modal] = useState(false);
+  // Modals
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [showRankModal, setShowRankModal] = useState(false);
-  const [showTelegramModal, setShowTelegramModal] = useState(false);
 
   // Player Hand State
   const [pool, setPool] = useState<Card[]>([]);
@@ -95,12 +88,39 @@ export default function App() {
 
   const [matchResults, setMatchResults] = useState<PlayerScoreDetail[] | null>(null);
 
-  // 1. On Mount: Auto-check and initialize D1 database
+  // Current Player Stats for Lobby
+  const [myStats, setMyStats] = useState<PlayerStats | null>(null);
+
+  // 1. On Mount: Auto-check and initialize D1 database & load player stats
   useEffect(() => {
-    ApiClient.initializeDatabase().then(res => {
-      setD1Status(res);
-    });
+    ApiClient.initializeDatabase();
+    refreshPlayerStats(playerName);
   }, []);
+
+  const refreshPlayerStats = async (name: string) => {
+    try {
+      const statsRes = await ApiClient.getStats();
+      const current = statsRes.leaderboard.find(p => p.name.toLowerCase() === name.toLowerCase());
+      if (current) {
+        setMyStats(current);
+      } else {
+        setMyStats({
+          id: name,
+          name: name,
+          totalGames: 0,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          totalPoints: 0,
+          specialHandsCount: 0,
+          createdAt: '',
+          updatedAt: ''
+        });
+      }
+    } catch {
+      // fallback
+    }
+  };
 
   const handleMuteToggle = () => {
     const next = !isMuted;
@@ -111,6 +131,7 @@ export default function App() {
   const handleNameChange = (newName: string) => {
     setPlayerName(newName);
     localStorage.setItem('thirteen_player_name', newName);
+    refreshPlayerStats(newName);
   };
 
   // Start a new local match (2P or 4P)
@@ -342,6 +363,8 @@ export default function App() {
         backType: userResult.backScore.type,
         opponentsSummary: `${results.length - 1}位对手`
       });
+
+      refreshPlayerStats(playerName);
     }
   };
 
@@ -368,10 +391,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-blue-600 selection:text-white flex flex-col justify-between">
-      {/* 1. Header Bar */}
+      {/* 1. Clean Game Header Bar */}
       <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-4 sm:px-8 py-3.5 sticky top-0 z-40 flex items-center justify-between">
         {/* Brand */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setGameState('menu')}>
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center font-black text-lg shadow-lg shadow-blue-500/20">
             13
           </div>
@@ -382,62 +405,36 @@ export default function App() {
                 Chinese Poker
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">Cloudflare Pages + D1 自动建表持久化</p>
+            <p className="text-[11px] text-slate-400">经典扑克对决 · 智谋摆牌比拼</p>
           </div>
         </div>
 
-        {/* Global Action Bar */}
+        {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* D1 Connection Status Pill */}
-          <button
-            onClick={() => setShowD1Modal(true)}
-            className={`px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition ${
-              d1Status?.d1Bound
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-                : 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
-            }`}
-            title="查看 Cloudflare D1 数据库状态"
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">
-              {d1Status?.d1Bound ? 'D1 数据库自动就绪' : '本地存储模式'}
-            </span>
-          </button>
-
           {/* Leaderboard Button */}
           <button
             onClick={() => setShowRankModal(true)}
-            className="p-2 sm:px-3 sm:py-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition"
+            className="p-2 sm:px-3.5 sm:py-1.5 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-sm"
             title="查看风云排行榜与历史记录"
           >
             <Trophy className="w-4 h-4 text-amber-400" />
-            <span className="hidden sm:inline">排行榜</span>
+            <span className="hidden sm:inline">风云榜</span>
           </button>
 
           {/* Rules Button */}
           <button
             onClick={() => setShowRuleModal(true)}
-            className="p-2 sm:px-3 sm:py-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition"
+            className="p-2 sm:px-3.5 sm:py-1.5 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-sm"
             title="十三水规则与计分"
           >
             <BookOpen className="w-4 h-4 text-blue-400" />
-            <span className="hidden sm:inline">规则说明</span>
-          </button>
-
-          {/* Telegram Bot Admin Button */}
-          <button
-            onClick={() => setShowTelegramModal(true)}
-            className="p-2 sm:px-3 sm:py-1.5 rounded-xl border border-sky-500/40 bg-sky-950/40 hover:bg-sky-900/60 text-sky-300 text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
-            title="Telegram Bot 管理员查分"
-          >
-            <Bot className="w-4 h-4 text-sky-400" />
-            <span className="hidden sm:inline">TG 管理员</span>
+            <span className="hidden sm:inline">规则玩法</span>
           </button>
 
           {/* Sound Toggle */}
           <button
             onClick={handleMuteToggle}
-            className="p-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 transition"
+            className="p-2 rounded-xl border border-slate-700/80 bg-slate-800/80 hover:bg-slate-700 text-slate-200 transition active:scale-95"
             title={isMuted ? '开启音效' : '静音'}
           >
             {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
@@ -449,27 +446,50 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col items-center justify-center">
         {gameState === 'menu' && (
           <div className="max-w-4xl w-full flex flex-col items-center gap-8 py-6">
-            {/* Player Profile Bar */}
-            <div className="w-full max-w-lg bg-slate-900/80 border border-slate-800 p-4 rounded-3xl flex items-center justify-between shadow-xl">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center text-2xl font-bold">
+            {/* Player Profile & Stats Banner */}
+            <div className="w-full max-w-2xl bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-900 border border-slate-800 p-5 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+              <div className="flex items-center gap-3.5 w-full sm:w-auto">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600/30 to-indigo-600/30 border border-blue-500/30 text-blue-400 flex items-center justify-center text-2xl font-bold shadow-inner">
                   🀄
                 </div>
-                <div>
-                  <div className="text-xs text-slate-400 font-medium">当前玩家昵称</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] text-slate-400 font-medium">当前玩家昵称 (点击可改名)</div>
                   <input
                     type="text"
                     value={playerName}
                     onChange={e => handleNameChange(e.target.value)}
-                    className="bg-transparent font-black text-slate-100 text-base focus:outline-none focus:border-b border-blue-500"
+                    className="bg-transparent font-black text-slate-100 text-base focus:outline-none focus:border-b-2 border-blue-500 w-full"
                     placeholder="输入大侠名称..."
                   />
                 </div>
               </div>
-              <div className="text-right">
-                <span className="text-[11px] bg-slate-800 text-slate-400 px-2.5 py-1 rounded-full font-mono">
-                  Cloud D1 Sync
-                </span>
+
+              {/* Player Quick Stats */}
+              <div className="flex items-center gap-3 bg-slate-950/60 border border-slate-800/80 px-4 py-2 rounded-2xl w-full sm:w-auto justify-around sm:justify-end">
+                <div className="text-center">
+                  <div className="text-[10px] text-slate-400">总积分</div>
+                  <div className={`font-black text-xs ${
+                    (myStats?.totalPoints || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}>
+                    {(myStats?.totalPoints || 0) >= 0 ? `+${myStats?.totalPoints || 0}` : myStats?.totalPoints}
+                  </div>
+                </div>
+                <div className="w-px h-6 bg-slate-800" />
+                <div className="text-center">
+                  <div className="text-[10px] text-slate-400">胜率</div>
+                  <div className="font-black text-xs text-blue-400">
+                    {myStats && myStats.totalGames > 0
+                      ? `${Math.round((myStats.wins / myStats.totalGames) * 100)}%`
+                      : '0%'}
+                  </div>
+                </div>
+                <div className="w-px h-6 bg-slate-800" />
+                <div className="text-center">
+                  <div className="text-[10px] text-slate-400">对局</div>
+                  <div className="font-bold text-xs text-slate-300">
+                    {myStats?.totalGames || 0}局
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -527,7 +547,7 @@ export default function App() {
                   </div>
                   <h3 className="text-xl font-black text-white">云端多人联机</h3>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    基于 Cloudflare D1 房间同步，输入 6 位房间号即可与好友异地联机切磋！
+                    基于 Cloudflare 房间同步，输入 6 位房间号即可与好友异地联机切磋！
                   </p>
                 </div>
 
@@ -918,32 +938,21 @@ export default function App() {
         )}
       </main>
 
-      {/* 5. Footer */}
+      {/* 5. Clean Footer */}
       <footer className="border-t border-slate-800/80 bg-slate-900/40 px-6 py-4 text-center text-xs text-slate-500">
-        <div>十三水 (Chinese Poker) · Cloudflare Pages + Functions + D1 自动建表持久化</div>
+        <div>十三水 (Chinese Poker) · 纯粹经典牌局</div>
       </footer>
 
       {/* Modals */}
-      <D1StatusModal
-        isOpen={showD1Modal}
-        onClose={() => setShowD1Modal(false)}
-        d1Status={d1Status}
-        onRefresh={() => {
-          ApiClient.initializeDatabase().then(setD1Status);
-        }}
-      />
-
       <RuleModal isOpen={showRuleModal} onClose={() => setShowRuleModal(false)} />
 
       <LeaderboardModal
         isOpen={showRankModal}
-        onClose={() => setShowRankModal(false)}
+        onClose={() => {
+          setShowRankModal(false);
+          refreshPlayerStats(playerName);
+        }}
         currentPlayerName={playerName}
-      />
-
-      <TelegramAdminModal
-        isOpen={showTelegramModal}
-        onClose={() => setShowTelegramModal(false)}
       />
     </div>
   );

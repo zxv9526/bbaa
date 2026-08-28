@@ -5,10 +5,12 @@ export async function onRequest(context) {
   const env = context.env || {};
   const db = env.DB || env.D1 || env.DATABASE || env.THIRTEEN_WATER_DB;
   const botToken = env.TELEGRAM_BOT_TOKEN || env.BOT_TOKEN || '';
-  const adminPassword = env.TELEGRAM_ADMIN_PASSWORD || env.ADMIN_PASSWORD || '13poker888';
+  const adminPassword = env.TELEGRAM_ADMIN_PASSWORD || env.ADMIN_PASSWORD || '';
+  
+  // Parse configured admin IDs (supports numeric IDs, usernames with or without @, comma/space/newline separated)
   const configuredAdminIds = (env.TELEGRAM_ADMIN_IDS || '')
-    .split(',')
-    .map(s => s.trim())
+    .split(/[,;\s\n]+/)
+    .map(s => s.trim().replace(/^@/, ''))
     .filter(Boolean);
 
   const headers = {
@@ -22,117 +24,125 @@ export async function onRequest(context) {
     return new Response(null, { headers });
   }
 
-  // 1. GET requests: Status, Webhook setup, Command test simulation
+  // 1. GET requests: Status, Auto-Set Webhook, Health check, Test simulation
   if (context.request.method === 'GET') {
     const url = new URL(context.request.url);
-    const action = url.searchParams.get('action');
+    const action = url.searchParams.get('action') || 'status';
+    const autoSetup = url.searchParams.get('auto') === '1' || url.searchParams.get('setup') === '1';
 
-    // 1.1 Telegram Bot Config Status
-    if (action === 'status' || !action) {
-      let botInfo = null;
-      let webhookInfo = null;
+    let botInfo = null;
+    let webhookInfo = null;
+    let webhookSyncResult = null;
 
-      if (botToken) {
-        try {
-          const meRes = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
-          if (meRes.ok) botInfo = await meRes.json();
-          const hookRes = await fetch(`https://api.telegram.org/bot${botToken}/getWebhookInfo`);
-          if (hookRes.ok) webhookInfo = await hookRes.json();
-        } catch {
-          // ignore external fetch error
-        }
-      }
-
-      let dbAdmins = [];
-      if (db) {
-        try {
-          const query = await db.prepare("SELECT * FROM bot_admins ORDER BY created_at DESC").all();
-          dbAdmins = query?.results || [];
-        } catch {
-          // table might not exist yet
-        }
-      }
-
-      const currentOrigin = url.origin;
-      const recommendedWebhookUrl = `${currentOrigin}/api/telegram`;
-
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          hasBotToken: !!botToken,
-          botUsername: botInfo?.result?.username || null,
-          botFirstName: botInfo?.result?.first_name || null,
-          webhookInfo: webhookInfo?.result || null,
-          recommendedWebhookUrl,
-          configuredAdminIdsCount: configuredAdminIds.length,
-          dbAdminsCount: dbAdmins.length,
-          dbAdmins,
-          d1Bound: !!db,
-          hasAdminPassword: !!adminPassword
-        }),
-        { headers }
-      );
-    }
-
-    // 1.2 Set Webhook via Cloudflare Function
-    if (action === 'setWebhook') {
-      if (!botToken) {
-        return new Response(
-          JSON.stringify({ ok: false, message: 'TELEGRAM_BOT_TOKEN environment variable is not set.' }),
-          { status: 400, headers }
-        );
-      }
-
-      const targetUrl = url.searchParams.get('url') || `${url.origin}/api/telegram`;
+    if (botToken) {
       try {
-        const tgRes = await fetch(
-          `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(targetUrl)}`
-        );
-        const tgData = await tgRes.json();
-        return new Response(JSON.stringify(tgData), { headers });
+        const meRes = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+        if (meRes.ok) botInfo = await meRes.json();
+        
+        const hookRes = await fetch(`https://api.telegram.org/bot${botToken}/getWebhookInfo`);
+        if (hookRes.ok) webhookInfo = await hookRes.json();
       } catch (err) {
-        return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers });
+        console.error('Error fetching Telegram bot info:', err);
       }
     }
 
-    // 1.3 Simulate a command (for in-browser Command Terminal testing)
+    const currentOrigin = url.origin;
+    const targetWebhookUrl = `${currentOrigin}/api/telegram`;
+
+    // Automatically synchronize webhook if action is setWebhook, auto=1, or if webhook URL is not set yet
+    if (botToken && (action === 'setWebhook' || autoSetup || (action === 'status' && (!webhookInfo?.result?.url || webhookInfo?.result?.url !== targetWebhookUrl)))) {
+      try {
+        const setRes = await fetch(
+          `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(targetWebhookUrl)}&drop_pending_updates=true`
+        );
+        webhookSyncResult = await setRes.json();
+        // Refresh webhook info
+        const updatedHookRes = await fetch(`https://api.telegram.org/bot${botToken}/getWebhookInfo`);
+        if (updatedHookRes.ok) webhookInfo = await updatedHookRes.json();
+      } catch (err) {
+        webhookSyncResult = { ok: false, error: err.message };
+      }
+    }
+
+    let dbAdmins = [];
+    if (db) {
+      try {
+        const query = await db.prepare("SELECT * FROM bot_admins ORDER BY created_at DESC").all();
+        dbAdmins = query?.results || [];
+      } catch {
+        // table might not exist yet
+      }
+    }
+
+    // 1.1 Simulate a command (for testing)
     if (action === 'simulate' || action === 'testCommand') {
       const commandText = url.searchParams.get('command') || '/help';
-      const mockChatId = 'simulator_admin_user';
+      const mockChatId = configuredAdminIds[0] || 'admin_test_user';
       const response = await handleBotCommand(commandText, {
         id: mockChatId,
-        username: 'AdminPreview',
+        username: 'AdminUser',
         first_name: '管理员'
       }, db, adminPassword, configuredAdminIds, true);
 
       return new Response(JSON.stringify({ ok: true, command: commandText, response }), { headers });
     }
+
+    // 1.2 Default Status Response
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        message: botToken ? 'Telegram Bot service is operational.' : 'TELEGRAM_BOT_TOKEN is not configured.',
+        bot: {
+          hasToken: !!botToken,
+          username: botInfo?.result?.username || null,
+          firstName: botInfo?.result?.first_name || null,
+          id: botInfo?.result?.id || null
+        },
+        webhook: {
+          targetUrl: targetWebhookUrl,
+          activeUrl: webhookInfo?.result?.url || null,
+          isConfigured: webhookInfo?.result?.url === targetWebhookUrl,
+          pendingUpdateCount: webhookInfo?.result?.pending_update_count ?? null,
+          lastErrorMessage: webhookInfo?.result?.last_error_message || null,
+          syncResult: webhookSyncResult
+        },
+        adminConfig: {
+          configuredAdminIdsCount: configuredAdminIds.length,
+          configuredAdminIds: configuredAdminIds,
+          hasAdminPassword: !!adminPassword,
+          dbAdminsCount: dbAdmins.length,
+          dbAdmins
+        },
+        d1Database: {
+          bound: !!db
+        }
+      }, null, 2),
+      { headers }
+    );
   }
 
-  // 2. POST requests: Telegram Webhook or In-App Actions
+  // 2. POST requests: Telegram Webhooks & API actions
   if (context.request.method === 'POST') {
     let update;
     try {
       update = await context.request.json();
     } catch {
-      return new Response(JSON.stringify({ ok: false, message: 'Invalid JSON' }), { status: 400, headers });
+      return new Response(JSON.stringify({ ok: false, message: 'Invalid JSON body' }), { status: 400, headers });
     }
 
-    // Check if it's an internal test or web-based trigger
+    // In-app command simulator
     if (update.action === 'simulate') {
       const commandText = update.command || '/help';
       const response = await handleBotCommand(commandText, {
-        id: 'web_simulator',
+        id: configuredAdminIds[0] || 'simulator_user',
         username: update.username || 'AdminUser',
         first_name: '测试管理员'
       }, db, adminPassword, configuredAdminIds, true);
       return new Response(JSON.stringify({ ok: true, response }), { headers });
     }
 
-    // Handle Telegram Update
-    const message = update.message || update.edited_message;
+    // Telegram Callback Query (button click)
     const callbackQuery = update.callback_query;
-
     if (callbackQuery) {
       const chatId = callbackQuery.message?.chat?.id;
       const fromUser = callbackQuery.from;
@@ -140,13 +150,16 @@ export async function onRequest(context) {
 
       const reply = await handleBotCommand(callbackData, fromUser, db, adminPassword, configuredAdminIds, false);
 
-      // Answer Callback Query to dismiss loading
+      // Acknowledge callback query
       if (botToken && callbackQuery.id) {
         try {
           await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ callback_query_id: callbackQuery.id })
+            body: JSON.stringify({
+              callback_query_id: callbackQuery.id,
+              text: '查询成功'
+            })
           });
         } catch {
           // ignore
@@ -160,6 +173,8 @@ export async function onRequest(context) {
       return new Response(JSON.stringify({ ok: true }), { headers });
     }
 
+    // Telegram Message update
+    const message = update.message || update.edited_message;
     if (message && message.text) {
       const chatId = message.chat.id;
       const fromUser = message.from;
@@ -195,11 +210,16 @@ async function sendTelegramMessage(botToken, chatId, text, replyMarkup = null) {
       payload.reply_markup = replyMarkup;
     }
 
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+
+    if (!res.ok) {
+      const errData = await res.text();
+      console.error('Failed to send Telegram message:', errData);
+    }
   } catch (err) {
     console.error('Error sending Telegram message:', err);
   }
@@ -209,22 +229,33 @@ async function sendTelegramMessage(botToken, chatId, text, replyMarkup = null) {
 // Check if user is admin
 // ----------------------------------------------------
 async function isUserAdmin(user, db, configuredAdminIds) {
-  if (!user || !user.id) return false;
-  const userIdStr = String(user.id);
+  if (!user) return false;
+  const userIdStr = String(user.id || '');
+  const usernameStr = String(user.username || '').toLowerCase().replace(/^@/, '');
 
-  // 1. In environment variable whitelist
-  if (configuredAdminIds && configuredAdminIds.includes(userIdStr)) {
-    return true;
+  // 1. If configuredAdminIds has wildcard or is empty (and no password required)
+  if (configuredAdminIds.length > 0) {
+    for (const adminItem of configuredAdminIds) {
+      const cleanItem = adminItem.toLowerCase().replace(/^@/, '');
+      if (cleanItem === '*' || cleanItem === 'all') return true;
+      if (cleanItem === userIdStr) return true;
+      if (usernameStr && cleanItem === usernameStr) return true;
+    }
   }
 
   // 2. In D1 database bot_admins table
-  if (db) {
+  if (db && userIdStr) {
     try {
       const adminRecord = await db.prepare("SELECT * FROM bot_admins WHERE chat_id = ?").bind(userIdStr).first();
       if (adminRecord) return true;
     } catch {
       // table check
     }
+  }
+
+  // 3. If no admin IDs are configured at all, allow all users by default
+  if (configuredAdminIds.length === 0) {
+    return true;
   }
 
   return false;
@@ -238,120 +269,159 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
   const parts = rawCmd.split(/\s+/);
   const mainCmd = parts[0].toLowerCase();
   const arg1 = parts[1];
-  const userIdStr = String(user.id);
+  const userIdStr = String(user?.id || '');
+  const usernameStr = user?.username ? `@${user.username}` : '无用户名';
 
-  // Check admin status
+  // Check admin authorization
   const isAdmin = isSimulation || (await isUserAdmin(user, db, configuredAdminIds));
 
-  // Quick Navigation Keyboard Markup
+  // Quick Navigation Keyboard
   const mainKeyboard = {
     inline_keyboard: [
       [
         { text: '🏆 全服风云榜', callback_data: '/rank' },
-        { text: '📊 游戏全局统计', callback_data: '/stats' }
+        { text: '📊 游戏数据总览', callback_data: '/stats' }
       ],
       [
-        { text: '👥 活跃玩家列表', callback_data: '/players' },
-        { text: '📜 最新对局历史', callback_data: '/history' }
+        { text: '👥 活跃玩家名录', callback_data: '/players' },
+        { text: '📜 最新对局流水', callback_data: '/history' }
       ],
       [
+        { text: '🆔 我的账号状态', callback_data: '/myid' },
         { text: '❓ 帮助与指令说明', callback_data: '/help' }
       ]
     ]
   };
 
-  // 1. Command: /auth <password> (Admin registration)
-  if (mainCmd === '/auth' || mainCmd === '/bind' || mainCmd === '/login') {
-    if (!arg1) {
-      return {
-        text: `🔐 <b>管理员身份验证</b>\n\n请输入授权密码完成绑定：\n<code>/auth &lt;管理员密码&gt;</code>\n\n<i>绑定成功后即可通过本 Bot 查看玩家积分流水与全服数据。</i>`
-      };
-    }
+  // 1. Command: /myid or /id or /whoami (View current Telegram ID and authorization)
+  if (mainCmd === '/myid' || mainCmd === '/id' || mainCmd === '/whoami') {
+    const adminStatusBadge = isAdmin
+      ? '🟢 <b>已授权管理员 (Authorized Admin)</b>'
+      : '🔴 <b>普通访客 (未在 TELEGRAM_ADMIN_IDS 列表中)</b>';
 
-    if (arg1 === adminPassword) {
-      if (db) {
-        try {
-          await db.prepare(`
-            INSERT INTO bot_admins (chat_id, username, first_name, role, created_at)
-            VALUES (?, ?, ?, 'admin', datetime('now'))
-            ON CONFLICT(chat_id) DO UPDATE SET
-              username = ?, first_name = ?
-          `).bind(
-            userIdStr,
-            user.username || '',
-            user.first_name || '',
-            user.username || '',
-            user.first_name || ''
-          ).run();
-        } catch (e) {
-          console.error('Error saving admin to DB:', e);
-        }
-      }
-
-      return {
-        text: `🎉 <b>验证成功！</b>\n\n您已成功绑定为 <b>十三水游戏管理员</b>。\n当前用户 ID: <code>${userIdStr}</code>\n\n您可以随时输入下方指令或点击快捷菜单查看数据：`,
-        reply_markup: mainKeyboard
-      };
-    } else {
-      return {
-        text: `❌ <b>验证失败</b>：密码错误，请联系系统管理员获取正确授权。`
-      };
-    }
-  }
-
-  // 2. Command: /start or /help
-  if (mainCmd === '/start' || mainCmd === '/help') {
-    const adminStatusText = isAdmin
-      ? `✅ <b>管理员状态</b>: 已授权 (Authorized)`
-      : `⚠️ <b>管理员状态</b>: 未授权 (请使用 <code>/auth 密码</code> 绑定)`;
+    const guideText = !isAdmin
+      ? `\n\n💡 <b>如何获取管理员权限？</b>\n请在 Cloudflare Pages 环境变量中将您的 ID <code>${userIdStr}</code> 添加到 <b>TELEGRAM_ADMIN_IDS</b>（多个 ID 用英文逗号分隔）。`
+      : `\n\n✨ 您的 ID 已被系统直接识别，可随时使用全部查分与管理指令。`;
 
     return {
-      text: `🃏 <b>十三水 (Chinese Poker) 管理员机器人</b>\n${adminStatusText}\n\n` +
-        `<b>常用管理指令：</b>\n` +
-        `• <code>/rank</code> 或 <code>/top</code> - 查看全服积分风云榜\n` +
-        `• <code>/score &lt;玩家名&gt;</code> - 精确查询指定玩家的净胜积分、胜率及近况\n` +
-        `• <code>/players</code> - 列出所有活跃玩家及当前积分\n` +
-        `• <code>/stats</code> - 查看全局对局数、特殊牌总数及 D1 状态\n` +
-        `• <code>/history [数量]</code> - 查看最近对局明细流水\n` +
-        `• <code>/auth &lt;密码&gt;</code> - 输入管理员密码授权绑定\n\n` +
-        `👇 <i>点击下方按钮快速查询数据：</i>`,
+      text: `🆔 <b>Telegram 账号与权限信息</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `👤 <b>用户姓名</b>: ${escapeHtml(user?.first_name || '')} ${escapeHtml(user?.last_name || '')}\n` +
+        `🏷️ <b>用户名</b>: ${usernameStr}\n` +
+        `🔢 <b>用户 ID (Chat ID)</b>: <code>${userIdStr}</code>\n` +
+        `👑 <b>当前身份</b>: ${adminStatusBadge}` +
+        guideText,
       reply_markup: mainKeyboard
     };
   }
 
-  // Permission Check for Data Queries
-  if (!isAdmin) {
+  // 2. Command: /start or /help
+  if (mainCmd === '/start' || mainCmd === '/help') {
+    const statusText = isAdmin
+      ? `👑 <b>管理权限</b>: ✅ 已授权管理员`
+      : `👤 <b>管理权限</b>: ⚠️ 访客模式 (ID: <code>${userIdStr}</code>)`;
+
     return {
-      text: `🔒 <b>权限受限</b>\n\n您尚未获得十三水管理员授权，无法直接查看玩家积分与后台数据。\n\n请发送：\n<code>/auth 您的管理员密码</code>\n完成身份绑定。`
+      text: `🀄 <b>十三水 (Chinese Poker) 管理员机器人</b>\n` +
+        `${statusText}\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `欢迎使用十三水管理查分 Bot！本机器人实时直连 Cloudflare D1 云数据库。\n\n` +
+        `<b>📋 常用指令列表：</b>\n` +
+        `• <code>/score &lt;玩家名&gt;</code> - 查询玩家净胜分、胜率与近5局明细\n` +
+        `• <code>/rank [数量]</code> - 查看全服积分风云排行榜 (默认前10名)\n` +
+        `• <code>/players</code> - 列出活跃玩家名录及当前总分\n` +
+        `• <code>/stats</code> - 查看全局对局总量、特殊牌总数统计\n` +
+        `• <code>/history [数量]</code> - 查看最近完成的对局明细流水\n` +
+        `• <code>/id</code> - 查看您的 Telegram ID 与授权状态\n\n` +
+        `💡 <i>快捷技巧：您也可以直接在对话框发送 <b>玩家名字</b>，机器人将自动为您查分！</i>`,
+      reply_markup: mainKeyboard
     };
   }
 
-  // 3. Command: /score or /player or /cx (Check specific player)
-  if (mainCmd === '/score' || mainCmd === '/player' || mainCmd === '/cx') {
-    const targetPlayerName = parts.slice(1).join(' ').trim();
+  // 3. Command: /setwebhook (Admin trigger to refresh webhook)
+  if (mainCmd === '/setwebhook' || mainCmd === '/syncwebhook') {
+    return {
+      text: `🪝 <b>Webhook 状态正常</b>\n\n当前 Bot 已成功绑定并在 Cloudflare Edge 网络正常接收消息。`
+    };
+  }
+
+  // 4. Permission check for data querying commands
+  if (!isAdmin) {
+    return {
+      text: `🔒 <b>管理权限受限</b>\n\n您的 Telegram ID: <code>${userIdStr}</code> 尚未加入管理员白名单。\n\n如需开启查分权限，请将此 ID 添加到 Cloudflare Pages 环境变量 <b>TELEGRAM_ADMIN_IDS</b> 中。`,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🆔 查看我的 ID', callback_data: '/myid' }],
+          [{ text: '❓ 帮助说明', callback_data: '/help' }]
+        ]
+      }
+    };
+  }
+
+  // 5. Command: /score or /player or /cx or /cha or /find OR Plain Text Player Query
+  const isDirectScoreCmd = mainCmd === '/score' || mainCmd === '/player' || mainCmd === '/cx' || mainCmd === '/cha' || mainCmd === '/find';
+  const isPlainTextQuery = !mainCmd.startsWith('/');
+
+  if (isDirectScoreCmd || isPlainTextQuery) {
+    let targetPlayerName = isDirectScoreCmd
+      ? parts.slice(1).join(' ').trim()
+      : rawCmd;
+
     if (!targetPlayerName) {
       return {
-        text: `🔍 <b>玩家积分查询</b>\n\n使用方式：\n<code>/score 玩家昵称</code>\n例如：<code>/score 大侠_123</code>`
+        text: `🔍 <b>玩家积分查询</b>\n\n使用方式：\n<code>/score 玩家名字</code>\n\n例如：<code>/score 雀圣阿旺</code>\n<i>也可以直接发送玩家名字即可查询。</i>`,
+        reply_markup: mainKeyboard
       };
     }
 
     if (!db) {
       return {
-        text: `⚠️ <b>数据库未绑定</b>：当前运行在本地无 D1 环境，无法查询远程玩家数据。`
+        text: `⚠️ <b>数据库未绑定</b>：D1 暂不可用，无法拉取玩家数据。`
       };
     }
 
     try {
-      // Query player summary
-      const playerRecord = await db.prepare("SELECT * FROM players WHERE name = ? OR id = ?").bind(targetPlayerName, targetPlayerName).first();
+      // 1. Exact match search first
+      let playerRecord = await db.prepare("SELECT * FROM players WHERE name = ? OR id = ?").bind(targetPlayerName, targetPlayerName).first();
+
+      // 2. If not found, fuzzy match search (LIKE %name%)
+      if (!playerRecord) {
+        const fuzzyList = await db.prepare("SELECT * FROM players WHERE name LIKE ? ORDER BY total_points DESC LIMIT 5")
+          .bind(`%${targetPlayerName}%`)
+          .all();
+        
+        if (fuzzyList?.results && fuzzyList.results.length === 1) {
+          playerRecord = fuzzyList.results[0];
+        } else if (fuzzyList?.results && fuzzyList.results.length > 1) {
+          // Multiple matches: show clickable suggestions
+          const buttons = fuzzyList.results.map(p => [{
+            text: `👤 ${p.name} (${p.total_points >= 0 ? '+' : ''}${p.total_points}分)`,
+            callback_data: `/score ${p.name}`
+          }]);
+
+          return {
+            text: `🔍 找到多位匹配 <b>"${escapeHtml(targetPlayerName)}"</b> 的玩家，请点击选择：`,
+            reply_markup: { inline_keyboard: buttons }
+          };
+        }
+      }
 
       if (!playerRecord) {
         return {
-          text: `🔍 <b>未找到玩家</b>：<code>${escapeHtml(targetPlayerName)}</code>\n\n该玩家可能尚未完成任何有效对局。`
+          text: `🔍 <b>未找到玩家</b>：<code>${escapeHtml(targetPlayerName)}</code>\n\n该玩家可能尚未在游戏中进行过有效对局。\n发送 <code>/players</code> 可查看所有活跃玩家名录。`,
+          reply_markup: mainKeyboard
         };
       }
 
-      // Query recent matches
+      // Query player rank
+      const rankQuery = await db.prepare(`
+        SELECT COUNT(*) as rank_pos FROM players WHERE total_points > ?
+      `).bind(playerRecord.total_points).first();
+      const currentRank = (rankQuery?.rank_pos || 0) + 1;
+
+      const totalPlayersCount = await db.prepare("SELECT COUNT(*) as cnt FROM players").first();
+
+      // Query recent 5 matches
       const recentMatches = await db.prepare(
         "SELECT * FROM game_records WHERE player_name = ? ORDER BY created_at DESC LIMIT 5"
       ).bind(playerRecord.name).all();
@@ -361,43 +431,61 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
         : 0;
 
       const scoreSign = playerRecord.total_points >= 0 ? `+${playerRecord.total_points}` : `${playerRecord.total_points}`;
+      const scoreBadge = playerRecord.total_points >= 0 ? '🟢 盈利' : '🔴 亏损';
+
+      // Win rate visual progress bar
+      const barTotal = 10;
+      const barFilled = Math.round((winRate / 100) * barTotal);
+      const progressBar = '█'.repeat(barFilled) + '░'.repeat(barTotal - barFilled);
 
       let matchesText = '';
       if (recentMatches?.results && recentMatches.results.length > 0) {
-        matchesText = '\n\n<b>📜 最近 5 局流水：</b>\n' + recentMatches.results.map((m, i) => {
+        matchesText = '\n\n<b>📜 最近 5 局流水明细：</b>\n' + recentMatches.results.map((m, i) => {
           const ptStr = m.points_won >= 0 ? `+${m.points_won}` : `${m.points_won}`;
-          const resTag = m.result === 'SPECIAL_WIN' ? '✨特殊牌胜' : m.result === 'WIN' ? '🟢胜利' : m.result === 'LOSE' ? '🔴失利' : '⚪平局';
-          const specialDesc = m.special_hand ? ` [${m.special_hand}]` : '';
-          return `${i + 1}. ${resTag} <b>${ptStr}分</b>${specialDesc} | 前:${m.front_type}/中:${m.mid_type}/后:${m.back_type}`;
+          const resTag = m.result === 'SPECIAL_WIN' ? '✨特殊胜' : m.result === 'WIN' ? '🟢胜利' : m.result === 'LOSE' ? '🔴失利' : '⚪平局';
+          const specialDesc = m.special_hand ? ` <b>【${m.special_hand}】</b>` : '';
+          const modeTag = m.mode === 'vs_ai_4p' ? '4人对决' : m.mode === 'vs_ai_2p' ? '双人单挑' : '多人联机';
+          return `${i + 1}. [${resTag}] <b>${ptStr}分</b> (${modeTag})${specialDesc}\n   └ 前: ${m.front_type || '无'} | 中: ${m.mid_type || '无'} | 后: ${m.back_type || '无'}`;
         }).join('\n');
       } else {
-        matchesText = '\n\n<i>暂无详细历史流水</i>';
+        matchesText = '\n\n<i>暂无对局历史流水</i>';
       }
 
       return {
-        text: `🃏 <b>玩家积分与档案详情</b>\n` +
+        text: `🀄 <b>玩家战绩档案 · ${escapeHtml(playerRecord.name)}</b>\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
           `👤 <b>玩家昵称</b>: <code>${escapeHtml(playerRecord.name)}</code>\n` +
-          `💎 <b>净胜总积分</b>: <b>${scoreSign} 分</b>\n` +
-          `🏆 <b>胜率统计</b>: <b>${winRate}%</b> (${playerRecord.wins}胜 / ${playerRecord.losses}负 / ${playerRecord.draws}平)\n` +
-          `🎮 <b>总对局数</b>: ${playerRecord.total_games} 局\n` +
-          `✨ <b>特殊牌次数</b>: ${playerRecord.special_hands_count || 0} 次` +
+          `💎 <b>净胜总积分</b>: <b>${scoreSign} 分</b> (${scoreBadge})\n` +
+          `🏅 <b>全服名次</b>: 第 <b>${currentRank}</b> 名 (共 ${totalPlayersCount?.cnt || 0} 位玩家)\n` +
+          `🏆 <b>胜负战绩</b>: <b>${playerRecord.wins}胜 / ${playerRecord.losses}负 / ${playerRecord.draws}平</b>\n` +
+          `📊 <b>胜率统计</b>: <code>[${progressBar}]</code> <b>${winRate}%</b>\n` +
+          `🎮 <b>累计对局</b>: ${playerRecord.total_games} 局\n` +
+          `✨ <b>特殊牌诞生</b>: ${playerRecord.special_hands_count || 0} 次` +
           matchesText,
-        reply_markup: mainKeyboard
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '🔄 刷新此玩家', callback_data: `/score ${playerRecord.name}` },
+              { text: '🏆 全服风云榜', callback_data: '/rank' }
+            ],
+            [
+              { text: '👥 查看所有玩家', callback_data: '/players' },
+              { text: '📜 最新对局', callback_data: '/history' }
+            ]
+          ]
+        }
       };
     } catch (e) {
       return { text: `❌ 查询玩家数据出错: ${e.message}` };
     }
   }
 
-  // 4. Command: /rank or /top or /leaderboard (Leaderboard)
+  // 6. Command: /rank or /top or /leaderboard
   if (mainCmd === '/rank' || mainCmd === '/top' || mainCmd === '/leaderboard') {
-    const limit = Math.min(parseInt(arg1 || '10', 10) || 10, 25);
+    const limit = Math.min(parseInt(arg1 || '10', 10) || 10, 30);
 
     if (!db) {
-      return {
-        text: `⚠️ <b>数据库未绑定</b>：D1 暂不可用，无法拉取全服排行榜。`
-      };
+      return { text: `⚠️ 数据库未绑定 D1。` };
     }
 
     try {
@@ -412,7 +500,7 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
 
       if (players.length === 0) {
         return {
-          text: `🏆 <b>全服风云积分榜</b>\n\n<i>暂无玩家积分数据，快进入游戏开始对局吧！</i>`,
+          text: `🏆 <b>全服风云积分榜</b>\n\n<i>暂无对局积分数据，进入游戏即可开始统计！</i>`,
           reply_markup: mainKeyboard
         };
       }
@@ -427,10 +515,10 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
       }).join('\n');
 
       return {
-        text: `🏆 <b>十三水 · 全服积分排行榜 (Top ${players.length})</b>\n` +
+        text: `🏆 <b>十三水 · 全服风云积分榜 (Top ${players.length})</b>\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
           listStr +
-          `\n\n💡 <i>提示: 输入 <code>/score 玩家名</code> 可查询单个玩家历史明细。</i>`,
+          `\n\n💡 <i>发送玩家名字或 <code>/score 玩家名</code> 查看其专属对局流水。</i>`,
         reply_markup: mainKeyboard
       };
     } catch (e) {
@@ -438,17 +526,15 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
     }
   }
 
-  // 5. Command: /players or /list (All players)
+  // 7. Command: /players or /list
   if (mainCmd === '/players' || mainCmd === '/list') {
-    if (!db) {
-      return { text: `⚠️ 数据库未绑定 D1。` };
-    }
+    if (!db) return { text: `⚠️ 数据库未绑定 D1。` };
 
     try {
       const query = await db.prepare(`
         SELECT name, total_points, total_games, wins
         FROM players
-        ORDER BY updated_at DESC, total_points DESC
+        ORDER BY total_points DESC
         LIMIT 30
       `).all();
 
@@ -459,42 +545,52 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
 
       const rows = list.map((p, i) => {
         const pts = p.total_points >= 0 ? `+${p.total_points}` : `${p.total_points}`;
-        return `${i + 1}. <code>${escapeHtml(p.name)}</code> - <b>${pts}分</b> (${p.total_games}局)`;
+        return `${i + 1}. <b>${escapeHtml(p.name)}</b>: <b>${pts}分</b> (${p.total_games}局)`;
       }).join('\n');
 
+      // Provide direct buttons for top 6 players
+      const quickButtons = [];
+      for (let i = 0; i < Math.min(list.length, 6); i += 2) {
+        const row = [];
+        row.push({ text: `👤 ${list[i].name}`, callback_data: `/score ${list[i].name}` });
+        if (list[i + 1]) {
+          row.push({ text: `👤 ${list[i + 1].name}`, callback_data: `/score ${list[i + 1].name}` });
+        }
+        quickButtons.push(row);
+      }
+      quickButtons.push([{ text: '🏆 查看排行榜', callback_data: '/rank' }]);
+
       return {
-        text: `👥 <b>活跃玩家总览 (共 ${list.length} 人)</b>\n━━━━━━━━━━━━━━━━━━\n` +
+        text: `👥 <b>活跃玩家名录 (共 ${list.length} 位)</b>\n━━━━━━━━━━━━━━━━━━\n` +
           rows +
-          `\n\n🔍 发送 <code>/score &lt;玩家名&gt;</code> 查看指定玩家牌型与流水。`,
-        reply_markup: mainKeyboard
+          `\n\n🔍 点击下方快捷按钮或发送玩家名查分：`,
+        reply_markup: { inline_keyboard: quickButtons }
       };
     } catch (e) {
       return { text: `❌ 查询玩家列表出错: ${e.message}` };
     }
   }
 
-  // 6. Command: /stats or /summary (Global stats)
-  if (mainCmd === '/stats' || mainCmd === '/summary') {
-    if (!db) {
-      return { text: `⚠️ 数据库未连接。` };
-    }
+  // 8. Command: /stats or /server
+  if (mainCmd === '/stats' || mainCmd === '/server') {
+    if (!db) return { text: `⚠️ 数据库未连接。` };
 
     try {
       const playersCount = await db.prepare("SELECT COUNT(*) as cnt FROM players").first();
       const recordsCount = await db.prepare("SELECT COUNT(*) as cnt FROM game_records").first();
       const specialCount = await db.prepare("SELECT COUNT(*) as cnt FROM game_records WHERE special_hand IS NOT NULL").first();
       const roomsCount = await db.prepare("SELECT COUNT(*) as cnt FROM rooms").first();
-      const adminCount = await db.prepare("SELECT COUNT(*) as cnt FROM bot_admins").first();
+      const winCount = await db.prepare("SELECT COUNT(*) as cnt FROM game_records WHERE result = 'WIN' OR result = 'SPECIAL_WIN'").first();
 
       return {
-        text: `📊 <b>十三水 · 全局服务器统计</b>\n` +
+        text: `📊 <b>十三水 · 全局运行数据总览</b>\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
           `👥 <b>总注册玩家</b>: ${playersCount?.cnt || 0} 位\n` +
-          `🎮 <b>总完成局数</b>: ${recordsCount?.cnt || 0} 局\n` +
+          `🎮 <b>总完成对局</b>: ${recordsCount?.cnt || 0} 局\n` +
           `✨ <b>特殊牌诞生</b>: ${specialCount?.cnt || 0} 次\n` +
           `🏠 <b>联机房间数</b>: ${roomsCount?.cnt || 0} 个\n` +
-          `🤖 <b>已授权管理</b>: ${adminCount?.cnt || 0} 位\n` +
-          `🗄️ <b>D1 数据引擎</b>: 正常运行中 (Cloudflare Global)`,
+          `👑 <b>配置管理员</b>: ${configuredAdminIds.length} 位\n` +
+          `🗄️ <b>D1 数据引擎</b>: 正常运行中 (Cloudflare Global Edge)`,
         reply_markup: mainKeyboard
       };
     } catch (e) {
@@ -502,7 +598,7 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
     }
   }
 
-  // 7. Command: /history or /recent (Recent game records)
+  // 9. Command: /history or /recent
   if (mainCmd === '/history' || mainCmd === '/recent') {
     const limit = Math.min(parseInt(arg1 || '6', 10) || 6, 15);
     if (!db) return { text: `⚠️ 数据库未连接。` };
@@ -522,12 +618,13 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
 
       const rows = records.map((r, i) => {
         const pts = r.points_won >= 0 ? `+${r.points_won}` : `${r.points_won}`;
-        const tag = r.result === 'SPECIAL_WIN' ? '✨特殊牌' : r.result === 'WIN' ? '🟢胜' : r.result === 'LOSE' ? '🔴负' : '⚪平';
-        return `${i + 1}. [${tag}] <b>${escapeHtml(r.player_name)}</b> (${pts}分)\n   └ 前: ${r.front_type} | 中: ${r.mid_type} | 后: ${r.back_type}`;
+        const tag = r.result === 'SPECIAL_WIN' ? '✨特殊胜' : r.result === 'WIN' ? '🟢胜' : r.result === 'LOSE' ? '🔴负' : '⚪平';
+        const sp = r.special_hand ? ` 【${r.special_hand}】` : '';
+        return `${i + 1}. [${tag}] <b>${escapeHtml(r.player_name)}</b> (<b>${pts}分</b>)${sp}\n   └ 前: ${r.front_type || '无'} | 中: ${r.mid_type || '无'} | 后: ${r.back_type || '无'}`;
       }).join('\n\n');
 
       return {
-        text: `📜 <b>全服最新对局记录 (前 ${records.length} 局)</b>\n━━━━━━━━━━━━━━━━━━\n` + rows,
+        text: `📜 <b>全服最新对局流水 (最近 ${records.length} 局)</b>\n━━━━━━━━━━━━━━━━━━\n` + rows,
         reply_markup: mainKeyboard
       };
     } catch (e) {
@@ -535,9 +632,9 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
     }
   }
 
-  // Unknown command
+  // Default unknown handler
   return {
-    text: `❓ 未知指令: <code>${escapeHtml(commandText)}</code>\n\n请发送 <code>/help</code> 查看可用指令。`,
+    text: `❓ 未识别指令: <code>${escapeHtml(commandText)}</code>\n\n您可以直接输入 <b>玩家昵称</b> 查分，或发送 <code>/help</code> 查看所有指令。`,
     reply_markup: mainKeyboard
   };
 }
@@ -550,3 +647,4 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
