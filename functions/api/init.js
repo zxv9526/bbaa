@@ -70,6 +70,13 @@ export async function onRequest(context) {
         key TEXT PRIMARY KEY,
         value TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );`,
+      `CREATE TABLE IF NOT EXISTS bot_admins (
+        chat_id TEXT PRIMARY KEY,
+        username TEXT,
+        first_name TEXT,
+        role TEXT DEFAULT 'admin',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );`
     ];
 
@@ -87,6 +94,7 @@ export async function onRequest(context) {
     // Query stats to confirm
     const recordsCountResult = await db.prepare("SELECT COUNT(*) as count FROM game_records").first();
     const playersCountResult = await db.prepare("SELECT COUNT(*) as count FROM players").first();
+    const adminsCountResult = await db.prepare("SELECT COUNT(*) as count FROM bot_admins").first();
 
     return new Response(
       JSON.stringify({
@@ -96,7 +104,8 @@ export async function onRequest(context) {
         message: 'Cloudflare D1 tables verified and initialized successfully!',
         stats: {
           totalGames: recordsCountResult?.count || 0,
-          totalPlayers: playersCountResult?.count || 0
+          totalPlayers: playersCountResult?.count || 0,
+          totalAdmins: adminsCountResult?.count || 0
         },
         timestamp: new Date().toISOString()
       }),

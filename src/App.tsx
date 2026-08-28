@@ -20,6 +20,7 @@ import { D1StatusModal } from './components/D1StatusModal';
 import { RuleModal } from './components/RuleModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { MultiplayerRoom } from './components/MultiplayerRoom';
+import { TelegramAdminModal } from './components/TelegramAdminModal';
 import { ApiClient, InitResponse } from './api';
 import { sounds } from './sound';
 import {
@@ -40,7 +41,8 @@ import {
   ShieldCheck,
   ChevronRight,
   User,
-  Plus
+  Plus,
+  Bot
 } from 'lucide-react';
 
 type GameMode = 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer' | 'practice';
@@ -58,11 +60,12 @@ export default function App() {
   // Audio mute state
   const [isMuted, setIsMuted] = useState(false);
 
-  // D1 Database Auto Init Status
+  // D1 Database Auto Init Status & Modals
   const [d1Status, setD1Status] = useState<InitResponse | null>(null);
   const [showD1Modal, setShowD1Modal] = useState(false);
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [showRankModal, setShowRankModal] = useState(false);
+  const [showTelegramModal, setShowTelegramModal] = useState(false);
 
   // Player Hand State
   const [pool, setPool] = useState<Card[]>([]);
@@ -419,6 +422,16 @@ export default function App() {
           >
             <BookOpen className="w-4 h-4 text-blue-400" />
             <span className="hidden sm:inline">规则说明</span>
+          </button>
+
+          {/* Telegram Bot Admin Button */}
+          <button
+            onClick={() => setShowTelegramModal(true)}
+            className="p-2 sm:px-3 sm:py-1.5 rounded-xl border border-sky-500/40 bg-sky-950/40 hover:bg-sky-900/60 text-sky-300 text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
+            title="Telegram Bot 管理员查分"
+          >
+            <Bot className="w-4 h-4 text-sky-400" />
+            <span className="hidden sm:inline">TG 管理员</span>
           </button>
 
           {/* Sound Toggle */}
@@ -926,6 +939,11 @@ export default function App() {
         isOpen={showRankModal}
         onClose={() => setShowRankModal(false)}
         currentPlayerName={playerName}
+      />
+
+      <TelegramAdminModal
+        isOpen={showTelegramModal}
+        onClose={() => setShowTelegramModal(false)}
       />
     </div>
   );

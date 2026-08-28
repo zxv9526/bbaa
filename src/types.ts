@@ -113,3 +113,29 @@ export interface RoomState {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface TelegramBotStatus {
+  ok: boolean;
+  hasBotToken: boolean;
+  botUsername: string | null;
+  botFirstName: string | null;
+  webhookInfo: {
+    url?: string;
+    has_custom_certificate?: boolean;
+    pending_update_count?: number;
+    last_error_date?: number;
+    last_error_message?: string;
+  } | null;
+  recommendedWebhookUrl: string;
+  configuredAdminIdsCount: number;
+  dbAdminsCount: number;
+  dbAdmins: {
+    chat_id: string;
+    username: string;
+    first_name: string;
+    role: string;
+    created_at: string;
+  }[];
+  d1Bound: boolean;
+  hasAdminPassword: boolean;
+}

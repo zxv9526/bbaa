@@ -103,4 +103,49 @@ CREATE TABLE IF NOT EXISTS system_meta (
   value TEXT,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Telegram 管理员绑定表
+CREATE TABLE IF NOT EXISTS bot_admins (
+  chat_id TEXT PRIMARY KEY,
+  username TEXT,
+  first_name TEXT,
+  role TEXT DEFAULT 'admin',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
+
+---
+
+## 🤖 Telegram Bot 管理员查分配置
+
+本项目内置专属 **Telegram Bot 管理员后端**（运行于 Cloudflare Pages Functions `/api/telegram`），支持随时在手机 Telegram 中查看玩家积分、全服排行榜与对局流水。
+
+### 1. 申请 Telegram Bot
+1. 在 Telegram 中搜索并打开 **@BotFather**。
+2. 发送 `/newbot`，按提示设置机器人名称（例如 `ThirteenWaterBot`）。
+3. 复制生成的 **API Token**（如 `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`）。
+
+### 2. 在 Cloudflare Pages 中配置环境变量
+在 Cloudflare 控制台 -> **Pages** -> 你的项目 -> **Settings** -> **Environment variables** 添加：
+- `TELEGRAM_BOT_TOKEN`: 你的 Bot API Token
+- `TELEGRAM_ADMIN_PASSWORD`: 管理员授权密码（例如 `13poker888` 或自定义密码）
+- `TELEGRAM_ADMIN_IDS`: 可选，预授权的 Telegram Chat/User ID 列表（以逗号分隔）
+
+### 3. 一键绑定 Webhook
+- 打开游戏网页，点击顶部导航栏的 **【🤖 TG 管理员】** 按钮。
+- 点击 **【一键绑定 Webhook】**（系统将自动绑定 `https://你的域名.pages.dev/api/telegram`）。
+
+### 4. 手机端管理员指令列表
+
+管理员在 Telegram 对话窗口中发送以下指令即可实时监控数据：
+
+| 指令 | 说明 | 示例 |
+|---|---|---|
+| `/auth <密码>` | 验证管理员身份并绑定当前 TG 账号 | `/auth 13poker888` |
+| `/score <玩家名>` | **精确查询指定玩家的净胜积分、胜率及近5局流水** | `/score 雀圣阿旺` |
+| `/rank [数量]` | **查看全服风云积分排行榜 (Top 10)** | `/rank` 或 `/rank 20` |
+| `/players` | 查看全服所有活跃玩家名录及积分 | `/players` |
+| `/stats` | 查看服务器对局总量、特殊牌总数及 D1 状态 | `/stats` |
+| `/history [数量]` | 查看全服最新完成的对局明细流水 | `/history` |
+| `/help` | 查看所有指令及 Telegram 快捷交互按钮 | `/help` |
+
