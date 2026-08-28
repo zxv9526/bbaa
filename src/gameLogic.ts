@@ -605,3 +605,273 @@ export function calculateMatchScores(
 
   return details;
 }
+
+// ----------------------------------------------------
+// 牌型检索与快速提牌 (Pattern Search Helpers)
+// ----------------------------------------------------
+export interface DetectedPattern {
+  id: string;
+  type: HandType;
+  name: string;
+  cards: Card[];
+  description: string;
+}
+
+export function findAvailablePatterns(cards: Card[]): DetectedPattern[] {
+  if (!cards || cards.length === 0) return [];
+  const results: DetectedPattern[] = [];
+  const sorted = sortCards(cards);
+
+  // Group by rank
+  const rankGroups: Record<number, Card[]> = {};
+  sorted.forEach(c => {
+    rankGroups[c.rank] = rankGroups[c.rank] || [];
+    rankGroups[c.rank].push(c);
+  });
+
+  // Group by suit
+  const suitGroups: Record<Suit, Card[]> = { S: [], H: [], C: [], D: [] };
+  sorted.forEach(c => suitGroups[c.suit].push(c));
+
+  // 1. 同花顺 (Straight Flush)
+  Object.values(suitGroups).forEach(sCards => {
+    if (sCards.length >= 5) {
+      const sSorted = sortCards(sCards);
+      for (let i = 0; i <= sSorted.length - 5; i++) {
+        const sub = sSorted.slice(i, i + 5);
+        const evalSub = evaluateHand(sub, 'back');
+        if (evalSub.type === 'Straight Flush') {
+          results.push({
+            id: `sf_${sSorted[i].id}`,
+            type: 'Straight Flush',
+            name: `同花顺 (${getRankStr(sSorted[i].rank)}高)`,
+            cards: sub,
+            description: evalSub.description
+          });
+        }
+      }
+    }
+  });
+
+  // 2. 铁支 / 四条 (Four of a Kind)
+  Object.entries(rankGroups).forEach(([rankStr, grp]) => {
+    if (grp.length === 4) {
+      const r = parseInt(rankStr);
+      results.push({
+        id: `four_${r}`,
+        type: 'Four of a Kind',
+        name: `铁支 ${getRankStr(r)}`,
+        cards: grp,
+        description: `4张 ${getRankStr(r)}`
+      });
+    }
+  });
+
+  // 3. 葫芦 (Full House) - 三条 + 一对
+  const trips = Object.entries(rankGroups).filter(([, grp]) => grp.length >= 3);
+  const pairs = Object.entries(rankGroups).filter(([, grp]) => grp.length >= 2);
+
+  trips.forEach(([tripR, tGrp]) => {
+    const rT = parseInt(tripR);
+    pairs.forEach(([pairR, pGrp]) => {
+      const rP = parseInt(pairR);
+      if (rT !== rP) {
+        const fullCards = [...tGrp.slice(0, 3), ...pGrp.slice(0, 2)];
+        results.push({
+          id: `fh_${rT}_${rP}`,
+          type: 'Full House',
+          name: `葫芦 (${getRankStr(rT)}带${getRankStr(rP)})`,
+          cards: fullCards,
+          description: `三张${getRankStr(rT)}带两张${getRankStr(rP)}`
+        });
+      }
+    });
+  });
+
+  // 4. 同花 (Flush)
+  Object.entries(suitGroups).forEach(([suit, sCards]) => {
+    if (sCards.length >= 5) {
+      const sSorted = sortCards(sCards);
+      const suitName = suit === 'S' ? '黑桃' : suit === 'H' ? '红桃' : suit === 'C' ? '梅花' : '方块';
+      results.push({
+        id: `flush_${suit}`,
+        type: 'Flush',
+        name: `${suitName}同花`,
+        cards: sSorted.slice(0, 5),
+        description: `5张${suitName}`
+      });
+    }
+  });
+
+  // 5. 顺子 (Straight)
+  const uniqueRankCards: Card[] = [];
+  const seenRanks = new Set<number>();
+  sorted.forEach(c => {
+    if (!seenRanks.has(c.rank)) {
+      seenRanks.add(c.rank);
+      uniqueRankCards.push(c);
+    }
+  });
+
+  for (let i = 0; i <= uniqueRankCards.length - 5; i++) {
+    const sub = uniqueRankCards.slice(i, i + 5);
+    const evalSub = evaluateHand(sub, 'back');
+    if (evalSub.type === 'Straight') {
+      results.push({
+        id: `straight_${sub[0].id}`,
+        type: 'Straight',
+        name: `顺子 (${getRankStr(sub[0].rank)}高)`,
+        cards: sub,
+        description: evalSub.description
+      });
+    }
+  }
+
+  // 6. 三条 (Trips)
+  trips.forEach(([tripR, tGrp]) => {
+    const r = parseInt(tripR);
+    results.push({
+      id: `trip_${r}`,
+      type: 'Three of a Kind',
+      name: `三条 ${getRankStr(r)}`,
+      cards: tGrp.slice(0, 3),
+      description: `3张 ${getRankStr(r)}`
+    });
+  });
+
+  // 7. 两对 (Two Pair)
+  if (pairs.length >= 2) {
+    for (let i = 0; i < pairs.length - 1; i++) {
+      for (let j = i + 1; j < pairs.length; j++) {
+        const r1 = parseInt(pairs[i][0]);
+        const r2 = parseInt(pairs[j][0]);
+        results.push({
+          id: `twopair_${r1}_${r2}`,
+          type: 'Two Pair',
+          name: `两对 (${getRankStr(r1)}与${getRankStr(r2)})`,
+          cards: [...pairs[i][1].slice(0, 2), ...pairs[j][1].slice(0, 2)],
+          description: `对${getRankStr(r1)} + 对${getRankStr(r2)}`
+        });
+      }
+    }
+  }
+
+  // 8. 对子 (Pair)
+  pairs.forEach(([pairR, pGrp]) => {
+    const r = parseInt(pairR);
+    results.push({
+      id: `pair_${r}`,
+      type: 'Pair',
+      name: `对 ${getRankStr(r)}`,
+      cards: pGrp.slice(0, 2),
+      description: `2张 ${getRankStr(r)}`
+    });
+  });
+
+  return results.slice(0, 12);
+}
+
+// 一键自动修复倒水 (Auto Fix Dao Shui)
+export function autoFixDaoShui(cards: Card[]): { front: Card[]; middle: Card[]; back: Card[] } | null {
+  const suggestions = getSuggestedArrangements(cards);
+  if (suggestions.length > 0) {
+    return {
+      front: suggestions[0].front,
+      middle: suggestions[0].middle,
+      back: suggestions[0].back
+    };
+  }
+  return null;
+}
+
+// 演练模式：生成指定特殊牌型
+export function generateSpecialHand(type: SpecialHandType): Card[] {
+  const suits: Suit[] = ['S', 'H', 'C', 'D'];
+  const allCards = createDeck();
+
+  if (type === 'Supreme Dragon') {
+    // 黑桃 A-K 一条龙
+    return [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2].map(r => ({
+      id: `${r}-S`,
+      suit: 'S' as Suit,
+      rank: r as Rank
+    }));
+  }
+
+  if (type === 'Dragon') {
+    // 杂色一条龙
+    const patternSuits: Suit[] = ['S', 'H', 'C', 'D', 'S', 'H', 'C', 'D', 'S', 'H', 'C', 'D', 'S'];
+    return [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2].map((r, i) => ({
+      id: `${r}-${patternSuits[i]}`,
+      suit: patternSuits[i],
+      rank: r as Rank
+    }));
+  }
+
+  if (type === 'Twelve Royals') {
+    // 12张 JQK A
+    const royals: Card[] = [];
+    for (const r of [14, 13, 12, 11]) {
+      for (const s of ['S', 'H', 'C', 'D']) {
+        if (royals.length < 12) {
+          royals.push({ id: `${r}-${s}`, suit: s as Suit, rank: r as Rank });
+        }
+      }
+    }
+    royals.push({ id: '2-S', suit: 'S', rank: 2 });
+    return royals;
+  }
+
+  if (type === 'Three Quads') {
+    // 3套铁支 (AAA, KKKK, QQQQ + 1)
+    const cards: Card[] = [];
+    for (const r of [14, 13, 12]) {
+      for (const s of suits) {
+        cards.push({ id: `${r}-${s}`, suit: s, rank: r as Rank });
+      }
+    }
+    cards.push({ id: '2-S', suit: 'S', rank: 2 });
+    return cards;
+  }
+
+  if (type === 'All High') {
+    // 全部 >= 8
+    const highCards = allCards.filter(c => c.rank >= 8);
+    return shuffle(highCards).slice(0, 13);
+  }
+
+  if (type === 'All Low') {
+    // 全部 <= 8
+    const lowCards = allCards.filter(c => c.rank <= 8);
+    return shuffle(lowCards).slice(0, 13);
+  }
+
+  if (type === 'Same Color') {
+    // 全红牌
+    const redCards = allCards.filter(c => c.suit === 'H' || c.suit === 'D');
+    return shuffle(redCards).slice(0, 13);
+  }
+
+  if (type === 'Six Pairs') {
+    // 六对半
+    const ranks: Rank[] = [14, 13, 12, 11, 10, 9];
+    const cards: Card[] = [];
+    ranks.forEach(r => {
+      cards.push({ id: `${r}-S`, suit: 'S', rank: r });
+      cards.push({ id: `${r}-H`, suit: 'H', rank: r });
+    });
+    cards.push({ id: '2-C', suit: 'C', rank: 2 });
+    return cards;
+  }
+
+  if (type === 'Three Flushes') {
+    // 三同花
+    const spades = allCards.filter(c => c.suit === 'S').slice(0, 5);
+    const hearts = allCards.filter(c => c.suit === 'H').slice(0, 5);
+    const clubs = allCards.filter(c => c.suit === 'C').slice(0, 3);
+    return [...spades, ...hearts, ...clubs];
+  }
+
+  // 兜底返回随机13张
+  return shuffle(allCards).slice(0, 13);
+}

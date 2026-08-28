@@ -11,7 +11,11 @@ import {
   detectSpecialHand,
   calculateMatchScores,
   ArrangementOption,
-  HAND_TYPE_CN
+  HAND_TYPE_CN,
+  evaluateHand,
+  findAvailablePatterns,
+  DetectedPattern,
+  autoFixDaoShui
 } from './gameLogic';
 import { CardView } from './components/CardView';
 import { HandSummary } from './components/HandSummary';
@@ -19,6 +23,8 @@ import { SpecialHandBanner } from './components/SpecialHandBanner';
 import { RuleModal } from './components/RuleModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { MultiplayerRoom } from './components/MultiplayerRoom';
+import { PracticeModal } from './components/PracticeModal';
+import { ShowdownStage } from './components/ShowdownStage';
 import { ApiClient } from './api';
 import { sounds } from './sound';
 import {
@@ -38,10 +44,15 @@ import {
   Plus,
   Compass,
   Zap,
-  Swords
+  Swords,
+  FlaskConical,
+  ArrowUpDown,
+  Wand2,
+  Layers,
+  HelpCircle
 } from 'lucide-react';
 
-type GameMode = 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer' | 'practice';
+type GameMode = 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer';
 
 export default function App() {
   const [playerName, setPlayerName] = useState<string>(() => {
@@ -59,8 +70,10 @@ export default function App() {
   // Modals
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [showRankModal, setShowRankModal] = useState(false);
+  const [showPracticeModal, setShowPracticeModal] = useState(false);
 
   // Player Hand State
+  const [originalHand, setOriginalHand] = useState<Card[]>([]);
   const [pool, setPool] = useState<Card[]>([]);
   const [front, setFront] = useState<(Card | null)[]>([null, null, null]);
   const [mid, setMid] = useState<(Card | null)[]>([null, null, null, null, null]);
@@ -112,9 +125,7 @@ export default function App() {
           losses: 0,
           draws: 0,
           totalPoints: 0,
-          specialHandsCount: 0,
-          createdAt: '',
-          updatedAt: ''
+          specialHandsCount: 0
         });
       }
     } catch {
@@ -144,6 +155,7 @@ export default function App() {
     const playerDealt = deck.slice(0, 13);
     const sortedPlayerHand = sortCards(playerDealt);
 
+    setOriginalHand(sortedPlayerHand);
     setPool(sortedPlayerHand);
     setFront([null, null, null]);
     setMid([null, null, null, null, null]);
@@ -248,6 +260,71 @@ export default function App() {
     }
   };
 
+  // Quick fill pattern into a dun
+  const handleApplyPatternToDun = (patternCards: Card[], targetDun: 'front' | 'mid' | 'back') => {
+    sounds.playCardPick();
+    // Return existing cards in that dun to pool
+    const targetArr = targetDun === 'front' ? front : targetDun === 'mid' ? mid : back;
+    const existingCards = targetArr.filter(Boolean) as Card[];
+    
+    // Remaining pool cards after removing patternCards and adding existingCards
+    const patternIds = new Set(patternCards.map(c => c.id));
+    const newPool = sortCards([
+      ...pool.filter(c => !patternIds.has(c.id)),
+      ...existingCards
+    ]);
+
+    setPool(newPool);
+
+    if (targetDun === 'front') {
+      const fNew: (Card | null)[] = [null, null, null];
+      patternCards.slice(0, 3).forEach((c, i) => fNew[i] = c);
+      setFront(fNew);
+    } else if (targetDun === 'mid') {
+      const mNew: (Card | null)[] = [null, null, null, null, null];
+      patternCards.slice(0, 5).forEach((c, i) => mNew[i] = c);
+      setMid(mNew);
+    } else if (targetDun === 'back') {
+      const bNew: (Card | null)[] = [null, null, null, null, null];
+      patternCards.slice(0, 5).forEach((c, i) => bNew[i] = c);
+      setBack(bNew);
+    }
+
+    setSelectedCardId(null);
+    setErrorMsg('');
+  };
+
+  // Swap Middle and Back Duns
+  const handleSwapMidBack = () => {
+    sounds.playSwap();
+    const currentMid = [...mid];
+    const currentBack = [...back];
+    setMid(currentBack);
+    setBack(currentMid);
+    setErrorMsg('');
+  };
+
+  // Auto Fix Dao Shui (一键修正倒水)
+  const handleAutoFix = () => {
+    sounds.playAutoArrange();
+    const allPlacedOrPool = [
+      ...front.filter(Boolean),
+      ...mid.filter(Boolean),
+      ...back.filter(Boolean),
+      ...pool
+    ] as Card[];
+
+    const fixed = autoFixDaoShui(allPlacedOrPool);
+    if (fixed) {
+      setFront(fixed.front);
+      setMid(fixed.middle);
+      setBack(fixed.back);
+      setPool([]);
+      setSelectedCardId(null);
+      setErrorMsg('');
+    }
+  };
+
   // Apply suggestion
   const applySuggestion = (option: ArrangementOption) => {
     sounds.playAutoArrange();
@@ -305,7 +382,7 @@ export default function App() {
     const isValid = isValidArrangement(fCards, mCards, bCards);
     if (!isValid) {
       sounds.playError();
-      setErrorMsg('⚠️ 违规倒水：后墩必须大于等于中墩，中墩必须大于等于前墩！');
+      setErrorMsg('⚠️ 违规倒水：后墩必须大于等于中墩，中墩必须大于等于前墩！可点击“一键调水”或“中后互换”。');
       return;
     }
 
@@ -334,15 +411,6 @@ export default function App() {
 
     const userResult = results.find(r => r.playerId === 'player_user');
     if (userResult) {
-      if (userResult.finalPoints > 0) {
-        sounds.playVictory();
-        confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
-      } else if (userResult.dunScores) {
-        // Check if any gun shot happened
-        const hasGun = Object.values(userResult.dunScores).some(d => d.isGun);
-        if (hasGun) sounds.playGunShot();
-      }
-
       // Record to D1
       const outcome: GameRecord['result'] = userResult.specialHand
         ? 'SPECIAL_WIN'
@@ -389,14 +457,31 @@ export default function App() {
     }
   };
 
+  // Real-time evaluation on player's current slots
+  const frontFilled = front.every(Boolean);
+  const midFilled = mid.every(Boolean);
+  const backFilled = back.every(Boolean);
+  const allFilled = frontFilled && midFilled && backFilled;
+
+  const fEval = frontFilled ? evaluateHand(front as Card[], 'front') : null;
+  const mEval = midFilled ? evaluateHand(mid as Card[], 'middle') : null;
+  const bEval = backFilled ? evaluateHand(back as Card[], 'back') : null;
+
+  const isCurrentDaoShui = allFilled && !isValidArrangement(front as Card[], mid as Card[], back as Card[]);
+
+  // Available patterns from original full hand or unplaced pool
+  const availablePatterns = findAvailablePatterns(pool.length > 0 ? pool : originalHand);
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-blue-600 selection:text-white flex flex-col justify-between">
-      {/* 1. Clean Game Header Bar */}
-      <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-4 sm:px-8 py-3.5 sticky top-0 z-40 flex items-center justify-between">
-        {/* Brand */}
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setGameState('menu')}>
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center font-black text-lg shadow-lg shadow-blue-500/20">
-            13
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
+      {/* 1. Header Bar */}
+      <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-6 py-3.5 flex items-center justify-between shadow-sm">
+        <div
+          onClick={() => setGameState('menu')}
+          className="flex items-center gap-3 cursor-pointer group select-none"
+        >
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition">
+            🀄
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -411,6 +496,16 @@ export default function App() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Practice Sandbox Button */}
+          <button
+            onClick={() => setShowPracticeModal(true)}
+            className="p-2 sm:px-3.5 sm:py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+            title="特殊牌型演练与自由摆牌"
+          >
+            <FlaskConical className="w-4 h-4 text-amber-400" />
+            <span className="hidden sm:inline">牌型演练</span>
+          </button>
+
           {/* Leaderboard Button */}
           <button
             onClick={() => setShowRankModal(true)}
@@ -594,150 +689,61 @@ export default function App() {
         )}
 
         {/* 4. Active Game Table (Arranging / Revealing) */}
-        {(gameState === 'arranging' || gameState === 'revealing') && (
+        {gameState === 'revealing' && matchResults && (
           <div className="w-full max-w-5xl flex flex-col items-center gap-6">
-            {/* Top Opponents Area (4P or 2P) */}
+            <ShowdownStage
+              results={matchResults}
+              onPlayAgain={() => startNewMatch(mode)}
+              onBackToMenu={() => setGameState('menu')}
+            />
+          </div>
+        )}
+
+        {gameState === 'arranging' && (
+          <div className="w-full max-w-5xl flex flex-col items-center gap-6">
+            {/* Top Opponents Face-down cards preview */}
             <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4">
               {playersInMatch
                 .filter(p => p.isAi)
-                .map((opp, idx) => {
-                  const oppResult = matchResults?.find(r => r.playerId === opp.id);
-                  const isRevealing = gameState === 'revealing';
-
-                  return (
-                    <div
-                      key={opp.id}
-                      className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 flex flex-col items-center gap-3 relative shadow-lg"
-                    >
-                      <div className="flex items-center justify-between w-full text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">{opp.avatar}</span>
-                          <span className="font-bold text-slate-200">{opp.name}</span>
-                        </div>
-                        {oppResult && (
-                          <div
-                            className={`font-black px-2.5 py-0.5 rounded-full text-xs ${
-                              oppResult.finalPoints >= 0
-                                ? 'bg-emerald-500/20 text-emerald-400'
-                                : 'bg-rose-500/20 text-rose-400'
-                            }`}
-                          >
-                            {oppResult.finalPoints >= 0 ? `+${oppResult.finalPoints}` : oppResult.finalPoints} 分
-                          </div>
-                        )}
+                .map((opp, idx) => (
+                  <div
+                    key={opp.id}
+                    className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 flex flex-col items-center gap-2.5 relative shadow-lg"
+                  >
+                    <div className="flex items-center justify-between w-full text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">{opp.avatar}</span>
+                        <span className="font-bold text-slate-200">{opp.name}</span>
                       </div>
-
-                      {/* Opponent 3 Rows */}
-                      <div className="flex flex-col items-center gap-1.5 w-full">
-                        {/* Front 3 cards */}
-                        <div className="flex gap-1">
-                          {(isRevealing ? opp.arrangement.front : [1, 2, 3]).map((c, i) => (
-                            <CardView
-                              key={`opp_f_${idx}_${i}`}
-                              card={isRevealing ? (c as Card) : undefined}
-                              isFaceDown={!isRevealing}
-                              size="sm"
-                            />
-                          ))}
-                        </div>
-                        {/* Middle 5 cards */}
-                        <div className="flex gap-1">
-                          {(isRevealing ? opp.arrangement.middle : [1, 2, 3, 4, 5]).map((c, i) => (
-                            <CardView
-                              key={`opp_m_${idx}_${i}`}
-                              card={isRevealing ? (c as Card) : undefined}
-                              isFaceDown={!isRevealing}
-                              size="sm"
-                            />
-                          ))}
-                        </div>
-                        {/* Back 5 cards */}
-                        <div className="flex gap-1">
-                          {(isRevealing ? opp.arrangement.back : [1, 2, 3, 4, 5]).map((c, i) => (
-                            <CardView
-                              key={`opp_b_${idx}_${i}`}
-                              card={isRevealing ? (c as Card) : undefined}
-                              isFaceDown={!isRevealing}
-                              size="sm"
-                            />
-                          ))}
-                        </div>
-                      </div>
-
-                      {isRevealing && oppResult && (
-                        <HandSummary
-                          front={oppResult.frontScore}
-                          middle={oppResult.midScore}
-                          back={oppResult.backScore}
-                          isDaoShui={oppResult.arrangement.isDaoShui}
-                        />
-                      )}
+                      <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                        正在理牌中...
+                      </span>
                     </div>
-                  );
-                })}
+
+                    {/* Opponent Face-down stack */}
+                    <div className="flex flex-col items-center gap-1 w-full py-1">
+                      <div className="flex gap-1">
+                        {[1, 2, 3].map(i => (
+                          <CardView key={`ai_f_${idx}_${i}`} isFaceDown size="sm" />
+                        ))}
+                      </div>
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map(i => (
+                          <CardView key={`ai_m_${idx}_${i}`} isFaceDown size="sm" />
+                        ))}
+                      </div>
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map(i => (
+                          <CardView key={`ai_b_${idx}_${i}`} isFaceDown size="sm" />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
             </div>
 
-            {/* Reveal Settlement Banner */}
-            {gameState === 'revealing' && matchResults && (
-              <div className="w-full bg-slate-900 border-2 border-blue-500/50 rounded-3xl p-6 shadow-2xl flex flex-col items-center gap-4 text-center animate-in zoom-in-95">
-                {(() => {
-                  const userResult = matchResults.find(r => r.playerId === 'player_user');
-                  const pts = userResult?.finalPoints || 0;
-                  const isGunner = Object.values(userResult?.dunScores || {}).some((d: { isGun?: boolean }) => Boolean(d?.isGun));
-                  const isHomeRun = userResult?.isHomeRun;
-
-                  return (
-                    <>
-                      <div className="flex items-center gap-2">
-                        {isHomeRun && (
-                          <span className="bg-gradient-to-r from-amber-500 to-yellow-400 text-black font-black text-xs px-3 py-1 rounded-full animate-bounce">
-                            👑 全垒打 (Home Run) 积分翻倍!
-                          </span>
-                        )}
-                        {isGunner && !isHomeRun && (
-                          <span className="bg-indigo-600 text-white font-black text-xs px-3 py-1 rounded-full">
-                            💥 打枪大捷 (Gun Win)!
-                          </span>
-                        )}
-                      </div>
-
-                      <h2
-                        className={`text-3xl sm:text-4xl font-black ${
-                          pts > 0 ? 'text-emerald-400' : pts < 0 ? 'text-rose-400' : 'text-slate-300'
-                        }`}
-                      >
-                        {pts > 0 ? '🎉 旗开得胜！' : pts < 0 ? '💔 遗憾惜败！' : '🤝 势均力敌 (平局)'}
-                      </h2>
-
-                      <div className="text-slate-400 text-sm font-medium">
-                        本局净胜得分:{' '}
-                        <span className={`text-xl font-extrabold ${pts >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {pts >= 0 ? `+${pts}` : pts} 分
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-3 mt-2">
-                        <button
-                          onClick={() => startNewMatch(mode)}
-                          className="px-6 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm shadow-lg shadow-blue-600/30 flex items-center gap-2 transition active:scale-95"
-                        >
-                          <RotateCcw className="w-4 h-4" /> 再来一局
-                        </button>
-                        <button
-                          onClick={() => setGameState('menu')}
-                          className="px-5 py-3 rounded-2xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold text-sm transition"
-                        >
-                          返回大厅
-                        </button>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            )}
-
             {/* Special Hand Alert Banner */}
-            {specialHand && gameState === 'arranging' && (
+            {specialHand && (
               <SpecialHandBanner
                 specialHand={specialHand}
                 isUsed={useSpecialHand}
@@ -755,49 +761,67 @@ export default function App() {
                   </div>
                   <div>
                     <h3 className="font-black text-base sm:text-lg text-white">
-                      {playerName} 的手牌布局
+                      {playerName} 的理牌台
                     </h3>
                     <p className="text-xs text-slate-400">
-                      点击手牌再点击下方空槽摆牌，或使用右侧一键智能理牌
+                      点击手牌再点击槽位，或使用右侧智能理牌与快捷牌型
                     </p>
                   </div>
                 </div>
 
-                {gameState === 'arranging' && (
-                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                    {/* Auto-arrange Smart Suggestions Button */}
-                    <button
-                      onClick={() => setShowSuggestions(!showSuggestions)}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-black flex items-center gap-1.5 shadow transition active:scale-95"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-yellow-200" />
-                      智能推荐理牌 ({suggestions.length})
-                    </button>
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                  {/* Swap Mid and Back */}
+                  <button
+                    onClick={handleSwapMidBack}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1 transition active:scale-95"
+                    title="交换中墩与后墩"
+                  >
+                    <ArrowUpDown className="w-3.5 h-3.5" /> 中后互换
+                  </button>
 
-                    {/* Reset Slots */}
+                  {/* Auto-fix Dao Shui if invalid */}
+                  {isCurrentDaoShui && (
                     <button
-                      onClick={handleResetSlots}
-                      className="px-3 py-2 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-bold transition"
-                      title="清空已摆放的牌槽"
+                      onClick={handleAutoFix}
+                      className="px-3 py-2 rounded-xl bg-rose-600/20 border border-rose-500/40 text-rose-300 hover:bg-rose-600/30 text-xs font-black flex items-center gap-1 transition animate-pulse"
+                      title="一键调正倒水"
                     >
-                      清空
+                      <Wand2 className="w-3.5 h-3.5" /> 一键调水
                     </button>
+                  )}
 
-                    {/* Submit Button */}
-                    <button
-                      onClick={handleSubmitArrangement}
-                      disabled={pool.length > 0 && !useSpecialHand}
-                      className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      提交比牌
-                    </button>
-                  </div>
-                )}
+                  {/* Auto-arrange Smart Suggestions Button */}
+                  <button
+                    onClick={() => setShowSuggestions(!showSuggestions)}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-black flex items-center gap-1.5 shadow transition active:scale-95"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-yellow-200" />
+                    智能推荐 ({suggestions.length})
+                  </button>
+
+                  {/* Reset Slots */}
+                  <button
+                    onClick={handleResetSlots}
+                    className="px-3 py-2 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-bold transition"
+                    title="清空已摆放的牌槽"
+                  >
+                    清空
+                  </button>
+
+                  {/* Submit Button */}
+                  <button
+                    onClick={handleSubmitArrangement}
+                    disabled={pool.length > 0 && !useSpecialHand}
+                    className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    提交比牌
+                  </button>
+                </div>
               </div>
 
               {/* Suggestions Drawer Popup */}
-              {showSuggestions && gameState === 'arranging' && (
+              {showSuggestions && (
                 <div className="w-full bg-slate-800/90 border border-slate-700 rounded-2xl p-4 animate-in fade-in space-y-3">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-bold text-amber-400 flex items-center gap-1">
@@ -847,12 +871,19 @@ export default function App() {
               )}
 
               {/* 3 Slots: Front (3), Middle (5), Back (5) */}
-              <div className="flex flex-col items-center gap-4 w-full">
+              <div className="flex flex-col items-center gap-5 w-full">
                 {/* 1. FRONT (前墩 3张) */}
-                <div className="flex flex-col items-center gap-1.5">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                    <span className="w-2 h-2 rounded-full bg-blue-500" />
-                    前墩 (3 张牌)
+                <div className="flex flex-col items-center gap-1.5 w-full">
+                  <div className="flex items-center justify-between w-full max-w-sm px-2 text-xs font-bold text-slate-400">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                      前墩 (3 张牌)
+                    </span>
+                    {fEval && (
+                      <span className="text-blue-400 font-black">
+                        [{HAND_TYPE_CN[fEval.type]}] {fEval.description}
+                      </span>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     {front.map((c, i) => (
@@ -867,10 +898,17 @@ export default function App() {
                 </div>
 
                 {/* 2. MIDDLE (中墩 5张) */}
-                <div className="flex flex-col items-center gap-1.5">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                    <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                    中墩 (5 张牌)
+                <div className="flex flex-col items-center gap-1.5 w-full">
+                  <div className="flex items-center justify-between w-full max-w-md px-2 text-xs font-bold text-slate-400">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+                      中墩 (5 张牌)
+                    </span>
+                    {mEval && (
+                      <span className="text-indigo-400 font-black">
+                        [{HAND_TYPE_CN[mEval.type]}] {mEval.description}
+                      </span>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     {mid.map((c, i) => (
@@ -885,10 +923,17 @@ export default function App() {
                 </div>
 
                 {/* 3. BACK (后墩 5张) */}
-                <div className="flex flex-col items-center gap-1.5">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                    <span className="w-2 h-2 rounded-full bg-purple-500" />
-                    后墩 (5 张牌)
+                <div className="flex flex-col items-center gap-1.5 w-full">
+                  <div className="flex items-center justify-between w-full max-w-md px-2 text-xs font-bold text-slate-400">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
+                      后墩 (5 张牌)
+                    </span>
+                    {bEval && (
+                      <span className="text-purple-400 font-black">
+                        [{HAND_TYPE_CN[bEval.type]}] {bEval.description}
+                      </span>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     {back.map((c, i) => (
@@ -902,38 +947,90 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Status Validation Alert */}
+              {isCurrentDaoShui && (
+                <div className="w-full p-3 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold text-center flex items-center justify-center gap-2">
+                  <AlertTriangle className="w-4 h-4" />
+                  ⚠️ 发生违规倒水（后墩 &lt; 中墩 或 中墩 &lt; 前墩）！请调整牌位或点击上方“一键调水”。
+                </div>
+              )}
             </div>
 
-            {/* Hand Pool (Unplaced Cards) */}
-            {gameState === 'arranging' && (
-              <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col items-center gap-3">
-                <div className="flex items-center justify-between w-full text-xs text-slate-400">
-                  <span className="font-bold">
-                    未放置手牌 ({pool.length} / 13)
+            {/* Quick Pattern Extraction Bar */}
+            {availablePatterns.length > 0 && (
+              <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-4 shadow-xl space-y-2.5">
+                <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+                  <span className="font-bold flex items-center gap-1.5 text-blue-400">
+                    <Layers className="w-3.5 h-3.5" /> 快捷牌型提取（点击即可一键填入目标墩位）:
                   </span>
-                  <span>点击卡牌，再点击上方空槽即可放入</span>
                 </div>
-
-                {pool.length === 0 ? (
-                  <div className="py-6 text-emerald-400 font-bold text-xs flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4" />
-                    13 张牌已全部放置完成，请核对后点击右上角“提交比牌”！
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap justify-center gap-2 pt-2">
-                    {pool.map(c => (
-                      <CardView
-                        key={c.id}
-                        card={c}
-                        selected={selectedCardId === c.id}
-                        size="lg"
-                        onClick={() => handlePoolCardClick(c)}
-                      />
-                    ))}
-                  </div>
-                )}
+                <div className="flex flex-wrap gap-2">
+                  {availablePatterns.map(pat => (
+                    <div
+                      key={pat.id}
+                      className="group relative flex items-center bg-slate-800/90 hover:bg-slate-750 border border-slate-700 rounded-xl px-3 py-1.5 text-xs transition"
+                    >
+                      <span className="font-bold text-slate-200 mr-2">{pat.name}</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleApplyPatternToDun(pat.cards, 'back')}
+                          className="px-1.5 py-0.5 rounded bg-purple-600/30 hover:bg-purple-600 text-purple-200 text-[10px] font-bold transition"
+                          title="填入后墩"
+                        >
+                          填后墩
+                        </button>
+                        <button
+                          onClick={() => handleApplyPatternToDun(pat.cards, 'mid')}
+                          className="px-1.5 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 text-[10px] font-bold transition"
+                          title="填入中墩"
+                        >
+                          填中墩
+                        </button>
+                        {pat.cards.length <= 3 && (
+                          <button
+                            onClick={() => handleApplyPatternToDun(pat.cards, 'front')}
+                            className="px-1.5 py-0.5 rounded bg-blue-600/30 hover:bg-blue-600 text-blue-200 text-[10px] font-bold transition"
+                            title="填入前墩"
+                          >
+                            填前墩
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
+
+            {/* Hand Pool (Unplaced Cards) */}
+            <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col items-center gap-3">
+              <div className="flex items-center justify-between w-full text-xs text-slate-400">
+                <span className="font-bold">
+                  未放置手牌 ({pool.length} / 13)
+                </span>
+                <span>点击卡牌，再点击上方空槽即可放入</span>
+              </div>
+
+              {pool.length === 0 ? (
+                <div className="py-6 text-emerald-400 font-bold text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                  13 张牌已全部放置完成，请核对后点击右上角“提交比牌”！
+                </div>
+              ) : (
+                <div className="flex flex-wrap justify-center gap-2 pt-2">
+                  {pool.map(c => (
+                    <CardView
+                      key={c.id}
+                      card={c}
+                      selected={selectedCardId === c.id}
+                      size="lg"
+                      onClick={() => handlePoolCardClick(c)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </main>
@@ -945,6 +1042,11 @@ export default function App() {
 
       {/* Modals */}
       <RuleModal isOpen={showRuleModal} onClose={() => setShowRuleModal(false)} />
+
+      <PracticeModal
+        isOpen={showPracticeModal}
+        onClose={() => setShowPracticeModal(false)}
+      />
 
       <LeaderboardModal
         isOpen={showRankModal}
