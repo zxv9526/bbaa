@@ -25,6 +25,8 @@ import { LeaderboardModal } from './components/LeaderboardModal';
 import { MultiplayerRoom } from './components/MultiplayerRoom';
 import { PracticeModal } from './components/PracticeModal';
 import { ShowdownStage } from './components/ShowdownStage';
+import { CardSkinModal } from './components/CardSkinModal';
+import { initCardSkins } from './lib/cardSkin';
 import { ApiClient } from './api';
 import { sounds } from './sound';
 import {
@@ -49,7 +51,8 @@ import {
   ArrowUpDown,
   Wand2,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Palette
 } from 'lucide-react';
 
 type GameMode = 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer';
@@ -71,6 +74,7 @@ export default function App() {
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [showRankModal, setShowRankModal] = useState(false);
   const [showPracticeModal, setShowPracticeModal] = useState(false);
+  const [showSkinModal, setShowSkinModal] = useState(false);
 
   // Player Hand State
   const [originalHand, setOriginalHand] = useState<Card[]>([]);
@@ -104,9 +108,10 @@ export default function App() {
   // Current Player Stats for Lobby
   const [myStats, setMyStats] = useState<PlayerStats | null>(null);
 
-  // 1. On Mount: Auto-check and initialize D1 database & load player stats
+  // 1. On Mount: Auto-check and initialize D1 database & load player stats & card skins
   useEffect(() => {
     ApiClient.initializeDatabase();
+    initCardSkins();
     refreshPlayerStats(playerName);
   }, []);
 
@@ -496,6 +501,16 @@ export default function App() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Card Skin / SVG Theme Button */}
+          <button
+            onClick={() => setShowSkinModal(true)}
+            className="p-2 sm:px-3.5 sm:py-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+            title="上传自定义 SVG 扑克牌与管理皮肤"
+          >
+            <Palette className="w-4 h-4 text-indigo-400" />
+            <span className="hidden sm:inline">卡牌换肤</span>
+          </button>
+
           {/* Practice Sandbox Button */}
           <button
             onClick={() => setShowPracticeModal(true)}
@@ -1055,6 +1070,11 @@ export default function App() {
           refreshPlayerStats(playerName);
         }}
         currentPlayerName={playerName}
+      />
+
+      <CardSkinModal
+        isOpen={showSkinModal}
+        onClose={() => setShowSkinModal(false)}
       />
     </div>
   );
