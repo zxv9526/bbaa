@@ -48,9 +48,9 @@ export function CardView({
   }, []);
 
   const sizeClasses = {
-    sm: 'w-11 h-16 sm:w-12 sm:h-18 text-xs p-1 rounded-lg',
-    md: 'w-14 h-20 sm:w-16 sm:h-24 text-sm p-1.5 rounded-xl',
-    lg: 'w-16 h-24 sm:w-20 sm:h-28 text-base p-2 rounded-xl'
+    sm: 'w-11 h-16 sm:w-12 sm:h-18 text-xs p-1 rounded-none',
+    md: 'w-14 h-20 sm:w-16 sm:h-24 text-sm p-1.5 rounded-none',
+    lg: 'w-16 h-24 sm:w-20 sm:h-28 text-base p-2 rounded-none'
   }[size];
 
   // Empty placeholder slot
@@ -60,13 +60,13 @@ export function CardView({
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-center transition-all duration-150',
+          'border-x-2 border-y-0 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-center transition-all duration-150 rounded-none',
           !disabled &&
             'cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 dark:hover:bg-blue-900/20 active:scale-95',
           className
         )}
       >
-        <div className="w-5 h-5 rounded-full border border-slate-300 dark:border-slate-600 bg-white/40 dark:bg-slate-700/40" />
+        <div className="w-4 h-4 rounded-none border border-slate-300 dark:border-slate-600 bg-white/40 dark:bg-slate-700/40" />
       </div>
     );
   }
@@ -114,7 +114,7 @@ export function CardView({
           onClick={disabled ? undefined : onClick}
           className={cn(
             sizeClasses,
-            'shadow-sm flex items-center justify-center select-none overflow-hidden relative border border-slate-700/50 p-0',
+            'shadow-sm flex items-center justify-center select-none overflow-hidden relative border-x border-y-0 border-slate-700/50 p-0 rounded-none',
             className
           )}
           dangerouslySetInnerHTML={{ __html: asset.isSvgText }}
@@ -128,7 +128,7 @@ export function CardView({
           onClick={disabled ? undefined : onClick}
           className={cn(
             sizeClasses,
-            'shadow-sm flex items-center justify-center select-none overflow-hidden relative border border-slate-800 p-0 rounded-xl bg-slate-900',
+            'shadow-sm flex items-center justify-center select-none overflow-hidden relative border-x border-y-0 border-slate-800 p-0 rounded-none bg-slate-900',
             className
           )}
         >
@@ -137,25 +137,25 @@ export function CardView({
             alt="Card Back"
             onError={handleImageError}
             onLoad={handleImageLoad}
-            className="w-full h-full object-cover rounded-xl select-none pointer-events-none"
+            className="w-full h-full object-cover rounded-none select-none pointer-events-none"
             loading="eager"
           />
         </div>
       );
     }
 
-    // Built-in Default Blue Face-down back
+    // Built-in Default Blue Face-down back (no rounded corners, no top/bottom borders)
     return (
       <div
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'bg-gradient-to-br from-blue-700 via-indigo-800 to-slate-900 border border-blue-400/30 shadow-sm flex items-center justify-center select-none overflow-hidden relative rounded-xl',
+          'bg-gradient-to-br from-blue-700 via-indigo-800 to-slate-900 border-x border-y-0 border-blue-400/30 shadow-sm flex items-center justify-center select-none overflow-hidden relative rounded-none',
           className
         )}
       >
-        <div className="absolute inset-1 border border-blue-300/20 rounded-md flex items-center justify-center">
-          <div className="w-6 h-6 rounded-full border border-blue-300/30 flex items-center justify-center text-blue-200/40 text-[10px] font-black">
+        <div className="absolute inset-x-1 inset-y-0 border-x border-y-0 border-blue-300/20 rounded-none flex items-center justify-center">
+          <div className="w-6 h-6 rounded-none border border-blue-300/30 flex items-center justify-center text-blue-200/40 text-[10px] font-black">
             13
           </div>
         </div>
@@ -172,7 +172,7 @@ export function CardView({
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'shadow-sm transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-xl',
+          'shadow-sm transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-none border-x border-y-0 border-slate-200/40 dark:border-slate-700/40',
           selected
             ? 'ring-4 ring-blue-500 shadow-xl -translate-y-2.5 z-20 scale-105'
             : highlight
@@ -183,26 +183,26 @@ export function CardView({
         )}
       >
         {badge && (
-          <span className="absolute -top-1 -right-1 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
+          <span className="absolute -top-1 -right-1 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-none shadow">
             {badge}
           </span>
         )}
         <div
-          className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>svg]:rounded-xl"
+          className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>svg]:rounded-none"
           dangerouslySetInnerHTML={{ __html: asset.isSvgText }}
         />
       </div>
     );
   }
 
-  // Custom Image URL (e.g. 10_of_clubs.png, ace_of_spades.png, uploaded PNG / SVG / WebP)
+  // Custom Image URL (e.g. 10_of_clubs.png, ace_of_spades.png, 10_of_clubs.svg, uploaded PNG / SVG / WebP)
   if (!hasFallbackToDefault && currentImgUrl) {
     return (
       <div
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'shadow-sm transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-xl bg-white',
+          'shadow-sm transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-none bg-white border-x border-y-0 border-slate-200/40 dark:border-slate-700/40',
           selected
             ? 'ring-4 ring-blue-500 shadow-xl -translate-y-2.5 z-20 scale-105'
             : highlight
@@ -213,7 +213,7 @@ export function CardView({
         )}
       >
         {badge && (
-          <span className="absolute -top-1 -right-1 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
+          <span className="absolute -top-1 -right-1 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-none shadow">
             {badge}
           </span>
         )}
@@ -222,14 +222,14 @@ export function CardView({
           alt={`${card.rank}-${card.suit}`}
           onError={handleImageError}
           onLoad={handleImageLoad}
-          className="w-full h-full object-contain rounded-xl select-none pointer-events-none"
+          className="w-full h-full object-contain rounded-none select-none pointer-events-none"
           loading="eager"
         />
       </div>
     );
   }
 
-  // Built-in Crisp Vector Card Fallback
+  // Built-in Crisp Vector Card Fallback (no rounded corners, no top/bottom borders)
   const isRed = card.suit === 'H' || card.suit === 'D';
   const suitSymbol = {
     S: '♠',
@@ -253,7 +253,7 @@ export function CardView({
       onClick={disabled ? undefined : onClick}
       className={cn(
         sizeClasses,
-        'bg-white border-2 flex flex-col justify-between select-none shadow-sm transition-all duration-150 relative cursor-pointer rounded-xl',
+        'bg-white border-x-2 border-y-0 flex flex-col justify-between select-none shadow-sm transition-all duration-150 relative cursor-pointer rounded-none',
         isRed ? 'text-rose-600' : 'text-slate-900',
         selected
           ? 'border-blue-600 shadow-md ring-2 ring-blue-400 -translate-y-2.5 z-20 bg-blue-50/20'
@@ -265,7 +265,7 @@ export function CardView({
       )}
     >
       {badge && (
-        <span className="absolute -top-2.5 -right-2.5 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
+        <span className="absolute -top-2.5 -right-2.5 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-none shadow">
           {badge}
         </span>
       )}
