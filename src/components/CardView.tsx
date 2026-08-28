@@ -48,9 +48,9 @@ export function CardView({
   }, []);
 
   const sizeClasses = {
-    sm: 'w-11 h-16 sm:w-12 sm:h-18 text-xs p-1 rounded-none',
-    md: 'w-14 h-20 sm:w-16 sm:h-24 text-sm p-1.5 rounded-none',
-    lg: 'w-16 h-24 sm:w-20 sm:h-28 text-base p-2 rounded-none'
+    sm: 'w-11 h-16 sm:w-12 sm:h-18 text-xs rounded-none',
+    md: 'w-14 h-20 sm:w-16 sm:h-24 text-sm rounded-none',
+    lg: 'w-16 h-24 sm:w-20 sm:h-28 text-base rounded-none'
   }[size];
 
   // Empty placeholder slot
@@ -60,13 +60,13 @@ export function CardView({
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'border-x-2 border-y-0 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-center transition-all duration-150 rounded-none',
+          'border-0 bg-slate-800/40 flex items-center justify-center transition-all duration-150 rounded-none',
           !disabled &&
-            'cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 dark:hover:bg-blue-900/20 active:scale-95',
+            'cursor-pointer hover:bg-blue-900/30 active:scale-95',
           className
         )}
       >
-        <div className="w-4 h-4 rounded-none border border-slate-300 dark:border-slate-600 bg-white/40 dark:bg-slate-700/40" />
+        <div className="w-4 h-4 rounded-none bg-slate-700/40" />
       </div>
     );
   }
@@ -114,7 +114,7 @@ export function CardView({
           onClick={disabled ? undefined : onClick}
           className={cn(
             sizeClasses,
-            'shadow-sm flex items-center justify-center select-none overflow-hidden relative border-x border-y-0 border-slate-700/50 p-0 rounded-none',
+            'flex items-center justify-center select-none overflow-hidden relative border-0 p-0 rounded-none shadow-none',
             className
           )}
           dangerouslySetInnerHTML={{ __html: asset.isSvgText }}
@@ -128,7 +128,7 @@ export function CardView({
           onClick={disabled ? undefined : onClick}
           className={cn(
             sizeClasses,
-            'shadow-sm flex items-center justify-center select-none overflow-hidden relative border-x border-y-0 border-slate-800 p-0 rounded-none bg-slate-900',
+            'flex items-center justify-center select-none overflow-hidden relative border-0 p-0 rounded-none bg-slate-900 shadow-none',
             className
           )}
         >
@@ -137,27 +137,25 @@ export function CardView({
             alt="Card Back"
             onError={handleImageError}
             onLoad={handleImageLoad}
-            className="w-full h-full object-cover rounded-none select-none pointer-events-none"
+            className="w-full h-full object-fill rounded-none select-none pointer-events-none block border-0"
             loading="eager"
           />
         </div>
       );
     }
 
-    // Built-in Default Blue Face-down back (no rounded corners, no top/bottom borders)
+    // Built-in Default Blue Face-down back (no rounded corners, no borders)
     return (
       <div
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'bg-gradient-to-br from-blue-700 via-indigo-800 to-slate-900 border-x border-y-0 border-blue-400/30 shadow-sm flex items-center justify-center select-none overflow-hidden relative rounded-none',
+          'bg-gradient-to-br from-blue-700 via-indigo-800 to-slate-900 border-0 flex items-center justify-center select-none overflow-hidden relative rounded-none shadow-none',
           className
         )}
       >
-        <div className="absolute inset-x-1 inset-y-0 border-x border-y-0 border-blue-300/20 rounded-none flex items-center justify-center">
-          <div className="w-6 h-6 rounded-none border border-blue-300/30 flex items-center justify-center text-blue-200/40 text-[10px] font-black">
-            13
-          </div>
+        <div className="w-6 h-6 rounded-none flex items-center justify-center text-blue-200/40 text-[10px] font-black">
+          13
         </div>
       </div>
     );
@@ -172,12 +170,12 @@ export function CardView({
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'shadow-sm transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-none border-x border-y-0 border-slate-200/40 dark:border-slate-700/40',
+          'transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-none border-0 shadow-none',
           selected
             ? 'ring-4 ring-blue-500 shadow-xl -translate-y-2.5 z-20 scale-105'
             : highlight
             ? 'ring-3 ring-amber-400 shadow-lg scale-102'
-            : 'hover:shadow-md hover:-translate-y-1',
+            : 'hover:-translate-y-1',
           disabled && 'cursor-default opacity-90 hover:translate-y-0',
           className
         )}
@@ -188,26 +186,26 @@ export function CardView({
           </span>
         )}
         <div
-          className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>svg]:rounded-none"
+          className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>svg]:rounded-none [&>svg]:border-0 [&>svg]:block"
           dangerouslySetInnerHTML={{ __html: asset.isSvgText }}
         />
       </div>
     );
   }
 
-  // Custom Image URL (e.g. 10_of_clubs.png, ace_of_spades.png, 10_of_clubs.svg, uploaded PNG / SVG / WebP)
+  // Custom Image URL (e.g. 10_of_clubs.svg, 10_of_clubs.png, ace_of_spades.png, uploaded PNG / SVG / WebP)
   if (!hasFallbackToDefault && currentImgUrl) {
     return (
       <div
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'shadow-sm transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-none bg-white border-x border-y-0 border-slate-200/40 dark:border-slate-700/40',
+          'transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-none bg-white border-0 shadow-none',
           selected
             ? 'ring-4 ring-blue-500 shadow-xl -translate-y-2.5 z-20 scale-105'
             : highlight
             ? 'ring-3 ring-amber-400 shadow-lg scale-102'
-            : 'hover:shadow-md hover:-translate-y-1',
+            : 'hover:-translate-y-1',
           disabled && 'cursor-default opacity-90 hover:translate-y-0',
           className
         )}
@@ -222,14 +220,14 @@ export function CardView({
           alt={`${card.rank}-${card.suit}`}
           onError={handleImageError}
           onLoad={handleImageLoad}
-          className="w-full h-full object-contain rounded-none select-none pointer-events-none"
+          className="w-full h-full object-fill rounded-none select-none pointer-events-none block border-0"
           loading="eager"
         />
       </div>
     );
   }
 
-  // Built-in Crisp Vector Card Fallback (no rounded corners, no top/bottom borders)
+  // Built-in Crisp Vector Card Fallback (no rounded corners, no borders)
   const isRed = card.suit === 'H' || card.suit === 'D';
   const suitSymbol = {
     S: '♠',
@@ -253,13 +251,13 @@ export function CardView({
       onClick={disabled ? undefined : onClick}
       className={cn(
         sizeClasses,
-        'bg-white border-x-2 border-y-0 flex flex-col justify-between select-none shadow-sm transition-all duration-150 relative cursor-pointer rounded-none',
+        'bg-white border-0 p-1.5 flex flex-col justify-between select-none shadow-none transition-all duration-150 relative cursor-pointer rounded-none',
         isRed ? 'text-rose-600' : 'text-slate-900',
         selected
-          ? 'border-blue-600 shadow-md ring-2 ring-blue-400 -translate-y-2.5 z-20 bg-blue-50/20'
+          ? 'ring-4 ring-blue-500 -translate-y-2.5 z-20 bg-blue-50/20'
           : highlight
-          ? 'border-amber-400 ring-2 ring-amber-300 shadow-md'
-          : 'border-slate-200 hover:border-blue-300 hover:shadow hover:-translate-y-1',
+          ? 'ring-3 ring-amber-400'
+          : 'hover:-translate-y-1',
         disabled && 'cursor-default opacity-90 hover:translate-y-0',
         className
       )}
