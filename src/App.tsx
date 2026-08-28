@@ -1,0 +1,932 @@
+import React, { useState, useEffect } from 'react';
+import confetti from 'canvas-confetti';
+import { Card, GameRecord, PlayerArrangement, PlayerScoreDetail, SpecialHandType } from './types';
+import {
+  createDeck,
+  shuffle,
+  sortCards,
+  isValidArrangement,
+  aiArrangeCards,
+  getSuggestedArrangements,
+  detectSpecialHand,
+  calculateMatchScores,
+  ArrangementOption,
+  HAND_TYPE_CN
+} from './gameLogic';
+import { CardView } from './components/CardView';
+import { HandSummary } from './components/HandSummary';
+import { SpecialHandBanner } from './components/SpecialHandBanner';
+import { D1StatusModal } from './components/D1StatusModal';
+import { RuleModal } from './components/RuleModal';
+import { LeaderboardModal } from './components/LeaderboardModal';
+import { MultiplayerRoom } from './components/MultiplayerRoom';
+import { ApiClient, InitResponse } from './api';
+import { sounds } from './sound';
+import {
+  Play,
+  Users,
+  Trophy,
+  BookOpen,
+  Volume2,
+  VolumeX,
+  Database,
+  RefreshCw,
+  Sparkles,
+  RotateCcw,
+  CheckCircle2,
+  AlertTriangle,
+  Flame,
+  ArrowRight,
+  ShieldCheck,
+  ChevronRight,
+  User,
+  Plus
+} from 'lucide-react';
+
+type GameMode = 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer' | 'practice';
+
+export default function App() {
+  const [playerName, setPlayerName] = useState<string>(() => {
+    return localStorage.getItem('thirteen_player_name') || `大侠_${Math.floor(100 + Math.random() * 900)}`;
+  });
+
+  const [mode, setMode] = useState<GameMode>('vs_ai_4p');
+  const [gameState, setGameState] = useState<'menu' | 'room_lobby' | 'arranging' | 'revealing'>('menu');
+  const [roomCode, setRoomCode] = useState<string>('');
+  const [joinInputCode, setJoinInputCode] = useState<string>('');
+
+  // Audio mute state
+  const [isMuted, setIsMuted] = useState(false);
+
+  // D1 Database Auto Init Status
+  const [d1Status, setD1Status] = useState<InitResponse | null>(null);
+  const [showD1Modal, setShowD1Modal] = useState(false);
+  const [showRuleModal, setShowRuleModal] = useState(false);
+  const [showRankModal, setShowRankModal] = useState(false);
+
+  // Player Hand State
+  const [pool, setPool] = useState<Card[]>([]);
+  const [front, setFront] = useState<(Card | null)[]>([null, null, null]);
+  const [mid, setMid] = useState<(Card | null)[]>([null, null, null, null, null]);
+  const [back, setBack] = useState<(Card | null)[]>([null, null, null, null, null]);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string>('');
+
+  // Detected Special Hand
+  const [specialHand, setSpecialHand] = useState<SpecialHandType | null>(null);
+  const [useSpecialHand, setUseSpecialHand] = useState<boolean>(false);
+
+  // AI Suggestions
+  const [suggestions, setSuggestions] = useState<ArrangementOption[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Match State (Supports 2 or 4 players)
+  const [playersInMatch, setPlayersInMatch] = useState<{
+    id: string;
+    name: string;
+    isAi: boolean;
+    avatar: string;
+    cards: Card[];
+    arrangement: PlayerArrangement;
+  }[]>([]);
+
+  const [matchResults, setMatchResults] = useState<PlayerScoreDetail[] | null>(null);
+
+  // 1. On Mount: Auto-check and initialize D1 database
+  useEffect(() => {
+    ApiClient.initializeDatabase().then(res => {
+      setD1Status(res);
+    });
+  }, []);
+
+  const handleMuteToggle = () => {
+    const next = !isMuted;
+    setIsMuted(next);
+    sounds.setMuted(next);
+  };
+
+  const handleNameChange = (newName: string) => {
+    setPlayerName(newName);
+    localStorage.setItem('thirteen_player_name', newName);
+  };
+
+  // Start a new local match (2P or 4P)
+  const startNewMatch = (selectedMode: GameMode = mode) => {
+    sounds.playDeal();
+    setMode(selectedMode);
+    const deck = shuffle(createDeck());
+
+    const numPlayers = selectedMode === 'vs_ai_2p' ? 2 : 4;
+    const playerDealt = deck.slice(0, 13);
+    const sortedPlayerHand = sortCards(playerDealt);
+
+    setPool(sortedPlayerHand);
+    setFront([null, null, null]);
+    setMid([null, null, null, null, null]);
+    setBack([null, null, null, null, null]);
+    setSelectedCardId(null);
+    setErrorMsg('');
+    setMatchResults(null);
+    setUseSpecialHand(false);
+
+    // Detect Special Hand
+    const special = detectSpecialHand(sortedPlayerHand);
+    setSpecialHand(special);
+
+    // Compute AI Suggestions for player
+    const smartSuggestions = getSuggestedArrangements(sortedPlayerHand);
+    setSuggestions(smartSuggestions);
+
+    // Prepare other players (AI)
+    const playersList: {
+      id: string;
+      name: string;
+      isAi: boolean;
+      avatar: string;
+      cards: Card[];
+      arrangement: PlayerArrangement;
+    }[] = [
+      {
+        id: 'player_user',
+        name: playerName,
+        isAi: false,
+        avatar: '🀄',
+        cards: sortedPlayerHand,
+        arrangement: {
+          front: [],
+          middle: [],
+          back: [],
+          specialHand: null,
+          isValid: false,
+          isDaoShui: false
+        }
+      }
+    ];
+
+    const aiAvatars = ['🤖', '🦊', '🐼'];
+    const aiNames = ['智多星 (AI)', '百胜侯 (AI)', '十三叔 (AI)'];
+
+    for (let i = 1; i < numPlayers; i++) {
+      const aiCards = deck.slice(i * 13, (i + 1) * 13);
+      const aiArrange = aiArrangeCards(aiCards);
+      playersList.push({
+        id: `ai_${i}`,
+        name: aiNames[i - 1] || `对手 ${i}`,
+        isAi: true,
+        avatar: aiAvatars[i - 1] || '🤖',
+        cards: aiCards,
+        arrangement: aiArrange
+      });
+    }
+
+    setPlayersInMatch(playersList);
+    setGameState('arranging');
+  };
+
+  // Card click in Pool
+  const handlePoolCardClick = (card: Card) => {
+    sounds.playCardPick();
+    if (selectedCardId === card.id) {
+      setSelectedCardId(null);
+    } else {
+      setSelectedCardId(card.id);
+    }
+  };
+
+  // Slot click to place or remove
+  const handleSlotClick = (row: 'front' | 'mid' | 'back', index: number) => {
+    if (gameState !== 'arranging') return;
+
+    const targetArray = row === 'front' ? front : row === 'mid' ? mid : back;
+    const setTargetArray = row === 'front' ? setFront : row === 'mid' ? setMid : setBack;
+
+    if (targetArray[index] !== null) {
+      // Return card to pool
+      sounds.playCardPick();
+      const card = targetArray[index]!;
+      setPool(prev => sortCards([...prev, card]));
+      const newArr = [...targetArray];
+      newArr[index] = null;
+      setTargetArray(newArr);
+      if (selectedCardId === card.id) setSelectedCardId(null);
+    } else if (selectedCardId) {
+      // Place selected card into empty slot
+      sounds.playCardPick();
+      const card = pool.find(c => c.id === selectedCardId);
+      if (card) {
+        setPool(prev => prev.filter(c => c.id !== selectedCardId));
+        const newArr = [...targetArray];
+        newArr[index] = card;
+        setTargetArray(newArr);
+        setSelectedCardId(null);
+        setErrorMsg('');
+      }
+    }
+  };
+
+  // Apply suggestion
+  const applySuggestion = (option: ArrangementOption) => {
+    sounds.playAutoArrange();
+    setFront([...option.front]);
+    setMid([...option.middle]);
+    setBack([...option.back]);
+    setPool([]);
+    setSelectedCardId(null);
+    setErrorMsg('');
+    setShowSuggestions(false);
+  };
+
+  // Clear all slots back to pool
+  const handleResetSlots = () => {
+    sounds.playCardPick();
+    const placedCards = [
+      ...front.filter(Boolean),
+      ...mid.filter(Boolean),
+      ...back.filter(Boolean)
+    ] as Card[];
+    setPool(prev => sortCards([...prev, ...placedCards]));
+    setFront([null, null, null]);
+    setMid([null, null, null, null, null]);
+    setBack([null, null, null, null, null]);
+    setSelectedCardId(null);
+    setErrorMsg('');
+  };
+
+  // Submit Player Arrangement & Reveal
+  const handleSubmitArrangement = async () => {
+    if (useSpecialHand && specialHand) {
+      // Special Hand submission
+      const userArrangement: PlayerArrangement = {
+        front: [],
+        middle: [],
+        back: [],
+        specialHand,
+        isValid: true,
+        isDaoShui: false
+      };
+      settleMatch(userArrangement);
+      return;
+    }
+
+    if (pool.length > 0) {
+      sounds.playError();
+      setErrorMsg('请将 13 张手牌全部放置完毕后再提交。');
+      return;
+    }
+
+    const fCards = front as Card[];
+    const mCards = mid as Card[];
+    const bCards = back as Card[];
+
+    const isValid = isValidArrangement(fCards, mCards, bCards);
+    if (!isValid) {
+      sounds.playError();
+      setErrorMsg('⚠️ 违规倒水：后墩必须大于等于中墩，中墩必须大于等于前墩！');
+      return;
+    }
+
+    const userArrangement: PlayerArrangement = {
+      front: fCards,
+      middle: mCards,
+      back: bCards,
+      isValid: true,
+      isDaoShui: false
+    };
+
+    settleMatch(userArrangement);
+  };
+
+  const settleMatch = async (userArrangement: PlayerArrangement) => {
+    const updatedPlayers = playersInMatch.map(p => {
+      if (!p.isAi) {
+        return { ...p, arrangement: userArrangement };
+      }
+      return p;
+    });
+
+    const results = calculateMatchScores(updatedPlayers);
+    setMatchResults(results);
+    setGameState('revealing');
+
+    const userResult = results.find(r => r.playerId === 'player_user');
+    if (userResult) {
+      if (userResult.finalPoints > 0) {
+        sounds.playVictory();
+        confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
+      } else if (userResult.dunScores) {
+        // Check if any gun shot happened
+        const hasGun = Object.values(userResult.dunScores).some(d => d.isGun);
+        if (hasGun) sounds.playGunShot();
+      }
+
+      // Record to D1
+      const outcome: GameRecord['result'] = userResult.specialHand
+        ? 'SPECIAL_WIN'
+        : userResult.finalPoints > 0
+        ? 'WIN'
+        : userResult.finalPoints < 0
+        ? 'LOSE'
+        : 'DRAW';
+
+      await ApiClient.recordGame({
+        playerName,
+        mode,
+        pointsWon: userResult.finalPoints,
+        result: outcome,
+        specialHand: userResult.specialHand || null,
+        frontType: userResult.frontScore.type,
+        midType: userResult.midScore.type,
+        backType: userResult.backScore.type,
+        opponentsSummary: `${results.length - 1}位对手`
+      });
+    }
+  };
+
+  // Join Multiplayer Room
+  const handleJoinRoom = async () => {
+    if (!joinInputCode.trim()) return;
+    const res = await ApiClient.joinRoom(joinInputCode.trim(), playerName);
+    if (res.ok) {
+      setRoomCode(joinInputCode.trim().toUpperCase());
+      setGameState('room_lobby');
+    } else {
+      setErrorMsg(res.message || '加入房间失败');
+    }
+  };
+
+  // Create Multiplayer Room
+  const handleCreateRoom = async () => {
+    const res = await ApiClient.createRoom(playerName, 4);
+    if (res.ok && res.roomCode) {
+      setRoomCode(res.roomCode);
+      setGameState('room_lobby');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-blue-600 selection:text-white flex flex-col justify-between">
+      {/* 1. Header Bar */}
+      <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-4 sm:px-8 py-3.5 sticky top-0 z-40 flex items-center justify-between">
+        {/* Brand */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center font-black text-lg shadow-lg shadow-blue-500/20">
+            13
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="font-extrabold text-lg sm:text-xl tracking-tight text-white">十三水</h1>
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                Chinese Poker
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">Cloudflare Pages + D1 自动建表持久化</p>
+          </div>
+        </div>
+
+        {/* Global Action Bar */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* D1 Connection Status Pill */}
+          <button
+            onClick={() => setShowD1Modal(true)}
+            className={`px-3 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 transition ${
+              d1Status?.d1Bound
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
+            }`}
+            title="查看 Cloudflare D1 数据库状态"
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">
+              {d1Status?.d1Bound ? 'D1 数据库自动就绪' : '本地存储模式'}
+            </span>
+          </button>
+
+          {/* Leaderboard Button */}
+          <button
+            onClick={() => setShowRankModal(true)}
+            className="p-2 sm:px-3 sm:py-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition"
+            title="查看风云排行榜与历史记录"
+          >
+            <Trophy className="w-4 h-4 text-amber-400" />
+            <span className="hidden sm:inline">排行榜</span>
+          </button>
+
+          {/* Rules Button */}
+          <button
+            onClick={() => setShowRuleModal(true)}
+            className="p-2 sm:px-3 sm:py-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition"
+            title="十三水规则与计分"
+          >
+            <BookOpen className="w-4 h-4 text-blue-400" />
+            <span className="hidden sm:inline">规则说明</span>
+          </button>
+
+          {/* Sound Toggle */}
+          <button
+            onClick={handleMuteToggle}
+            className="p-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 transition"
+            title={isMuted ? '开启音效' : '静音'}
+          >
+            {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+          </button>
+        </div>
+      </header>
+
+      {/* 2. Main Body Content */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col items-center justify-center">
+        {gameState === 'menu' && (
+          <div className="max-w-4xl w-full flex flex-col items-center gap-8 py-6">
+            {/* Player Profile Bar */}
+            <div className="w-full max-w-lg bg-slate-900/80 border border-slate-800 p-4 rounded-3xl flex items-center justify-between shadow-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center text-2xl font-bold">
+                  🀄
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400 font-medium">当前玩家昵称</div>
+                  <input
+                    type="text"
+                    value={playerName}
+                    onChange={e => handleNameChange(e.target.value)}
+                    className="bg-transparent font-black text-slate-100 text-base focus:outline-none focus:border-b border-blue-500"
+                    placeholder="输入大侠名称..."
+                  />
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-[11px] bg-slate-800 text-slate-400 px-2.5 py-1 rounded-full font-mono">
+                  Cloud D1 Sync
+                </span>
+              </div>
+            </div>
+
+            {/* Mode Selection Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 w-full max-w-4xl">
+              {/* Mode 1: 4-Player Table */}
+              <div
+                onClick={() => startNewMatch('vs_ai_4p')}
+                className="group relative bg-gradient-to-b from-slate-900 to-slate-900/90 border-2 border-slate-800 hover:border-blue-500/80 p-6 rounded-3xl flex flex-col justify-between gap-6 cursor-pointer transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-500/10"
+              >
+                <div className="space-y-3">
+                  <div className="w-14 h-14 rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center text-3xl group-hover:scale-110 transition">
+                    👑
+                  </div>
+                  <h3 className="text-xl font-black text-white group-hover:text-blue-400 transition">
+                    经典四人对决
+                  </h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    标准 52 张扑克全桌发完，支持前中后三墩比拼、打枪翻倍与四人全垒打大胜！
+                  </p>
+                </div>
+                <div className="flex items-center justify-between pt-4 border-t border-slate-800/80 text-xs font-bold text-blue-400">
+                  <span>立即开局</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition" />
+                </div>
+              </div>
+
+              {/* Mode 2: 2-Player Duel */}
+              <div
+                onClick={() => startNewMatch('vs_ai_2p')}
+                className="group relative bg-gradient-to-b from-slate-900 to-slate-900/90 border-2 border-slate-800 hover:border-indigo-500/80 p-6 rounded-3xl flex flex-col justify-between gap-6 cursor-pointer transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/10"
+              >
+                <div className="space-y-3">
+                  <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-3xl group-hover:scale-110 transition">
+                    ⚔️
+                  </div>
+                  <h3 className="text-xl font-black text-white group-hover:text-indigo-400 transition">
+                    双人极速单挑
+                  </h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    1 对 1 单挑智能 AI，快节奏摸牌摆牌，快速测试牌型策略与得分胜率。
+                  </p>
+                </div>
+                <div className="flex items-center justify-between pt-4 border-t border-slate-800/80 text-xs font-bold text-indigo-400">
+                  <span>极速开打</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition" />
+                </div>
+              </div>
+
+              {/* Mode 3: Multiplayer Cloud Room */}
+              <div className="group relative bg-gradient-to-b from-slate-900 to-slate-900/90 border-2 border-slate-800 hover:border-emerald-500/80 p-6 rounded-3xl flex flex-col justify-between gap-6">
+                <div className="space-y-3">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-3xl">
+                    🌐
+                  </div>
+                  <h3 className="text-xl font-black text-white">云端多人联机</h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    基于 Cloudflare D1 房间同步，输入 6 位房间号即可与好友异地联机切磋！
+                  </p>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                  <button
+                    onClick={handleCreateRoom}
+                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 shadow"
+                  >
+                    <Plus className="w-4 h-4" /> 创建联机房间
+                  </button>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={joinInputCode}
+                      onChange={e => setJoinInputCode(e.target.value.toUpperCase())}
+                      placeholder="输入6位房号..."
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono font-bold text-center uppercase focus:outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      onClick={handleJoinRoom}
+                      className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs whitespace-nowrap transition"
+                    >
+                      加入
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 3. Multiplayer Lobby View */}
+        {gameState === 'room_lobby' && (
+          <MultiplayerRoom
+            roomCode={roomCode}
+            currentPlayerName={playerName}
+            onStartRoomGame={room => {
+              startNewMatch('multiplayer');
+            }}
+            onExit={() => setGameState('menu')}
+          />
+        )}
+
+        {/* 4. Active Game Table (Arranging / Revealing) */}
+        {(gameState === 'arranging' || gameState === 'revealing') && (
+          <div className="w-full max-w-5xl flex flex-col items-center gap-6">
+            {/* Top Opponents Area (4P or 2P) */}
+            <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {playersInMatch
+                .filter(p => p.isAi)
+                .map((opp, idx) => {
+                  const oppResult = matchResults?.find(r => r.playerId === opp.id);
+                  const isRevealing = gameState === 'revealing';
+
+                  return (
+                    <div
+                      key={opp.id}
+                      className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 flex flex-col items-center gap-3 relative shadow-lg"
+                    >
+                      <div className="flex items-center justify-between w-full text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">{opp.avatar}</span>
+                          <span className="font-bold text-slate-200">{opp.name}</span>
+                        </div>
+                        {oppResult && (
+                          <div
+                            className={`font-black px-2.5 py-0.5 rounded-full text-xs ${
+                              oppResult.finalPoints >= 0
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : 'bg-rose-500/20 text-rose-400'
+                            }`}
+                          >
+                            {oppResult.finalPoints >= 0 ? `+${oppResult.finalPoints}` : oppResult.finalPoints} 分
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Opponent 3 Rows */}
+                      <div className="flex flex-col items-center gap-1.5 w-full">
+                        {/* Front 3 cards */}
+                        <div className="flex gap-1">
+                          {(isRevealing ? opp.arrangement.front : [1, 2, 3]).map((c, i) => (
+                            <CardView
+                              key={`opp_f_${idx}_${i}`}
+                              card={isRevealing ? (c as Card) : undefined}
+                              isFaceDown={!isRevealing}
+                              size="sm"
+                            />
+                          ))}
+                        </div>
+                        {/* Middle 5 cards */}
+                        <div className="flex gap-1">
+                          {(isRevealing ? opp.arrangement.middle : [1, 2, 3, 4, 5]).map((c, i) => (
+                            <CardView
+                              key={`opp_m_${idx}_${i}`}
+                              card={isRevealing ? (c as Card) : undefined}
+                              isFaceDown={!isRevealing}
+                              size="sm"
+                            />
+                          ))}
+                        </div>
+                        {/* Back 5 cards */}
+                        <div className="flex gap-1">
+                          {(isRevealing ? opp.arrangement.back : [1, 2, 3, 4, 5]).map((c, i) => (
+                            <CardView
+                              key={`opp_b_${idx}_${i}`}
+                              card={isRevealing ? (c as Card) : undefined}
+                              isFaceDown={!isRevealing}
+                              size="sm"
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      {isRevealing && oppResult && (
+                        <HandSummary
+                          front={oppResult.frontScore}
+                          middle={oppResult.midScore}
+                          back={oppResult.backScore}
+                          isDaoShui={oppResult.arrangement.isDaoShui}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* Reveal Settlement Banner */}
+            {gameState === 'revealing' && matchResults && (
+              <div className="w-full bg-slate-900 border-2 border-blue-500/50 rounded-3xl p-6 shadow-2xl flex flex-col items-center gap-4 text-center animate-in zoom-in-95">
+                {(() => {
+                  const userResult = matchResults.find(r => r.playerId === 'player_user');
+                  const pts = userResult?.finalPoints || 0;
+                  const isGunner = Object.values(userResult?.dunScores || {}).some((d: { isGun?: boolean }) => Boolean(d?.isGun));
+                  const isHomeRun = userResult?.isHomeRun;
+
+                  return (
+                    <>
+                      <div className="flex items-center gap-2">
+                        {isHomeRun && (
+                          <span className="bg-gradient-to-r from-amber-500 to-yellow-400 text-black font-black text-xs px-3 py-1 rounded-full animate-bounce">
+                            👑 全垒打 (Home Run) 积分翻倍!
+                          </span>
+                        )}
+                        {isGunner && !isHomeRun && (
+                          <span className="bg-indigo-600 text-white font-black text-xs px-3 py-1 rounded-full">
+                            💥 打枪大捷 (Gun Win)!
+                          </span>
+                        )}
+                      </div>
+
+                      <h2
+                        className={`text-3xl sm:text-4xl font-black ${
+                          pts > 0 ? 'text-emerald-400' : pts < 0 ? 'text-rose-400' : 'text-slate-300'
+                        }`}
+                      >
+                        {pts > 0 ? '🎉 旗开得胜！' : pts < 0 ? '💔 遗憾惜败！' : '🤝 势均力敌 (平局)'}
+                      </h2>
+
+                      <div className="text-slate-400 text-sm font-medium">
+                        本局净胜得分:{' '}
+                        <span className={`text-xl font-extrabold ${pts >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {pts >= 0 ? `+${pts}` : pts} 分
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3 mt-2">
+                        <button
+                          onClick={() => startNewMatch(mode)}
+                          className="px-6 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm shadow-lg shadow-blue-600/30 flex items-center gap-2 transition active:scale-95"
+                        >
+                          <RotateCcw className="w-4 h-4" /> 再来一局
+                        </button>
+                        <button
+                          onClick={() => setGameState('menu')}
+                          className="px-5 py-3 rounded-2xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold text-sm transition"
+                        >
+                          返回大厅
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Special Hand Alert Banner */}
+            {specialHand && gameState === 'arranging' && (
+              <SpecialHandBanner
+                specialHand={specialHand}
+                isUsed={useSpecialHand}
+                onUseSpecial={() => setUseSpecialHand(!useSpecialHand)}
+              />
+            )}
+
+            {/* Player's Card Arrangement Table */}
+            <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl flex flex-col items-center gap-6">
+              {/* Header & Quick Action Buttons */}
+              <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-600/20 text-blue-400 flex items-center justify-center text-xl font-bold">
+                    🀄
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base sm:text-lg text-white">
+                      {playerName} 的手牌布局
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      点击手牌再点击下方空槽摆牌，或使用右侧一键智能理牌
+                    </p>
+                  </div>
+                </div>
+
+                {gameState === 'arranging' && (
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    {/* Auto-arrange Smart Suggestions Button */}
+                    <button
+                      onClick={() => setShowSuggestions(!showSuggestions)}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-black flex items-center gap-1.5 shadow transition active:scale-95"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-yellow-200" />
+                      智能推荐理牌 ({suggestions.length})
+                    </button>
+
+                    {/* Reset Slots */}
+                    <button
+                      onClick={handleResetSlots}
+                      className="px-3 py-2 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-bold transition"
+                      title="清空已摆放的牌槽"
+                    >
+                      清空
+                    </button>
+
+                    {/* Submit Button */}
+                    <button
+                      onClick={handleSubmitArrangement}
+                      disabled={pool.length > 0 && !useSpecialHand}
+                      className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      提交比牌
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Suggestions Drawer Popup */}
+              {showSuggestions && gameState === 'arranging' && (
+                <div className="w-full bg-slate-800/90 border border-slate-700 rounded-2xl p-4 animate-in fade-in space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-amber-400 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5" /> 算法计算出的最佳推荐方案
+                    </span>
+                    <button
+                      onClick={() => setShowSuggestions(false)}
+                      className="text-slate-400 hover:text-slate-200"
+                    >
+                      收起
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {suggestions.map((opt, i) => (
+                      <div
+                        key={i}
+                        onClick={() => applySuggestion(opt)}
+                        className="p-3 rounded-xl bg-slate-900/80 hover:bg-slate-750 border border-slate-700 hover:border-blue-500 cursor-pointer transition flex flex-col justify-between gap-2 group"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-xs text-white group-hover:text-blue-400">
+                              {opt.tag}
+                            </span>
+                            <span className="text-[10px] text-slate-400">方案 {i + 1}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 leading-snug">
+                            {opt.title}
+                          </p>
+                        </div>
+                        <div className="text-[10px] text-blue-400 font-bold text-right group-hover:underline">
+                          一键应用 &rarr;
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Error Message */}
+              {errorMsg && (
+                <div className="w-full p-3 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  {errorMsg}
+                </div>
+              )}
+
+              {/* 3 Slots: Front (3), Middle (5), Back (5) */}
+              <div className="flex flex-col items-center gap-4 w-full">
+                {/* 1. FRONT (前墩 3张) */}
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                    <span className="w-2 h-2 rounded-full bg-blue-500" />
+                    前墩 (3 张牌)
+                  </div>
+                  <div className="flex gap-2">
+                    {front.map((c, i) => (
+                      <CardView
+                        key={`front_${i}`}
+                        card={c || undefined}
+                        size="lg"
+                        onClick={() => handleSlotClick('front', i)}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. MIDDLE (中墩 5张) */}
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                    中墩 (5 张牌)
+                  </div>
+                  <div className="flex gap-2">
+                    {mid.map((c, i) => (
+                      <CardView
+                        key={`mid_${i}`}
+                        card={c || undefined}
+                        size="lg"
+                        onClick={() => handleSlotClick('mid', i)}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. BACK (后墩 5张) */}
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                    <span className="w-2 h-2 rounded-full bg-purple-500" />
+                    后墩 (5 张牌)
+                  </div>
+                  <div className="flex gap-2">
+                    {back.map((c, i) => (
+                      <CardView
+                        key={`back_${i}`}
+                        card={c || undefined}
+                        size="lg"
+                        onClick={() => handleSlotClick('back', i)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Hand Pool (Unplaced Cards) */}
+            {gameState === 'arranging' && (
+              <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col items-center gap-3">
+                <div className="flex items-center justify-between w-full text-xs text-slate-400">
+                  <span className="font-bold">
+                    未放置手牌 ({pool.length} / 13)
+                  </span>
+                  <span>点击卡牌，再点击上方空槽即可放入</span>
+                </div>
+
+                {pool.length === 0 ? (
+                  <div className="py-6 text-emerald-400 font-bold text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    13 张牌已全部放置完成，请核对后点击右上角“提交比牌”！
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap justify-center gap-2 pt-2">
+                    {pool.map(c => (
+                      <CardView
+                        key={c.id}
+                        card={c}
+                        selected={selectedCardId === c.id}
+                        size="lg"
+                        onClick={() => handlePoolCardClick(c)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* 5. Footer */}
+      <footer className="border-t border-slate-800/80 bg-slate-900/40 px-6 py-4 text-center text-xs text-slate-500">
+        <div>十三水 (Chinese Poker) · Cloudflare Pages + Functions + D1 自动建表持久化</div>
+      </footer>
+
+      {/* Modals */}
+      <D1StatusModal
+        isOpen={showD1Modal}
+        onClose={() => setShowD1Modal(false)}
+        d1Status={d1Status}
+        onRefresh={() => {
+          ApiClient.initializeDatabase().then(setD1Status);
+        }}
+      />
+
+      <RuleModal isOpen={showRuleModal} onClose={() => setShowRuleModal(false)} />
+
+      <LeaderboardModal
+        isOpen={showRankModal}
+        onClose={() => setShowRankModal(false)}
+        currentPlayerName={playerName}
+      />
+    </div>
+  );
+}
