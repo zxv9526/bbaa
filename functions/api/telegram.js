@@ -267,33 +267,47 @@ async function isUserAdmin(user, db, configuredAdminIds) {
 async function handleBotCommand(commandText, user, db, adminPassword, configuredAdminIds, isSimulation = false) {
   const rawCmd = (commandText || '').trim();
   const parts = rawCmd.split(/\s+/);
-  const mainCmd = parts[0].toLowerCase();
-  const arg1 = parts[1];
+  let mainCmd = parts[0].toLowerCase();
+  let arg1 = parts[1];
   const userIdStr = String(user?.id || '');
   const usernameStr = user?.username ? `@${user.username}` : '无用户名';
+
+  if (rawCmd === '📱 授权手机号') mainCmd = '/authlist';
+  else if (rawCmd === '👥 活跃玩家') mainCmd = '/players';
+  else if (rawCmd === '🏆 全服风云榜') mainCmd = '/rank';
+  else if (rawCmd === '📊 数据总览') mainCmd = '/stats';
+  else if (rawCmd === '📜 最新对局') mainCmd = '/history';
+  else if (rawCmd === '🆔 我的状态') mainCmd = '/myid';
+  else if (rawCmd === '❓ 帮助说明') mainCmd = '/help';
+  else if (/^1[3-9]\d{9}$/.test(rawCmd)) {
+    mainCmd = '/auth';
+    arg1 = rawCmd;
+  }
 
   // Check admin authorization
   const isAdmin = isSimulation || (await isUserAdmin(user, db, configuredAdminIds));
 
   // Quick Navigation Keyboard
   const mainKeyboard = {
-    inline_keyboard: [
+    keyboard: [
       [
-        { text: '📱 授权手机号名录', callback_data: '/authlist' },
-        { text: '👥 活跃玩家名录', callback_data: '/players' }
+        { text: '📱 授权手机号' },
+        { text: '👥 活跃玩家' }
       ],
       [
-        { text: '🏆 全服风云榜', callback_data: '/rank' },
-        { text: '📊 游戏数据总览', callback_data: '/stats' }
+        { text: '🏆 全服风云榜' },
+        { text: '📊 数据总览' }
       ],
       [
-        { text: '📜 最新对局流水', callback_data: '/history' },
-        { text: '🆔 我的账号状态', callback_data: '/myid' }
+        { text: '📜 最新对局' },
+        { text: '🆔 我的状态' }
       ],
       [
-        { text: '❓ 帮助与指令说明', callback_data: '/help' }
+        { text: '❓ 帮助说明' }
       ]
-    ]
+    ],
+    resize_keyboard: true,
+    is_persistent: true
   };
 
   // 1. Command: /myid or /id or /whoami (View current Telegram ID and authorization)
@@ -322,9 +336,7 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
   if (mainCmd === '/help_auth') {
     return {
       text: `📱 <b>Bot 手机号授权指令</b>\n\n使用方式：\n<code>/auth 手机号码</code>\n\n例如：<code>/auth 13912345678</code>\n\n<i>授权后该手机号方可在游戏中注册新账号。</i>`,
-      reply_markup: {
-        inline_keyboard: [[{ text: '🔙 返回授权名录', callback_data: '/authlist' }], [{ text: '🏠 返回主菜单', callback_data: '/start' }]]
-      }
+      reply_markup: mainKeyboard
     };
   }
   
@@ -361,12 +373,7 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
   if (!isAdmin) {
     return {
       text: `🔒 <b>管理权限受限</b>\n\n您的 Telegram ID: <code>${userIdStr}</code> 尚未加入管理员白名单。\n\n如需开启管理权限，请将此 ID 添加到 Cloudflare Pages 环境变量 <b>TELEGRAM_ADMIN_IDS</b> 中。`,
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '🆔 查看我的 ID', callback_data: '/myid' }],
-          [{ text: '❓ 帮助说明', callback_data: '/help' }]
-        ]
-      }
+      reply_markup: mainKeyboard
     };
   }
 
@@ -389,9 +396,7 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
     }
     return {
       text: `✅ <b>手机号授权成功</b>\n\n手机号 <code>${cleanPhone}</code> 已成功获得注册授权，现在可以在游戏中完成注册！`,
-      reply_markup: {
-        inline_keyboard: [[{ text: '🔙 返回授权名录', callback_data: '/authlist' }], [{ text: '🏠 返回主菜单', callback_data: '/start' }]]
-      }
+      reply_markup: mainKeyboard
     };
   }
 
@@ -409,9 +414,7 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
     }
     return {
       text: `🚫 <b>已取消注册授权</b>\n\n已移除手机号 <code>${cleanPhone}</code> 的注册授权权限。`,
-      reply_markup: {
-        inline_keyboard: [[{ text: '🔙 返回授权名录', callback_data: '/authlist' }], [{ text: '🏠 返回主菜单', callback_data: '/start' }]]
-      }
+      reply_markup: mainKeyboard
     };
   }
 
@@ -426,31 +429,13 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
       }
     }
     
-    const inlineBtns = [];
-    if (list.length > 0) {
-      // Create a grid: 2 columns for phones to save space, or just list text and minimal buttons
-      // Let's limit inline buttons to top 15 to avoid telegram limits
-      const limitList = list.slice(0, 15);
-      limitList.forEach(p => {
-         inlineBtns.push([
-           { text: `📱 ${p}`, callback_data: `ignore` },
-           { text: `🚫 取消授权`, callback_data: `/unauth ${p}` }
-         ]);
-      });
-      if (list.length > 15) {
-         inlineBtns.push([{ text: `... 更多授权请在系统面板查看`, callback_data: `ignore` }]);
-      }
-    }
-    inlineBtns.push([{ text: '➕ 新增授权 (用法: /auth 手机号)', callback_data: '/help_auth' }]);
-    inlineBtns.push([{ text: '🏠 返回主菜单', callback_data: '/start' }]);
-
     const listStr = list.length > 0
       ? `当前共有 <b>${list.length}</b> 个授权手机号，最近授权列表如下：\n` + list.map(p => `• <code>${p}</code>`).join('\n')
       : '<i>暂无云端授权手机号记录。</i>';
 
     return {
-      text: `📱 <b>已授权手机号名录</b>\n━━━━━━━━━━━━━━━━━━\n${listStr}\n\n👇 <b>快捷管理区 (最近 15 条)：</b>`,
-      reply_markup: { inline_keyboard: inlineBtns }
+      text: `📱 <b>已授权手机号名录</b>\n━━━━━━━━━━━━━━━━━━\n${listStr}\n\n👇 <b>快捷操作指南：</b>\n直接在输入框输入 11位手机号码 即可快捷授权新用户。\n如需取消授权，请回复：<code>/unauth 手机号码</code>`,
+      reply_markup: mainKeyboard
     };
   }
 
@@ -543,14 +528,9 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
           playerRecord = fuzzyList.results[0];
         } else if (fuzzyList?.results && fuzzyList.results.length > 1) {
           // Multiple matches: show clickable suggestions
-          const buttons = fuzzyList.results.map(p => [{
-            text: `👤 ${p.name} (${p.total_points >= 0 ? '+' : ''}${p.total_points}分)`,
-            callback_data: `/score ${p.name}`
-          }]);
-
           return {
-            text: `🔍 找到多位匹配 <b>"${escapeHtml(targetPlayerName)}"</b> 的玩家，请点击选择：`,
-            reply_markup: { inline_keyboard: buttons }
+            text: `🔍 找到多位匹配 <b>"${escapeHtml(targetPlayerName)}"</b> 的玩家：\n` + fuzzyList.results.map(p => `• ${escapeHtml(p.name)}`).join('\n') + `\n\n请直接回复输入准确的玩家全名进行查询。`,
+            reply_markup: mainKeyboard
           };
         }
       }
@@ -611,18 +591,7 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
           `🎮 <b>累计对局</b>: ${playerRecord.total_games} 局\n` +
           `✨ <b>特殊牌诞生</b>: ${playerRecord.special_hands_count || 0} 次` +
           matchesText,
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: '🔄 刷新此玩家', callback_data: `/score ${playerRecord.name}` },
-              { text: '🏆 全服风云榜', callback_data: '/rank' }
-            ],
-            [
-              { text: '👥 查看所有玩家', callback_data: '/players' },
-              { text: '📜 最新对局', callback_data: '/history' }
-            ]
-          ]
-        }
+        reply_markup: mainKeyboard
       };
     } catch (e) {
       return { text: `❌ 查询玩家数据出错: ${e.message}` };
@@ -698,22 +667,11 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
       }).join('\n');
 
       // Provide direct buttons for top 6 players
-      const quickButtons = [];
-      for (let i = 0; i < Math.min(list.length, 6); i += 2) {
-        const row = [];
-        row.push({ text: `👤 ${list[i].name}`, callback_data: `/score ${list[i].name}` });
-        if (list[i + 1]) {
-          row.push({ text: `👤 ${list[i + 1].name}`, callback_data: `/score ${list[i + 1].name}` });
-        }
-        quickButtons.push(row);
-      }
-      quickButtons.push([{ text: '🏆 查看排行榜', callback_data: '/rank' }]);
-
       return {
         text: `👥 <b>活跃玩家名录 (共 ${list.length} 位)</b>\n━━━━━━━━━━━━━━━━━━\n` +
           rows +
-          `\n\n🔍 点击下方快捷按钮或发送玩家名查分：`,
-        reply_markup: { inline_keyboard: quickButtons }
+          `\n\n🔍 发送 <code>/score 玩家名</code> 或直接发送 <b>玩家名</b> 查看分数详情：`,
+        reply_markup: mainKeyboard
       };
     } catch (e) {
       return { text: `❌ 查询玩家列表出错: ${e.message}` };

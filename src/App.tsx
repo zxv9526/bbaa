@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { PatternChanger } from './lib/patternChanger';
+import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { Card, GameRecord, PlayerArrangement, PlayerScoreDetail, SpecialHandType, PlayerStats, UserAccount } from './types';
 import {
@@ -29,7 +30,6 @@ import { ShowdownStage } from './components/ShowdownStage';
 import { CardSkinModal } from './components/CardSkinModal';
 import { AuthModal } from './components/AuthModal';
 import { PointsManagementModal } from './components/PointsManagementModal';
-import { TelegramAdminModal } from './components/TelegramAdminModal';
 import { initCardSkins } from './lib/cardSkin';
 import {
   getCurrentAccount,
@@ -69,8 +69,7 @@ import {
   UserCheck,
   ChevronRight,
   Gem,
-  Gift,
-  Bot
+  Gift
 } from 'lucide-react';
 
 type GameMode = 'vs_ai_8p' | 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer';
@@ -91,7 +90,6 @@ export default function App() {
   // Modals
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showPointsModal, setShowPointsModal] = useState(false);
-  const [showTelegramAdminModal, setShowTelegramAdminModal] = useState(false);
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [showRankModal, setShowRankModal] = useState(false);
   const [showPracticeModal, setShowPracticeModal] = useState(false);
@@ -112,8 +110,8 @@ export default function App() {
 
   // AI Suggestions
   const [suggestions, setSuggestions] = useState<ArrangementOption[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-
+  const patternChangerRef = useRef<PatternChanger | null>(null);
+  
   // Match State (Supports 2, 4, or 8 players)
   const [playersInMatch, setPlayersInMatch] = useState<{
     id: string;
@@ -207,6 +205,7 @@ export default function App() {
     // Compute AI Suggestions for player
     const smartSuggestions = getSuggestedArrangements(sortedPlayerHand);
     setSuggestions(smartSuggestions);
+    patternChangerRef.current = new PatternChanger(sortedPlayerHand);
 
     // Prepare other players (AI)
     const playersList: {
@@ -408,6 +407,22 @@ export default function App() {
   };
 
   // Auto Fix Dao Shui (一键修正倒水)
+  
+  const handleChangePattern = () => {
+    sounds.playCardPick();
+    if (patternChangerRef.current) {
+      const nextPattern = patternChangerRef.current.getNextPattern();
+      if (nextPattern) {
+        setFront(nextPattern.front);
+        setMid(nextPattern.middle);
+        setBack(nextPattern.back);
+        setPool([]);
+        setSelectedCardId(null);
+        setErrorMsg('');
+      }
+    }
+  };
+
   const handleAutoFix = () => {
     sounds.playAutoArrange();
     const allPlacedOrPool = [
@@ -437,8 +452,7 @@ export default function App() {
     setPool([]);
     setSelectedCardId(null);
     setErrorMsg('');
-    setShowSuggestions(false);
-  };
+      };
 
   // Reset slots to original hand order
   const handleResetSlots = () => {
@@ -586,82 +600,77 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
-      {/* 1. Header Bar: Ultra clean, strict adherence to user request */}
-      <header className="shrink-0 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
-        {/* TOP LEFT: Registration / Login / Profile Entry */}
-        <button
-          id="user-auth-entry-btn"
-          onClick={() => setShowAuthModal(true)}
-          className="flex items-center gap-3 px-3.5 py-2 rounded-2xl border border-slate-800 bg-slate-950/80 hover:bg-slate-900 hover:border-blue-500/50 transition active:scale-95 text-left group shadow-sm"
-          title="手机号登录 / 注册 / 个人中心"
-        >
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600/30 to-indigo-600/30 border border-blue-500/40 flex items-center justify-center text-xl shadow-inner group-hover:scale-105 transition">
-            {currentAccount.avatar}
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-white group-hover:text-blue-300 transition truncate max-w-[120px]">
-                {currentAccount.nickname}
-              </span>
-            </div>
-            <div className="text-[11px] text-slate-400 font-mono">
-              {currentAccount.phone}
-            </div>
-          </div>
-        </button>
-
-        {/* Center Brand Title */}
-        <div
-          onClick={() => setGameState('menu')}
-          className="cursor-pointer select-none text-center"
-        >
-          <h1 className="font-black text-xl tracking-wider text-white flex items-center justify-center gap-2">
-            十三水
-          </h1>
-        </div>
-
-        {/* TOP RIGHT: Bot Admin & Points Management Entry */}
-        <div className="flex items-center gap-2 sm:gap-3">
+      {/* 1. Header Bar */}
+      {gameState === 'menu' ? (
+        <header className="shrink-0 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
+          {/* TOP LEFT: Registration / Login / Profile Entry */}
           <button
-            id="bot-admin-entry-btn"
-            onClick={() => setShowTelegramAdminModal(true)}
-            className="flex items-center gap-2 px-3 py-2 rounded-2xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/50 to-slate-950 hover:border-emerald-400 text-emerald-300 transition active:scale-95 shadow-md shadow-emerald-500/10 group"
-            title="Bot 管理员中心：注册授权、查分、增减积分"
+            id="user-auth-entry-btn"
+            onClick={() => setShowAuthModal(true)}
+            className="flex items-center gap-3 px-3.5 py-2 rounded-2xl border border-slate-800 bg-slate-950/80 hover:bg-slate-900 hover:border-blue-500/50 transition active:scale-95 text-left group shadow-sm"
+            title="手机号登录 / 注册 / 个人中心"
           >
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-base text-emerald-400 group-hover:scale-110 transition">
-              <Bot className="w-4 h-4" />
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600/30 to-indigo-600/30 border border-blue-500/40 flex items-center justify-center text-xl shadow-inner group-hover:scale-105 transition">
+              {currentAccount.avatar}
             </div>
-            <div className="text-left hidden sm:block">
-              <div className="text-[10px] text-emerald-400/80 font-bold">Bot 管理</div>
-              <div className="text-xs font-black text-emerald-300 leading-none">
-                授权 & 查控
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-bold text-white group-hover:text-blue-300 transition truncate max-w-[120px]">
+                  {currentAccount.nickname}
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400 font-mono">
+                {currentAccount.phone}
               </div>
             </div>
           </button>
-
-          <button
-            id="points-management-entry-btn"
-            onClick={() => setShowPointsModal(true)}
-            className="flex items-center gap-2.5 px-3.5 sm:px-4 py-2 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/50 to-slate-950 hover:border-amber-400 text-amber-300 transition active:scale-95 shadow-md shadow-amber-500/10 group"
-            title="点击打开积分管理：手机号互赠积分"
+          
+          {/* Center Brand Title */}
+          <div
+            onClick={() => setGameState('menu')}
+            className="cursor-pointer select-none text-center"
           >
-            <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-base text-amber-400 group-hover:scale-110 transition">
-              🪙
-            </div>
-            <div className="text-left">
-              <div className="text-[10px] text-amber-400/80 font-bold">积分管理</div>
-              <div className="text-sm font-black text-amber-400 leading-none">
-                {currentAccount.points.toLocaleString()}
+            <h1 className="font-black text-xl tracking-wider text-white flex items-center justify-center gap-2">
+              十三水
+            </h1>
+          </div>
+
+          {/* TOP RIGHT: Points Management Entry */}
+          <div className="flex items-center gap-3">
+            <button
+              id="points-management-entry-btn"
+              onClick={() => setShowPointsModal(true)}
+              className="flex items-center gap-2.5 px-3.5 sm:px-4 py-2 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/50 to-slate-950 hover:border-amber-400 text-amber-300 transition active:scale-95 shadow-md shadow-amber-500/10 group"
+              title="点击打开积分管理：手机号互赠积分"
+            >
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-base text-amber-400 group-hover:scale-110 transition">
+                🪙
               </div>
-            </div>
-          </button>
-        </div>
-      </header>
+              <div className="text-left">
+                <div className="text-[10px] text-amber-400/80 font-bold">积分管理</div>
+                <div className="text-sm font-black text-amber-400 leading-none">
+                  {currentAccount.points.toLocaleString()}
+                </div>
+              </div>
+            </button>
+          </div>
+        </header>
+      ) : (
+        <header className="shrink-0 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 px-4 py-2 flex items-center justify-center shadow-sm overflow-x-auto no-scrollbar">
+          <div className="flex flex-nowrap items-center justify-center gap-3 w-full max-w-5xl whitespace-nowrap">
+            <span className="text-xs font-bold text-slate-400 shrink-0">参赛玩家：</span>
+            {playersInMatch.map(p => (
+              <div key={p.id} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/80 rounded-xl border border-slate-700/50 shrink-0">
+                <span className="text-sm">{p.avatar}</span>
+                <span className="text-xs font-bold text-slate-200">{p.name} {p.isAi ? '' : '(我)'}</span>
+              </div>
+            ))}
+          </div>
+        </header>
+      )}
 
       {/* 2. Main Body Content: Minimalist & Clean Two Arena Blocks */}
-      <main className={`flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-3 flex flex-col items-center justify-center ${
-        gameState === 'menu' ? 'overflow-hidden' : 'overflow-y-auto'
-      }`}>
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-3 flex flex-col items-center justify-center overflow-hidden">
         {gameState === 'menu' && (
           <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 my-auto">
             {/* BLOCK 1: 八人场 (8-Player Arena) */}
@@ -756,53 +765,9 @@ export default function App() {
             />
           </div>
         )}
-
         {gameState === 'arranging' && (
           <div className="w-full max-w-5xl flex flex-col items-center gap-6">
-            {/* Top Opponents Face-down cards preview */}
-            <div className={`w-full grid gap-3 ${
-              playersInMatch.filter(p => p.isAi).length > 3
-                ? 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-7'
-                : 'grid-cols-1 sm:grid-cols-3'
-            }`}>
-              {playersInMatch
-                .filter(p => p.isAi)
-                .map((opp, idx) => (
-                  <div
-                    key={opp.id}
-                    className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-col items-center gap-2 relative shadow-lg"
-                  >
-                    <div className="flex items-center justify-between w-full text-xs">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span className="text-base">{opp.avatar}</span>
-                        <span className="font-bold text-slate-200 truncate text-[11px]">{opp.name}</span>
-                      </div>
-                      <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.2 rounded-full border border-emerald-500/20 whitespace-nowrap">
-                        理牌中...
-                      </span>
-                    </div>
 
-                    {/* Opponent Face-down stack */}
-                    <div className="flex flex-col items-center gap-1 w-full py-1">
-                      <div className="flex gap-0.5">
-                        {[1, 2, 3].map(i => (
-                          <CardView key={`ai_f_${idx}_${i}`} isFaceDown size="sm" />
-                        ))}
-                      </div>
-                      <div className="flex gap-0.5">
-                        {[1, 2, 3, 4, 5].map(i => (
-                          <CardView key={`ai_m_${idx}_${i}`} isFaceDown size="sm" />
-                        ))}
-                      </div>
-                      <div className="flex gap-0.5">
-                        {[1, 2, 3, 4, 5].map(i => (
-                          <CardView key={`ai_b_${idx}_${i}`} isFaceDown size="sm" />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-            </div>
 
             {/* Special Hand Alert Banner */}
             {specialHand && (
@@ -826,11 +791,10 @@ export default function App() {
                       {playerName} 的理牌台
                     </h3>
                     <p className="text-xs text-slate-400">
-                      点击手牌再点击槽位，或使用右侧智能理牌与快捷牌型
+                      点击手牌再点击槽位进行互换，或点击下方变换牌型
                     </p>
                   </div>
                 </div>
-
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                   {/* Swap Mid and Back */}
                   <button
@@ -840,7 +804,6 @@ export default function App() {
                   >
                     <ArrowUpDown className="w-3.5 h-3.5" /> 中后互换
                   </button>
-
                   {/* Auto-fix Dao Shui if invalid */}
                   {isCurrentDaoShui && (
                     <button
@@ -851,78 +814,8 @@ export default function App() {
                       <Wand2 className="w-3.5 h-3.5" /> 一键调水
                     </button>
                   )}
-
-                  {/* Auto-arrange Smart Suggestions Button */}
-                  <button
-                    onClick={() => setShowSuggestions(!showSuggestions)}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-black flex items-center gap-1.5 shadow transition active:scale-95"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-yellow-200" />
-                    智能推荐 ({suggestions.length})
-                  </button>
-
-                  {/* Reset Slots */}
-                  <button
-                    onClick={handleResetSlots}
-                    className="px-3 py-2 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-bold transition"
-                    title="清空已摆放的牌槽"
-                  >
-                    清空
-                  </button>
-
-                  {/* Submit Button */}
-                  <button
-                    onClick={handleSubmitArrangement}
-                    disabled={pool.length > 0 && !useSpecialHand}
-                    className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    提交比牌
-                  </button>
                 </div>
               </div>
-
-              {/* Suggestions Drawer Popup */}
-              {showSuggestions && (
-                <div className="w-full bg-slate-800/90 border border-slate-700 rounded-2xl p-4 animate-in fade-in space-y-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-amber-400 flex items-center gap-1">
-                      <Sparkles className="w-3.5 h-3.5" /> 算法计算出的最佳推荐方案
-                    </span>
-                    <button
-                      onClick={() => setShowSuggestions(false)}
-                      className="text-slate-400 hover:text-slate-200"
-                    >
-                      收起
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {suggestions.map((opt, i) => (
-                      <div
-                        key={i}
-                        onClick={() => applySuggestion(opt)}
-                        className="p-3 rounded-xl bg-slate-900/80 hover:bg-slate-750 border border-slate-700 hover:border-blue-500 cursor-pointer transition flex flex-col justify-between gap-2 group"
-                      >
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-bold text-xs text-white group-hover:text-blue-400">
-                              {opt.tag}
-                            </span>
-                            <span className="text-[10px] text-slate-400">方案 {i + 1}</span>
-                          </div>
-                          <p className="text-[11px] text-slate-400 leading-snug">
-                            {opt.title}
-                          </p>
-                        </div>
-                        <div className="text-[10px] text-blue-400 font-bold text-right group-hover:underline">
-                          一键应用 &rarr;
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Error Message */}
               {errorMsg && (
@@ -1010,6 +903,25 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Bottom Actions: Change Pattern and Submit */}
+              <div className="w-full flex items-center justify-center gap-4 pt-4 border-t border-slate-800/80">
+                <button
+                  onClick={handleChangePattern}
+                  className="px-6 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm font-bold flex items-center gap-2 shadow transition active:scale-95"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  变换牌型
+                </button>
+                <button
+                  onClick={handleSubmitArrangement}
+                  disabled={pool.length > 0 && !useSpecialHand}
+                  className="px-8 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white text-sm font-black flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <CheckCircle2 className="w-5 h-5" />
+                  提交牌型
+                </button>
+              </div>
+
               {/* Status Validation Alert */}
               {isCurrentDaoShui && (
                 <div className="w-full p-3 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold text-center flex items-center justify-center gap-2">
@@ -1018,57 +930,9 @@ export default function App() {
                 </div>
               )}
             </div>
-
-            {/* Quick Pattern Extraction Bar */}
-            {availablePatterns.length > 0 && (
-              <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-4 shadow-xl space-y-2.5">
-                <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-                  <span className="font-bold flex items-center gap-1.5 text-blue-400">
-                    <Layers className="w-3.5 h-3.5" /> 快捷牌型提取（点击即可一键填入目标墩位）:
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {availablePatterns.map(pat => (
-                    <div
-                      key={pat.id}
-                      className="group relative flex items-center bg-slate-800/90 hover:bg-slate-750 border border-slate-700 rounded-xl px-3 py-1.5 text-xs transition"
-                    >
-                      <span className="font-bold text-slate-200 mr-2">{pat.name}</span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleApplyPatternToDun(pat.cards, 'back')}
-                          className="px-1.5 py-0.5 rounded bg-purple-600/30 hover:bg-purple-600 text-purple-200 text-[10px] font-bold transition"
-                          title="填入后墩"
-                        >
-                          填后墩
-                        </button>
-                        <button
-                          onClick={() => handleApplyPatternToDun(pat.cards, 'mid')}
-                          className="px-1.5 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 text-[10px] font-bold transition"
-                          title="填入中墩"
-                        >
-                          填中墩
-                        </button>
-                        {pat.cards.length <= 3 && (
-                          <button
-                            onClick={() => handleApplyPatternToDun(pat.cards, 'front')}
-                            className="px-1.5 py-0.5 rounded bg-blue-600/30 hover:bg-blue-600 text-blue-200 text-[10px] font-bold transition"
-                            title="填入前墩"
-                          >
-                            填前墩
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-                      </div>
+          </div>
         )}
       </main>
-
       {/* 5. Clean Footer */}
       <footer className="shrink-0 border-t border-slate-800/80 bg-slate-900/40 px-6 py-2.5 text-center text-xs text-slate-500">
         <div>十三水 (Chinese Poker) · 纯粹经典牌局</div>
@@ -1093,12 +957,7 @@ export default function App() {
         onAccountUpdated={acc => setCurrentAccount(acc)}
       />
 
-      <TelegramAdminModal
-        isOpen={showTelegramAdminModal}
-        onClose={() => setShowTelegramAdminModal(false)}
-        onRefreshCurrentAccount={() => setCurrentAccount(getCurrentAccount())}
-      />
-
+      
       <RuleModal isOpen={showRuleModal} onClose={() => setShowRuleModal(false)} />
 
       <PracticeModal
