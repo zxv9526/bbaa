@@ -38,10 +38,10 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
     return sortCards(deck.slice(0, 13));
   });
 
-  const [front, setFront] = useState<(Card | null)[]>([null, null, null]);
-  const [mid, setMid] = useState<(Card | null)[]>([null, null, null, null, null]);
-  const [back, setBack] = useState<(Card | null)[]>([null, null, null, null, null]);
-  const [pool, setPool] = useState<Card[]>(() => sortCards(hand));
+  const [front, setFront] = useState<(Card | null)[]>(() => sortCards(hand).slice(0, 3));
+  const [mid, setMid] = useState<(Card | null)[]>(() => sortCards(hand).slice(3, 8));
+  const [back, setBack] = useState<(Card | null)[]>(() => sortCards(hand).slice(8, 13));
+  const [pool, setPool] = useState<Card[]>([]);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
 
   const specialDetected = detectSpecialHand(hand);
@@ -53,10 +53,10 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
     const deck = shuffle(createDeck());
     const newHand = sortCards(deck.slice(0, 13));
     setHand(newHand);
-    setPool(newHand);
-    setFront([null, null, null]);
-    setMid([null, null, null, null, null]);
-    setBack([null, null, null, null, null]);
+    setPool([]);
+    setFront(newHand.slice(0, 3));
+    setMid(newHand.slice(3, 8));
+    setBack(newHand.slice(8, 13));
     setSelectedCardId(null);
   };
 
@@ -65,10 +65,10 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
     sounds.playAutoArrange();
     const newHand = sortCards(generateSpecialHand(type));
     setHand(newHand);
-    setPool(newHand);
-    setFront([null, null, null]);
-    setMid([null, null, null, null, null]);
-    setBack([null, null, null, null, null]);
+    setPool([]);
+    setFront(newHand.slice(0, 3));
+    setMid(newHand.slice(3, 8));
+    setBack(newHand.slice(8, 13));
     setSelectedCardId(null);
   };
 
@@ -93,13 +93,14 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
     setBack(currentMid);
   };
 
-  // Clear slots
+  // Reset slots
   const handleClearSlots = () => {
     sounds.playCardPick();
-    setPool(sortCards(hand));
-    setFront([null, null, null]);
-    setMid([null, null, null, null, null]);
-    setBack([null, null, null, null, null]);
+    const sorted = sortCards(hand);
+    setFront(sorted.slice(0, 3));
+    setMid(sorted.slice(3, 8));
+    setBack(sorted.slice(8, 13));
+    setPool([]);
     setSelectedCardId(null);
   };
 
@@ -113,28 +114,79 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
     }
   };
 
-  // Slot click
+  // Slot click to place or swap
   const handleSlotClick = (row: 'front' | 'mid' | 'back', index: number) => {
     const targetArray = row === 'front' ? front : row === 'mid' ? mid : back;
-    const setTargetArray = row === 'front' ? setFront : row === 'mid' ? setMid : setBack;
+    const clickedCard = targetArray[index];
 
-    if (targetArray[index] !== null) {
-      sounds.playCardPick();
-      const card = targetArray[index]!;
-      setPool(prev => sortCards([...prev, card]));
-      const newArr = [...targetArray];
-      newArr[index] = null;
-      setTargetArray(newArr);
-      if (selectedCardId === card.id) setSelectedCardId(null);
-    } else if (selectedCardId) {
-      sounds.playCardPick();
-      const card = pool.find(c => c.id === selectedCardId);
-      if (card) {
-        setPool(prev => prev.filter(c => c.id !== selectedCardId));
-        const newArr = [...targetArray];
-        newArr[index] = card;
-        setTargetArray(newArr);
+    if (selectedCardId) {
+      if (clickedCard && selectedCardId === clickedCard.id) {
         setSelectedCardId(null);
+        return;
+      }
+
+      sounds.playCardPick();
+      
+      let sourceRow: 'pool' | 'front' | 'mid' | 'back' = 'pool';
+      let sourceIndex = -1;
+      let selectedObj: Card | undefined;
+      
+      if ((sourceIndex = pool.findIndex(c => c.id === selectedCardId)) !== -1) {
+        sourceRow = 'pool';
+        selectedObj = pool[sourceIndex];
+      } else if ((sourceIndex = front.findIndex(c => c?.id === selectedCardId)) !== -1) {
+        sourceRow = 'front';
+        selectedObj = front[sourceIndex]!;
+      } else if ((sourceIndex = mid.findIndex(c => c?.id === selectedCardId)) !== -1) {
+        sourceRow = 'mid';
+        selectedObj = mid[sourceIndex]!;
+      } else if ((sourceIndex = back.findIndex(c => c?.id === selectedCardId)) !== -1) {
+        sourceRow = 'back';
+        selectedObj = back[sourceIndex]!;
+      }
+
+      if (!selectedObj) return;
+
+      if (sourceRow === 'pool') {
+         setPool(prev => prev.filter(c => c.id !== selectedCardId));
+         const newArr = [...targetArray];
+         if (clickedCard) {
+            setPool(prev => sortCards([...prev, clickedCard]));
+         }
+         newArr[index] = selectedObj;
+         if (row === 'front') setFront(newArr);
+         else if (row === 'mid') setMid(newArr);
+         else setBack(newArr);
+      } else {
+         const sourceArray = sourceRow === 'front' ? front : sourceRow === 'mid' ? mid : back;
+         
+         if (sourceRow === row) {
+            const newArr = [...targetArray];
+            newArr[sourceIndex] = clickedCard || null;
+            newArr[index] = selectedObj;
+            if (row === 'front') setFront(newArr);
+            else if (row === 'mid') setMid(newArr);
+            else setBack(newArr);
+         } else {
+            const newSourceArr = [...sourceArray];
+            const newTargetArr = [...targetArray];
+            newSourceArr[sourceIndex] = clickedCard || null;
+            newTargetArr[index] = selectedObj;
+            
+            if (sourceRow === 'front') setFront(newSourceArr);
+            else if (sourceRow === 'mid') setMid(newSourceArr);
+            else setBack(newSourceArr);
+            
+            if (row === 'front') setFront(newTargetArr);
+            else if (row === 'mid') setMid(newTargetArr);
+            else setBack(newTargetArr);
+         }
+      }
+      setSelectedCardId(null);
+    } else {
+      if (clickedCard) {
+        sounds.playCardPick();
+        setSelectedCardId(clickedCard.id);
       }
     }
   };
@@ -332,30 +384,7 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
             </div>
           </div>
 
-          {/* Unplaced Pool */}
-          <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4">
-            <div className="text-xs font-bold text-slate-400 mb-2">
-              待摆手牌 ({pool.length} / 13):
-            </div>
-            {pool.length === 0 ? (
-              <div className="text-emerald-400 text-xs font-bold py-3 text-center">
-                手牌已全部入槽
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2 justify-center">
-                {pool.map(c => (
-                  <CardView
-                    key={c.id}
-                    card={c}
-                    size="md"
-                    selected={selectedCardId === c.id}
-                    onClick={() => handlePoolCardClick(c)}
-                  />
-                ))}
-              </div>
-            )}
           </div>
-        </div>
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
