@@ -124,19 +124,120 @@ export function authorizePhone(phone: string): { success: boolean; message: stri
     list.push(norm);
     localStorage.setItem(AUTHORIZED_PHONES_KEY, JSON.stringify(list));
   }
+
+  try {
+    fetch(`/api/telegram?action=auth&phone=${encodeURIComponent(norm)}`);
+  } catch {}
+
   return { success: true, message: `✅ 成功授权手机号: ${norm}，现可正常注册`, list };
 }
 
-export function revokePhone(phone: string): { success: boolean; message: string; list: string[] } {
+export async function revokePhone(phone: string): Promise<{ success: boolean; message: string; list: string[] }> {
   const norm = normalizePhone(phone);
   let list = getAuthorizedPhones();
-  if (!list.includes(norm)) {
-    return { success: false, message: `手机号 ${norm} 不在授权列表中`, list };
+
+  if (norm) {
+    list = list.filter(p => p !== norm);
+    localStorage.setItem(AUTHORIZED_PHONES_KEY, JSON.stringify(list));
   }
 
-  list = list.filter(p => p !== norm);
-  localStorage.setItem(AUTHORIZED_PHONES_KEY, JSON.stringify(list));
-  return { success: true, message: `🚫 已取消对手机号 ${norm} 的注册授权`, list };
+  try {
+    await fetch(`/api/telegram?action=unauth&phone=${encodeURIComponent(norm || phone)}`);
+  } catch {}
+
+  return { success: true, message: `🚫 已取消对手机号 ${norm || phone} 的注册授权`, list };
+}
+
+export async function syncWithServerAuth(): Promise<string[]> {
+  try {
+    const res = await fetch('/api/telegram?action=authlist');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.list) && data.list.length > 0) {
+        const currentList = getAuthorizedPhones();
+        let updated = false;
+        data.list.forEach((p: string) => {
+          const cleanP = normalizePhone(p);
+          if (cleanP && !currentList.includes(cleanP)) {
+            currentList.push(cleanP);
+            updated = true;
+          }
+        });
+        if (updated) {
+          localStorage.setItem(AUTHORIZED_PHONES_KEY, JSON.stringify(currentList));
+        }
+        return currentList;
+      }
+    }
+  } catch {}
+  return getAuthorizedPhones();
+}
+
+export async function deleteAccount(phoneOrNickname: string): Promise<{ success: boolean; message: string }> {
+  const query = phoneOrNickname.trim();
+  if (!query) {
+    return { success: false, message: '请输入要删除的手机号或玩家昵称' };
+  }
+
+  const normPhone = normalizePhone(query);
+  const db = getAllAccounts();
+  
+  let targetKey = Object.keys(db).find(k => normalizePhone(k) === normPhone);
+  if (!targetKey) {
+    targetKey = Object.keys(db).find(
+      k => db[k].account.nickname.toLowerCase() === query.toLowerCase() || db[k].account.phone === query
+    );
+  }
+
+  if (!targetKey) {
+    try {
+      await fetch(`/api/telegram?action=deluser&user=${encodeURIComponent(query)}`);
+    } catch {}
+    return { success: false, message: `未找到与 "${query}" 匹配的玩家账号` };
+  }
+
+  const targetAcc = db[targetKey].account;
+  const targetPhone = targetAcc.phone;
+
+  // 1. 从本地数据库抹除账号
+  delete db[targetKey];
+  saveAllAccounts(db);
+
+  // 2. 撤销手机号授权
+  await revokePhone(targetPhone);
+
+  // 3. 删除对局流水日志
+  try {
+    localStorage.removeItem(`${TRANSACTIONS_KEY_PREFIX}${targetPhone}`);
+  } catch {}
+
+  // 4. 发送服务端 D1 完全擦除数据
+  try {
+    await fetch(`/api/telegram?action=deluser&user=${encodeURIComponent(targetPhone)}`);
+    if (targetAcc.nickname) {
+      await fetch(`/api/telegram?action=deluser&user=${encodeURIComponent(targetAcc.nickname)}`);
+    }
+  } catch {}
+
+  // 5. 如果删除的是当前登录用户，进行重置/切换
+  const currentPhone = localStorage.getItem(CURRENT_USER_KEY);
+  if (currentPhone === targetPhone) {
+    localStorage.removeItem(CURRENT_USER_KEY);
+    const remainingKeys = Object.keys(db);
+    if (remainingKeys.length > 0) {
+      const nextAcc = db[remainingKeys[0]].account;
+      localStorage.setItem(CURRENT_USER_KEY, nextAcc.phone);
+      localStorage.setItem('thirteen_player_name', nextAcc.nickname);
+      notifyListeners(nextAcc);
+    } else {
+      getCurrentAccount();
+    }
+  }
+
+  return {
+    success: true,
+    message: `玩家 "${targetAcc.nickname}" (${targetPhone}) 及其战绩流水与注册授权已完全删除！`
+  };
 }
 
 // ----------------------------------------------------

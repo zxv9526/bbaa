@@ -625,34 +625,36 @@ export function calculateMatchScores(
           const s1 = SPECIAL_HAND_CN[p1.specialHand].points;
           const s2 = SPECIAL_HAND_CN[p2.specialHand].points;
           const diff = s1 - s2;
-          p1.dunScores[p2.playerId] = { front: 0, mid: 0, back: 0, total: diff, isGun: false };
-          p2.dunScores[p1.playerId] = { front: 0, mid: 0, back: 0, total: -diff, isGun: false };
+          p1.dunScores[p2.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: diff };
+          p2.dunScores[p1.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: -diff };
         } else if (p1.specialHand) {
           const s1 = SPECIAL_HAND_CN[p1.specialHand].points;
-          p1.dunScores[p2.playerId] = { front: 0, mid: 0, back: 0, total: s1, isGun: false };
-          p2.dunScores[p1.playerId] = { front: 0, mid: 0, back: 0, total: -s1, isGun: false };
+          p1.dunScores[p2.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: s1 };
+          p2.dunScores[p1.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: -s1 };
         } else if (p2.specialHand) {
           const s2 = SPECIAL_HAND_CN[p2.specialHand!].points;
-          p1.dunScores[p2.playerId] = { front: 0, mid: 0, back: 0, total: -s2, isGun: false };
-          p2.dunScores[p1.playerId] = { front: 0, mid: 0, back: 0, total: s2, isGun: false };
+          p1.dunScores[p2.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: -s2 };
+          p2.dunScores[p1.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: s2 };
         }
         continue;
       }
 
       // 处理倒水 (倒水玩家自动输给对方全部三墩并被判打枪)
       if (p1.arrangement.isDaoShui && p2.arrangement.isDaoShui) {
-        p1.dunScores[p2.playerId] = { front: 0, mid: 0, back: 0, total: 0, isGun: false };
-        p2.dunScores[p1.playerId] = { front: 0, mid: 0, back: 0, total: 0, isGun: false };
+        p1.dunScores[p2.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: 0 };
+        p2.dunScores[p1.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: 0 };
         continue;
       } else if (p1.arrangement.isDaoShui) {
-        // p1 倒水输 -6 (输3墩 + 打枪3)
-        p1.dunScores[p2.playerId] = { front: -1, mid: -1, back: -1, total: -6, isGun: false };
-        p2.dunScores[p1.playerId] = { front: 1, mid: 1, back: 1, total: 6, isGun: true };
+        const p2WinBonus = (p2.frontScore.bonusPoints || 0) + (p2.midScore.bonusPoints || 0) + (p2.backScore.bonusPoints || 0);
+        const totalP2Win = 6 + p2WinBonus;
+        p1.dunScores[p2.playerId] = { front: -1, frontBonus: -(p2.frontScore.bonusPoints || 0), mid: -1, midBonus: -(p2.midScore.bonusPoints || 0), back: -1, backBonus: -(p2.backScore.bonusPoints || 0), isGun: false, gunPoints: -3, total: -totalP2Win };
+        p2.dunScores[p1.playerId] = { front: 1, frontBonus: p2.frontScore.bonusPoints || 0, mid: 1, midBonus: p2.midScore.bonusPoints || 0, back: 1, backBonus: p2.backScore.bonusPoints || 0, isGun: true, gunPoints: 3, total: totalP2Win };
         continue;
       } else if (p2.arrangement.isDaoShui) {
-        // p2 倒水输 -6
-        p1.dunScores[p2.playerId] = { front: 1, mid: 1, back: 1, total: 6, isGun: true };
-        p2.dunScores[p1.playerId] = { front: -1, mid: -1, back: -1, total: -6, isGun: false };
+        const p1WinBonus = (p1.frontScore.bonusPoints || 0) + (p1.midScore.bonusPoints || 0) + (p1.backScore.bonusPoints || 0);
+        const totalP1Win = 6 + p1WinBonus;
+        p1.dunScores[p2.playerId] = { front: 1, frontBonus: p1.frontScore.bonusPoints || 0, mid: 1, midBonus: p1.midScore.bonusPoints || 0, back: 1, backBonus: p1.backScore.bonusPoints || 0, isGun: true, gunPoints: 3, total: totalP1Win };
+        p2.dunScores[p1.playerId] = { front: -1, frontBonus: -(p1.frontScore.bonusPoints || 0), mid: -1, midBonus: -(p1.midScore.bonusPoints || 0), back: -1, backBonus: -(p1.backScore.bonusPoints || 0), isGun: false, gunPoints: -3, total: -totalP1Win };
         continue;
       }
 
@@ -661,25 +663,48 @@ export function calculateMatchScores(
       const mDiff = p1.midScore.score > p2.midScore.score ? 1 : p1.midScore.score < p2.midScore.score ? -1 : 0;
       const bDiff = p1.backScore.score > p2.backScore.score ? 1 : p1.backScore.score < p2.backScore.score ? -1 : 0;
 
-      let baseTotal = fDiff + mDiff + bDiff;
+      // 喜分加水：胜墩者享受该墩的特殊喜分
+      const fBonus = fDiff > 0 ? (p1.frontScore.bonusPoints || 0) : fDiff < 0 ? -(p2.frontScore.bonusPoints || 0) : 0;
+      const mBonus = mDiff > 0 ? (p1.midScore.bonusPoints || 0) : mDiff < 0 ? -(p2.midScore.bonusPoints || 0) : 0;
+      const bBonus = bDiff > 0 ? (p1.backScore.bonusPoints || 0) : bDiff < 0 ? -(p2.backScore.bonusPoints || 0) : 0;
+
       let p1Gun = false;
       let p2Gun = false;
+      let gunPts = 0;
 
-      // 打枪 (三墩全赢)
       if (fDiff > 0 && mDiff > 0 && bDiff > 0) {
         p1Gun = true;
-        baseTotal *= 2; // 打枪得分翻倍
+        gunPts = 3; // 打枪追加3水 (基础3墩 + 打枪3水 = 6水)
       } else if (fDiff < 0 && mDiff < 0 && bDiff < 0) {
         p2Gun = true;
-        baseTotal *= 2; // 被打枪扣分翻倍
+        gunPts = -3; // 被打枪扣除3水
       }
 
-      // 附加墩位特殊加分差 (如铁支、同花顺等)
-      const bonusDiff = p1.bonusPoints - p2.bonusPoints;
-      const totalVsOpponent = baseTotal + bonusDiff;
+      const totalVsOpponent = (fDiff + fBonus) + (mDiff + mBonus) + (bDiff + bBonus) + gunPts;
 
-      p1.dunScores[p2.playerId] = { front: fDiff, mid: mDiff, back: bDiff, total: totalVsOpponent, isGun: p1Gun };
-      p2.dunScores[p1.playerId] = { front: -fDiff, mid: -mDiff, back: -bDiff, total: -totalVsOpponent, isGun: p2Gun };
+      p1.dunScores[p2.playerId] = {
+        front: fDiff,
+        frontBonus: fBonus,
+        mid: mDiff,
+        midBonus: mBonus,
+        back: bDiff,
+        backBonus: bBonus,
+        isGun: p1Gun,
+        gunPoints: gunPts,
+        total: totalVsOpponent
+      };
+
+      p2.dunScores[p1.playerId] = {
+        front: -fDiff,
+        frontBonus: -fBonus,
+        mid: -mDiff,
+        midBonus: -mBonus,
+        back: -bDiff,
+        backBonus: -bBonus,
+        isGun: p2Gun,
+        gunPoints: -gunPts,
+        total: -totalVsOpponent
+      };
     }
   }
 
@@ -700,6 +725,12 @@ export function calculateMatchScores(
     if (n >= 3 && gunsAgainstOthers === n - 1) {
       p.isHomeRun = true;
       sum *= 2; // 全垒打总分翻倍
+      // 保持对手零和扣分同步
+      for (const oppId of opponentIds) {
+        if (p.dunScores[oppId]) {
+          p.dunScores[oppId].total *= 2;
+        }
+      }
     }
 
     p.finalPoints = sum;

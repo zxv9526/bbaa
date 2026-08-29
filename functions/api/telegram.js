@@ -1,6 +1,17 @@
 // Cloudflare Pages Function: /api/telegram
 // Telegram Bot Webhook & Admin Management for Chinese Poker (十三水)
 
+const inMemoryAuthorizedPhones = new Set(['13800138000', '13900000000', '18888888888']);
+
+function normalizePhoneNum(phone) {
+  if (!phone) return '';
+  let cleaned = String(phone).trim().replace(/[^\d]/g, '');
+  if (cleaned.length === 13 && cleaned.startsWith('861')) {
+    cleaned = cleaned.substring(2);
+  }
+  return cleaned;
+}
+
 export async function onRequest(context) {
   const env = context.env || {};
   const db = env.DB || env.D1 || env.DATABASE || env.THIRTEEN_WATER_DB;
@@ -90,15 +101,22 @@ export async function onRequest(context) {
     // 1.1b Check Phone Authorization
     if (action === 'checkAuth') {
       const rawPhone = url.searchParams.get('phone') || '';
-      const phoneDigits = rawPhone.trim().replace(/[^\d]/g, '');
+      const phoneDigits = normalizePhoneNum(rawPhone);
       let authorized = false;
 
-      if (db && phoneDigits) {
+      if (phoneDigits && inMemoryAuthorizedPhones.has(phoneDigits)) {
+        authorized = true;
+      }
+
+      if (!authorized && db && phoneDigits) {
         try {
           await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_phones (phone TEXT PRIMARY KEY, authorized_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run();
           const clean11 = phoneDigits.length > 11 ? phoneDigits.slice(-11) : phoneDigits;
           const res = await db.prepare("SELECT phone FROM authorized_phones WHERE phone = ? OR phone = ? OR phone LIKE ? LIMIT 1").bind(phoneDigits, `+${phoneDigits}`, `%${clean11}`).first();
-          if (res) authorized = true;
+          if (res) {
+            authorized = true;
+            inMemoryAuthorizedPhones.add(phoneDigits);
+          }
         } catch (e) {
           console.error('D1 checkAuth err:', e);
         }
@@ -109,17 +127,77 @@ export async function onRequest(context) {
 
     // 1.1c Get Authorized Phones List
     if (action === 'authlist') {
-      let list = [];
+      let list = Array.from(inMemoryAuthorizedPhones);
       if (db) {
         try {
           await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_phones (phone TEXT PRIMARY KEY, authorized_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run();
           const res = await db.prepare("SELECT phone FROM authorized_phones ORDER BY authorized_at DESC").all();
-          list = res?.results?.map(r => r.phone) || [];
+          if (res?.results) {
+            res.results.forEach(r => {
+              const norm = normalizePhoneNum(r.phone);
+              if (norm && !list.includes(norm)) list.push(norm);
+            });
+          }
         } catch (e) {
           // ignore
         }
       }
       return new Response(JSON.stringify({ ok: true, list }), { headers });
+    }
+
+    // 1.1d Authorize Phone via Direct API
+    if (action === 'auth' || action === 'authorize') {
+      const rawPhone = url.searchParams.get('phone') || '';
+      const cleanPhone = normalizePhoneNum(rawPhone);
+      if (cleanPhone) {
+        inMemoryAuthorizedPhones.add(cleanPhone);
+        if (db) {
+          try {
+            await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_phones (phone TEXT PRIMARY KEY, authorized_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run();
+            await db.prepare(`INSERT OR IGNORE INTO authorized_phones (phone) VALUES (?)`).bind(cleanPhone).run();
+          } catch (e) {}
+        }
+      }
+      return new Response(JSON.stringify({ ok: true, phone: cleanPhone, list: Array.from(inMemoryAuthorizedPhones) }), { headers });
+    }
+
+    // 1.1e Revoke Phone via Direct API
+    if (action === 'unauth' || action === 'revoke') {
+      const rawPhone = url.searchParams.get('phone') || '';
+      const cleanPhone = normalizePhoneNum(rawPhone);
+      if (cleanPhone) {
+        inMemoryAuthorizedPhones.delete(cleanPhone);
+        if (db) {
+          try {
+            const clean11 = cleanPhone.length > 11 ? cleanPhone.slice(-11) : cleanPhone;
+            await db.prepare(`DELETE FROM authorized_phones WHERE phone = ? OR phone = ? OR phone LIKE ?`).bind(cleanPhone, `+${cleanPhone}`, `%${clean11}`).run();
+          } catch (e) {}
+        }
+      }
+      return new Response(JSON.stringify({ ok: true, phone: cleanPhone, list: Array.from(inMemoryAuthorizedPhones) }), { headers });
+    }
+
+    // 1.1f Delete User via Direct API
+    if (action === 'deluser' || action === 'deleteplayer') {
+      const targetUser = url.searchParams.get('user') || url.searchParams.get('phone') || '';
+      const cleanPhone = normalizePhoneNum(targetUser);
+      if (cleanPhone) {
+        inMemoryAuthorizedPhones.delete(cleanPhone);
+      }
+      if (db && targetUser) {
+        try {
+          const p = await db.prepare("SELECT * FROM players WHERE name = ? OR id = ? OR name LIKE ?").bind(targetUser, targetUser, `%${targetUser}%`).first();
+          if (p) {
+            await db.prepare("DELETE FROM players WHERE name = ? OR id = ?").bind(p.name, p.id).run();
+            await db.prepare("DELETE FROM game_records WHERE player_name = ?").bind(p.name).run();
+          }
+          if (cleanPhone) {
+            const clean11 = cleanPhone.length > 11 ? cleanPhone.slice(-11) : cleanPhone;
+            await db.prepare("DELETE FROM authorized_phones WHERE phone = ? OR phone = ? OR phone LIKE ?").bind(cleanPhone, `+${cleanPhone}`, `%${clean11}`).run();
+          }
+        } catch (e) {}
+      }
+      return new Response(JSON.stringify({ ok: true, user: targetUser }), { headers });
     }
 
     // 1.2 Default Status Response
@@ -165,7 +243,7 @@ export async function onRequest(context) {
       return new Response(JSON.stringify({ ok: false, message: 'Invalid JSON body' }), { status: 400, headers });
     }
 
-    // In-app command simulator
+    // In-app command simulator or direct action API
     if (update.action === 'simulate') {
       const commandText = update.command || '/help';
       const response = await handleBotCommand(commandText, {
@@ -174,6 +252,56 @@ export async function onRequest(context) {
         first_name: '测试管理员'
       }, db, adminPassword, configuredAdminIds, true);
       return new Response(JSON.stringify({ ok: true, response }), { headers });
+    }
+
+    if (update.action === 'auth') {
+      const cleanPhone = normalizePhoneNum(update.phone || '');
+      if (cleanPhone) {
+        inMemoryAuthorizedPhones.add(cleanPhone);
+        if (db) {
+          try {
+            await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_phones (phone TEXT PRIMARY KEY, authorized_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run();
+            await db.prepare(`INSERT OR IGNORE INTO authorized_phones (phone) VALUES (?)`).bind(cleanPhone).run();
+          } catch (e) {}
+        }
+      }
+      return new Response(JSON.stringify({ ok: true, phone: cleanPhone }), { headers });
+    }
+
+    if (update.action === 'unauth') {
+      const cleanPhone = normalizePhoneNum(update.phone || '');
+      if (cleanPhone) {
+        inMemoryAuthorizedPhones.delete(cleanPhone);
+        if (db) {
+          try {
+            const clean11 = cleanPhone.length > 11 ? cleanPhone.slice(-11) : cleanPhone;
+            await db.prepare(`DELETE FROM authorized_phones WHERE phone = ? OR phone = ? OR phone LIKE ?`).bind(cleanPhone, `+${cleanPhone}`, `%${clean11}`).run();
+          } catch (e) {}
+        }
+      }
+      return new Response(JSON.stringify({ ok: true, phone: cleanPhone }), { headers });
+    }
+
+    if (update.action === 'deluser') {
+      const targetUser = update.user || update.phone || '';
+      const cleanPhone = normalizePhoneNum(targetUser);
+      if (cleanPhone) {
+        inMemoryAuthorizedPhones.delete(cleanPhone);
+      }
+      if (db && targetUser) {
+        try {
+          const p = await db.prepare("SELECT * FROM players WHERE name = ? OR id = ? OR name LIKE ?").bind(targetUser, targetUser, `%${targetUser}%`).first();
+          if (p) {
+            await db.prepare("DELETE FROM players WHERE name = ? OR id = ?").bind(p.name, p.id).run();
+            await db.prepare("DELETE FROM game_records WHERE player_name = ?").bind(p.name).run();
+          }
+          if (cleanPhone) {
+            const clean11 = cleanPhone.length > 11 ? cleanPhone.slice(-11) : cleanPhone;
+            await db.prepare("DELETE FROM authorized_phones WHERE phone = ? OR phone = ? OR phone LIKE ?").bind(cleanPhone, `+${cleanPhone}`, `%${clean11}`).run();
+          }
+        } catch (e) {}
+      }
+      return new Response(JSON.stringify({ ok: true, user: targetUser }), { headers });
     }
 
     // Telegram Callback Query (button click)
@@ -386,9 +514,15 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
         `━━━━━━━━━━━━━━━━━━\n` +
         `欢迎使用十三水管理查分 Bot！本机器人实时直连 Cloudflare D1 云数据库。\n\n` +
         `<b>📋 常用指令列表：</b>\n` +
+        `• <code>/auth &lt;手机号&gt;</code> - 授权手机号注册\n` +
+        `• <code>/unauth &lt;手机号&gt;</code> - 移除手机号的注册授权\n` +
+        `• <code>/deluser &lt;手机号/玩家名&gt;</code> - 彻底删除玩家账号及对局记录\n` +
+        `• <code>/authlist</code> - 查看已授权手机号列表\n` +
         `• <code>/score &lt;玩家名&gt;</code> - 查询玩家净胜分、胜率与近5局明细\n` +
         `• <code>/rank [数量]</code> - 查看全服积分风云排行榜 (默认前10名)\n` +
         `• <code>/players</code> - 列出活跃玩家名录及当前总分\n` +
+        `• <code>/add &lt;手机号&gt; &lt;数量&gt;</code> - 增加玩家积分\n` +
+        `• <code>/del &lt;手机号&gt; &lt;数量&gt;</code> - 扣减玩家积分\n` +
         `• <code>/stats</code> - 查看全局对局总量、特殊牌总数统计\n` +
         `• <code>/history [数量]</code> - 查看最近完成的对局明细流水\n` +
         `• <code>/id</code> - 查看您的 Telegram ID 与授权状态\n\n` +
@@ -412,15 +546,19 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
     };
   }
 
-  // 4.1 Phone Authorization Commands: /auth <phone> & /unauth <phone> & /authlist
+  // 4.1 Phone Authorization Commands: /auth <phone> & /unauth <phone> & /authlist & /deluser
   if (mainCmd === '/auth' || mainCmd === '/allow' || mainCmd === '/authorize') {
-    if (!arg1) {
+    const restText = parts.slice(1).join(' ').trim();
+    const cleanPhone = normalizePhoneNum(restText || arg1 || '');
+    if (!cleanPhone || cleanPhone.length < 5) {
       return {
         text: `📱 <b>Bot 手机号授权指令</b>\n\n使用方式：\n<code>/auth 手机号码</code>\n\n例如：<code>/auth 13912345678</code>\n\n<i>授权后该手机号方可在游戏中注册新账号。</i>`,
         reply_markup: mainKeyboard
       };
     }
-    const cleanPhone = arg1.trim();
+    
+    inMemoryAuthorizedPhones.add(cleanPhone);
+
     if (db) {
       try {
         await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_phones (phone TEXT PRIMARY KEY, authorized_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run();
@@ -435,30 +573,86 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
     };
   }
 
-  if (mainCmd === '/unauth' || mainCmd === '/revoke') {
-    if (!arg1) {
-      return { text: `🚫 <b>取消手机号授权指令</b>\n\n使用方式：\n<code>/unauth 手机号码</code>`, reply_markup: mainKeyboard };
+  if (mainCmd === '/unauth' || mainCmd === '/revoke' || mainCmd === '/delauth' || mainCmd === '/rmauth') {
+    const restText = parts.slice(1).join(' ').trim();
+    const cleanPhone = normalizePhoneNum(restText || arg1 || '');
+    if (!cleanPhone) {
+      return {
+        text: `🚫 <b>取消手机号授权指令</b>\n\n使用方式：\n<code>/unauth 手机号码</code>\n\n例如：<code>/unauth 13912345678</code>`,
+        reply_markup: mainKeyboard
+      };
     }
-    const cleanPhone = arg1.trim();
+
+    inMemoryAuthorizedPhones.delete(cleanPhone);
+
     if (db) {
       try {
-        await db.prepare(`DELETE FROM authorized_phones WHERE phone = ?`).bind(cleanPhone).run();
+        const clean11 = cleanPhone.length > 11 ? cleanPhone.slice(-11) : cleanPhone;
+        await db.prepare(`DELETE FROM authorized_phones WHERE phone = ? OR phone = ? OR phone LIKE ?`).bind(cleanPhone, `+${cleanPhone}`, `%${clean11}`).run();
       } catch (e) {
         console.error('D1 revoke phone err:', e);
       }
     }
     return {
-      text: `🚫 <b>已取消注册授权</b>\n\n已移除手机号 <code>${cleanPhone}</code> 的注册授权权限。`,
+      text: `🚫 <b>已取消注册授权</b>\n\n已成功移除手机号 <code>${cleanPhone}</code> 的注册授权权限。该手机号将无法注册新账号。`,
+      reply_markup: mainKeyboard
+    };
+  }
+
+  if (mainCmd === '/deluser' || mainCmd === '/deleteplayer' || mainCmd === '/delplayer' || mainCmd === '/rmuser' || mainCmd === '/deleteuser') {
+    const restText = parts.slice(1).join(' ').trim();
+    const targetUser = restText || arg1 || '';
+    if (!targetUser) {
+      return {
+        text: `🗑️ <b>删除玩家账号指令</b>\n\n使用方式：\n<code>/deluser 手机号或玩家名字</code>\n\n例如：\n• <code>/deluser 13912345678</code>\n• <code>/deluser 雀圣阿旺</code>\n\n⚠️ <i>注意：删除后该玩家的积分、战绩历史及注册授权将被永久清除。</i>`,
+        reply_markup: mainKeyboard
+      };
+    }
+
+    const cleanPhone = normalizePhoneNum(targetUser);
+    if (cleanPhone) {
+      inMemoryAuthorizedPhones.delete(cleanPhone);
+    }
+
+    let foundPlayerName = targetUser;
+
+    if (db) {
+      try {
+        const p = await db.prepare("SELECT * FROM players WHERE name = ? OR id = ? OR name LIKE ?").bind(targetUser, targetUser, `%${targetUser}%`).first();
+        if (p) {
+          foundPlayerName = p.name;
+          await db.prepare("DELETE FROM players WHERE name = ? OR id = ?").bind(p.name, p.id).run();
+          await db.prepare("DELETE FROM game_records WHERE player_name = ?").bind(p.name).run();
+        }
+        if (cleanPhone) {
+          const clean11 = cleanPhone.length > 11 ? cleanPhone.slice(-11) : cleanPhone;
+          await db.prepare("DELETE FROM authorized_phones WHERE phone = ? OR phone = ? OR phone LIKE ?").bind(cleanPhone, `+${cleanPhone}`, `%${clean11}`).run();
+        }
+      } catch (e) {
+        console.error('D1 delete player err:', e);
+      }
+    }
+
+    return {
+      text: `🗑️ <b>玩家账号及数据已删除</b>\n━━━━━━━━━━━━━━━━━━\n` +
+        `👤 <b>目标玩家/标识</b>: <code>${escapeHtml(foundPlayerName)}</code>\n` +
+        `🚫 <b>手机号授权</b>: ${cleanPhone ? `<code>${cleanPhone}</code> 已同步撤销` : '相关授权已同步清理'}\n` +
+        `✨ <b>清除内容</b>: 全服积分档案、胜负战绩及对局流水记录已完全擦除。`,
       reply_markup: mainKeyboard
     };
   }
 
   if (mainCmd === '/authlist' || mainCmd === '/whitelist') {
-    let list = [];
+    let list = Array.from(inMemoryAuthorizedPhones);
     if (db) {
       try {
         const res = await db.prepare(`SELECT phone FROM authorized_phones ORDER BY authorized_at DESC LIMIT 30`).all();
-        list = res?.results?.map(r => r.phone) || [];
+        if (res?.results) {
+          res.results.forEach(r => {
+            const norm = normalizePhoneNum(r.phone);
+            if (norm && !list.includes(norm)) list.push(norm);
+          });
+        }
       } catch {
         // ignore
       }
@@ -469,7 +663,7 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
       : '<i>暂无云端授权手机号记录。</i>';
 
     return {
-      text: `📱 <b>已授权手机号名录</b>\n━━━━━━━━━━━━━━━━━━\n${listStr}\n\n👇 <b>快捷操作指南：</b>\n直接在输入框输入 11位手机号码 即可快捷授权新用户。\n如需取消授权，请回复：<code>/unauth 手机号码</code>`,
+      text: `📱 <b>已授权手机号名录</b>\n━━━━━━━━━━━━━━━━━━\n${listStr}\n\n👇 <b>快捷操作指南：</b>\n直接在输入框输入 11位手机号码 即可快捷授权新用户。\n如需取消授权，请回复：<code>/unauth 手机号码</code>\n如需彻底删除玩家：<code>/deluser 手机号或玩家名</code>`,
       reply_markup: mainKeyboard
     };
   }

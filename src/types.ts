@@ -50,6 +50,18 @@ export interface PlayerArrangement {
   isDaoShui: boolean; // 倒水
 }
 
+export interface DunScoreVsOpponent {
+  front: number;      // 前墩胜负 (1, -1, 0)
+  frontBonus: number; // 前墩喜分差 (冲三 +3)
+  mid: number;        // 中墩胜负 (1, -1, 0)
+  midBonus: number;   // 中墩喜分差 (葫芦 +2, 铁支 +8, 同花顺 +10)
+  back: number;       // 后墩胜负 (1, -1, 0)
+  backBonus: number;  // 后墩喜分差 (铁支 +4, 同花顺 +5)
+  isGun: boolean;     // 是否打枪对手 (三墩全胜)
+  gunPoints: number;  // 打枪额外水数 (+3)
+  total: number;      // 对阵该对手的总水数
+}
+
 export interface PlayerScoreDetail {
   playerId: string;
   name: string;
@@ -63,7 +75,7 @@ export interface PlayerScoreDetail {
   specialHand?: SpecialHandType | null;
   
   // Scoring against other players
-  dunScores: { [opponentId: string]: { front: number; mid: number; back: number; total: number; isGun: boolean } };
+  dunScores: { [opponentId: string]: DunScoreVsOpponent };
   bonusPoints: number;
   specialPoints: number;
   finalPoints: number;

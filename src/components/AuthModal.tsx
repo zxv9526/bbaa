@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserAccount, PlayerStats } from '../types';
 import {
   AVAILABLE_AVATARS,
   loginAccount,
   registerAccount,
-  updateProfile
+  updateProfile,
+  syncWithServerAuth
 } from '../lib/accountManager';
 import {
   X,
@@ -51,6 +52,12 @@ export function AuthModal({
 
   // Status message
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      syncWithServerAuth();
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

@@ -2,6 +2,7 @@ import { GameRecord, PlayerStats, RoomState, TelegramBotStatus } from './types';
 import {
   authorizePhone,
   revokePhone,
+  deleteAccount,
   getAuthorizedPhones,
   searchUserByPhone,
   adminAdjustPoints,
@@ -323,7 +324,8 @@ export class ApiClient {
 
     // 1. 授权手机号注册: /auth <phone> 或 /allow <phone>
     if (mainCmd === '/auth' || mainCmd === '/allow' || mainCmd === '/authorize') {
-      if (!arg1) {
+      const targetPhone = parts.slice(1).join(' ').trim() || arg1;
+      if (!targetPhone) {
         return {
           ok: true,
           response: {
@@ -331,7 +333,7 @@ export class ApiClient {
           }
         };
       }
-      const res = authorizePhone(arg1);
+      const res = authorizePhone(targetPhone);
       return {
         ok: true,
         response: {
@@ -341,20 +343,43 @@ export class ApiClient {
     }
 
     // 2. 取消手机号授权: /unauth <phone> 或 /revoke <phone>
-    if (mainCmd === '/unauth' || mainCmd === '/revoke') {
-      if (!arg1) {
+    if (mainCmd === '/unauth' || mainCmd === '/revoke' || mainCmd === '/delauth' || mainCmd === '/rmauth') {
+      const targetPhone = parts.slice(1).join(' ').trim() || arg1;
+      if (!targetPhone) {
         return {
           ok: true,
           response: {
-            text: `🚫 <b>取消手机号授权指令</b>\n\n使用方式：\n<code>/unauth 手机号码</code>`
+            text: `🚫 <b>取消手机号授权指令</b>\n\n使用方式：\n<code>/unauth 手机号码</code>\n\n例如：<code>/unauth 13912345678</code>`
           }
         };
       }
-      const res = revokePhone(arg1);
+      const res = await revokePhone(targetPhone);
       return {
         ok: true,
         response: {
           text: `${res.message}\n\n剩余已授权手机号: <b>${res.list.length}</b> 个`
+        }
+      };
+    }
+
+    // 2.5 删除玩家账号: /deluser <phone/name> 或 /deleteplayer <phone/name>
+    if (mainCmd === '/deluser' || mainCmd === '/deleteplayer' || mainCmd === '/delplayer' || mainCmd === '/rmuser' || mainCmd === '/deleteuser') {
+      const targetUser = parts.slice(1).join(' ').trim() || arg1;
+      if (!targetUser) {
+        return {
+          ok: true,
+          response: {
+            text: `🗑️ <b>删除玩家账号指令</b>\n\n使用方式：\n<code>/deluser 手机号或玩家名字</code>\n\n例如：\n• <code>/deluser 13912345678</code>\n• <code>/deluser 雀圣阿旺</code>\n\n⚠️ <i>注意：删除后该玩家的积分、战绩历史及注册授权将被永久清除。</i>`
+          }
+        };
+      }
+      const delRes = await deleteAccount(targetUser);
+      return {
+        ok: true,
+        response: {
+          text: delRes.success
+            ? `🗑️ <b>玩家账号及数据已成功删除</b>\n━━━━━━━━━━━━━━━━━━\n${delRes.message}`
+            : `❌ ${delRes.message}`
         }
       };
     }
