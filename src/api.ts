@@ -1,4 +1,14 @@
 import { GameRecord, PlayerStats, RoomState, TelegramBotStatus } from './types';
+import {
+  authorizePhone,
+  revokePhone,
+  getAuthorizedPhones,
+  searchUserByPhone,
+  adminAdjustPoints,
+  adminSetPoints,
+  getAllUsersList,
+  getPointsTransactions
+} from './lib/accountManager';
 
 export interface InitResponse {
   ok: boolean;
@@ -302,75 +312,292 @@ export class ApiClient {
     }
 
     // Local simulator fallback when API is not running directly
-    const cmd = (command || '').trim();
-    const playersObj: Record<string, PlayerStats> = JSON.parse(localStorage.getItem('thirteen_water_players') || '{}');
-    const playerList = Object.values(playersObj).sort((a, b) => b.totalPoints - a.totalPoints);
-    const historyList: GameRecord[] = JSON.parse(localStorage.getItem('thirteen_water_history') || '[]');
+    const rawCmd = (command || '').trim();
+    const parts = rawCmd.split(/\s+/);
+    const mainCmd = parts[0].toLowerCase();
+    const arg1 = parts[1];
+    const arg2 = parts[2];
 
-    if (cmd.startsWith('/score') || cmd.startsWith('/player')) {
-      const pName = cmd.split(' ').slice(1).join(' ').trim();
-      const p = playerList.find(x => x.name.toLowerCase() === pName.toLowerCase());
-      if (!p) {
+    const allUsers = getAllUsersList();
+    const authPhones = getAuthorizedPhones();
+
+    // 1. 授权手机号注册: /auth <phone> 或 /allow <phone>
+    if (mainCmd === '/auth' || mainCmd === '/allow' || mainCmd === '/authorize') {
+      if (!arg1) {
         return {
           ok: true,
           response: {
-            text: `🔍 <b>未找到玩家</b>: <code>${pName || '未指定'}</code>\n\n提示：该玩家暂无本地记录，可通过主界面对局产生数据。`
+            text: `📱 <b>Bot 手机号授权指令</b>\n\n使用方式：\n<code>/auth 手机号码</code>\n\n例如：<code>/auth 13912345678</code>\n\n<i>被授权的手机号方可在游戏中注册新账号。</i>`
           }
         };
       }
-      const winRate = p.totalGames > 0 ? Math.round((p.wins / p.totalGames) * 100) : 0;
-      const ptsStr = p.totalPoints >= 0 ? `+${p.totalPoints}` : `${p.totalPoints}`;
+      const res = authorizePhone(arg1);
       return {
         ok: true,
         response: {
-          text: `🃏 <b>玩家积分与档案详情 (Local Preview)</b>\n━━━━━━━━━━━━━━━━━━\n👤 <b>玩家昵称</b>: <code>${p.name}</code>\n💎 <b>净胜总积分</b>: <b>${ptsStr} 分</b>\n🏆 <b>胜率统计</b>: <b>${winRate}%</b> (${p.wins}胜 / ${p.losses}负 / ${p.draws}平)\n🎮 <b>总对局数</b>: ${p.totalGames} 局\n✨ <b>特殊牌次数</b>: ${p.specialHandsCount} 次`,
+          text: `${res.message}\n\n当前已授权手机号总数: <b>${res.list.length}</b> 个\n发送 <code>/authlist</code> 可查看完整授权列表。`
+        }
+      };
+    }
+
+    // 2. 取消手机号授权: /unauth <phone> 或 /revoke <phone>
+    if (mainCmd === '/unauth' || mainCmd === '/revoke') {
+      if (!arg1) {
+        return {
+          ok: true,
+          response: {
+            text: `🚫 <b>取消手机号授权指令</b>\n\n使用方式：\n<code>/unauth 手机号码</code>`
+          }
+        };
+      }
+      const res = revokePhone(arg1);
+      return {
+        ok: true,
+        response: {
+          text: `${res.message}\n\n剩余已授权手机号: <b>${res.list.length}</b> 个`
+        }
+      };
+    }
+
+    // 3. 查看已授权手机号名录: /authlist 或 /whitelist
+    if (mainCmd === '/authlist' || mainCmd === '/whitelist') {
+      const listStr = authPhones.length > 0
+        ? authPhones.map((p, idx) => `${idx + 1}. <code>${p}</code>`).join('\n')
+        : '<i>暂无已授权手机号</i>';
+      return {
+        ok: true,
+        response: {
+          text: `📱 <b>已授权手机号白名单 (共 ${authPhones.length} 个)</b>\n━━━━━━━━━━━━━━━━━━\n${listStr}\n\n💡 提示：使用 <code>/auth 手机号</code> 可快速追加授权。`
+        }
+      };
+    }
+
+    // 4. 增加玩家积分: /addpoints <phone> <amount> 或 /add <phone> <amount>
+    if (mainCmd === '/addpoints' || mainCmd === '/add') {
+      if (!arg1 || !arg2) {
+        return {
+          ok: true,
+          response: {
+            text: `➕ <b>为玩家增加积分</b>\n\n使用方式：\n<code>/addpoints 手机号 积分数量</code>\n\n例如：<code>/add 13800138000 5000</code>`
+          }
+        };
+      }
+      const amount = parseInt(arg2, 10);
+      if (isNaN(amount) || amount <= 0) {
+        return {
+          ok: true,
+          response: {
+            text: `❌ 请输入大于 0 的有效积分数量。`
+          }
+        };
+      }
+      const res = adminAdjustPoints(arg1, amount);
+      return {
+        ok: true,
+        response: {
+          text: res.success ? `✅ <b>增加积分成功</b>\n\n${res.message}` : `❌ ${res.message}`
+        }
+      };
+    }
+
+    // 5. 扣减玩家积分: /delpoints <phone> <amount> 或 /del <phone> <amount> 或 /sub <phone> <amount>
+    if (mainCmd === '/delpoints' || mainCmd === '/del' || mainCmd === '/sub' || mainCmd === '/reduce') {
+      if (!arg1 || !arg2) {
+        return {
+          ok: true,
+          response: {
+            text: `➖ <b>为玩家扣减积分</b>\n\n使用方式：\n<code>/delpoints 手机号 扣减数量</code>\n\n例如：<code>/del 13800138000 2000</code>`
+          }
+        };
+      }
+      const amount = parseInt(arg2, 10);
+      if (isNaN(amount) || amount <= 0) {
+        return {
+          ok: true,
+          response: {
+            text: `❌ 请输入大于 0 的有效积分数量。`
+          }
+        };
+      }
+      const res = adminAdjustPoints(arg1, -amount);
+      return {
+        ok: true,
+        response: {
+          text: res.success ? `✅ <b>扣减积分成功</b>\n\n${res.message}` : `❌ ${res.message}`
+        }
+      };
+    }
+
+    // 6. 设定具体积分: /setpoints <phone> <amount>
+    if (mainCmd === '/setpoints' || mainCmd === '/set') {
+      if (!arg1 || !arg2) {
+        return {
+          ok: true,
+          response: {
+            text: `🎯 <b>设置玩家指定积分</b>\n\n使用方式：\n<code>/setpoints 手机号 目标积分</code>\n\n例如：<code>/set 13800138000 10000</code>`
+          }
+        };
+      }
+      const amount = parseInt(arg2, 10);
+      if (isNaN(amount) || amount < 0) {
+        return {
+          ok: true,
+          response: {
+            text: `❌ 请输入大于等于 0 的有效目标积分。`
+          }
+        };
+      }
+      const res = adminSetPoints(arg1, amount);
+      return {
+        ok: true,
+        response: {
+          text: res.success ? `✅ <b>设置积分成功</b>\n\n${res.message}` : `❌ ${res.message}`
+        }
+      };
+    }
+
+    // 7. 搜索玩家档案与积分: /score <phone/name> 或 /user 或 /find
+    if (mainCmd === '/score' || mainCmd === '/player' || mainCmd === '/user' || mainCmd === '/find' || mainCmd === '/cx') {
+      const query = parts.slice(1).join(' ').trim();
+      if (!query) {
+        return {
+          ok: true,
+          response: {
+            text: `🔍 <b>玩家档案与积分查询</b>\n\n使用方式：\n<code>/score 手机号或玩家昵称</code>\n\n例如：<code>/score 13800138000</code>`
+          }
+        };
+      }
+
+      const searchRes = searchUserByPhone(query);
+      if (!searchRes.success || !searchRes.user) {
+        return {
+          ok: true,
+          response: {
+            text: `🔍 <b>未找到玩家</b>: <code>${query}</code>\n\n发送 <code>/players</code> 可查看所有已注册玩家列表。`
+          }
+        };
+      }
+
+      const u = searchRes.user;
+      const txs = getPointsTransactions(u.phone);
+      const txsStr = txs.slice(0, 3).map((t, idx) => {
+        const sign = t.amount >= 0 ? `+${t.amount.toLocaleString()}` : `${t.amount.toLocaleString()}`;
+        return `   ${idx + 1}. [${t.title}] <b>${sign}</b> (余额: ${t.balanceAfter.toLocaleString()})`;
+      }).join('\n');
+
+      return {
+        ok: true,
+        response: {
+          text: `👑 <b>玩家档案 · ${u.nickname}</b>\n━━━━━━━━━━━━━━━━━━\n` +
+            `👤 <b>玩家头像与昵称</b>: ${u.avatar} <b>${u.nickname}</b>\n` +
+            `📱 <b>绑定手机号</b>: <code>${u.phone}</code>\n` +
+            `💰 <b>当前可用积分</b>: <b>${u.points.toLocaleString()} 分</b>\n` +
+            `📅 <b>注册时间</b>: ${new Date(u.createdAt).toLocaleDateString()}\n` +
+            `🕒 <b>最后登录</b>: ${new Date(u.lastLoginAt).toLocaleTimeString()}\n\n` +
+            `<b>📜 最近 3 笔积分流水：</b>\n${txsStr || '   暂无流水明细'}\n\n` +
+            `💡 快捷操作：\n• 增加: <code>/add ${u.phone} 5000</code>\n• 扣减: <code>/del ${u.phone} 2000</code>`,
           reply_markup: {
             inline_keyboard: [
-              [{ text: '🏆 全服风云榜', callback_data: '/rank' }, { text: '📊 游戏全局统计', callback_data: '/stats' }]
+              [
+                { text: `➕ 给 ${u.nickname} +1000分`, callback_data: `/add ${u.phone} 1000` },
+                { text: `➕ 给 ${u.nickname} +5000分`, callback_data: `/add ${u.phone} 5000` }
+              ],
+              [
+                { text: `➖ 给 ${u.nickname} -1000分`, callback_data: `/del ${u.phone} 1000` },
+                { text: `🔄 刷新玩家档案`, callback_data: `/score ${u.phone}` }
+              ]
             ]
           }
         }
       };
     }
 
-    if (cmd.startsWith('/rank') || cmd.startsWith('/top')) {
-      if (playerList.length === 0) {
+    // 8. 查看全服所有已注册玩家: /players 或 /list
+    if (mainCmd === '/players' || mainCmd === '/list') {
+      if (allUsers.length === 0) {
         return {
           ok: true,
-          response: { text: `🏆 <b>全服风云积分榜</b>\n\n<i>暂无积分数据，完成一局即可展示！</i>` }
+          response: {
+            text: `👥 <b>已注册玩家名录</b>\n\n<i>暂无已注册玩家。</i>`
+          }
         };
       }
-      const listStr = playerList.slice(0, 10).map((p, i) => {
+
+      const rows = allUsers.map((u, idx) => {
+        return `${idx + 1}. ${u.avatar} <b>${u.nickname}</b> (<code>${u.phone}</code>) · <b>${u.points.toLocaleString()} 分</b>`;
+      }).join('\n');
+
+      const quickButtons = allUsers.slice(0, 4).map(u => [
+        { text: `👤 查看 ${u.nickname} (${u.points}分)`, callback_data: `/score ${u.phone}` }
+      ]);
+
+      return {
+        ok: true,
+        response: {
+          text: `👥 <b>全服已注册玩家 (共 ${allUsers.length} 位)</b>\n━━━━━━━━━━━━━━━━━━\n${rows}\n\n🔍 点击下方快捷按钮或发送 <code>/score 手机号</code> 查分：`,
+          reply_markup: { inline_keyboard: quickButtons }
+        }
+      };
+    }
+
+    // 9. 排行榜: /rank
+    if (mainCmd === '/rank' || mainCmd === '/top') {
+      if (allUsers.length === 0) {
+        return {
+          ok: true,
+          response: { text: `🏆 <b>全服积分排行榜</b>\n\n<i>暂无积分数据。</i>` }
+        };
+      }
+      const listStr = allUsers.slice(0, 10).map((u, i) => {
         const medal = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣'][i] || `#${i + 1}`;
-        const pts = p.totalPoints >= 0 ? `+${p.totalPoints}` : `${p.totalPoints}`;
-        return `${medal} <b>${p.name}</b>: <b>${pts} 分</b> (${p.wins}胜 / ${p.totalGames}局)`;
+        return `${medal} ${u.avatar} <b>${u.nickname}</b> (<code>${u.phone}</code>): <b>${u.points.toLocaleString()} 分</b>`;
       }).join('\n');
 
       return {
         ok: true,
         response: {
-          text: `🏆 <b>十三水 · 全服积分排行榜 (Top ${Math.min(playerList.length, 10)})</b>\n━━━━━━━━━━━━━━━━━━\n` + listStr
+          text: `🏆 <b>十三水 · 全服积分排行榜 (Top ${Math.min(allUsers.length, 10)})</b>\n━━━━━━━━━━━━━━━━━━\n` + listStr
         }
       };
     }
 
-    if (cmd.startsWith('/stats')) {
+    // 10. 统计: /stats
+    if (mainCmd === '/stats') {
+      const historyList: GameRecord[] = JSON.parse(localStorage.getItem('thirteen_water_history') || '[]');
+      const totalPoints = allUsers.reduce((sum, u) => sum + u.points, 0);
       return {
         ok: true,
         response: {
-          text: `📊 <b>十三水 · 全局服务器统计 (Local)</b>\n━━━━━━━━━━━━━━━━━━\n👥 <b>总玩家数</b>: ${playerList.length} 位\n🎮 <b>总对局数</b>: ${historyList.length} 局\n✨ <b>特殊牌次数</b>: ${historyList.filter(h => !!h.specialHand).length} 次\n🗄️ <b>持久化模式</b>: Local Storage Preview`
+          text: `📊 <b>十三水 · Bot 管理员数据统计</b>\n━━━━━━━━━━━━━━━━━━\n` +
+            `👥 <b>已注册玩家</b>: ${allUsers.length} 位\n` +
+            `📱 <b>已授权手机号</b>: ${authPhones.length} 个\n` +
+            `💰 <b>全服积分总池</b>: ${totalPoints.toLocaleString()} 分\n` +
+            `🎮 <b>总对局数</b>: ${historyList.length} 局`
         }
       };
     }
 
+    // 默认指令引导
     return {
       ok: true,
       response: {
-        text: `🃏 <b>十三水 (Chinese Poker) 管理员机器人</b>\n✅ <b>管理员状态</b>: 已授权 (Admin Terminal)\n\n<b>常用管理指令：</b>\n• <code>/rank</code> - 查看全服积分风云榜\n• <code>/score &lt;玩家名&gt;</code> - 精确查询指定玩家的净胜积分与胜率\n• <code>/players</code> - 列出活跃玩家及积分\n• <code>/stats</code> - 查看全局对局数与特殊牌统计\n• <code>/history</code> - 查看最近对局流水\n• <code>/auth &lt;密码&gt;</code> - 在 Telegram 中授权管理员`,
+        text: `🤖 <b>十三水 Bot 管理员指令中心</b>\n✅ <b>管理员状态</b>: 已授权 (Bot Admin)\n━━━━━━━━━━━━━━━━━━\n` +
+          `<b>📱 手机号授权与注册管理：</b>\n` +
+          `• <code>/auth &lt;手机号&gt;</code> - 授权手机号注册\n` +
+          `• <code>/unauth &lt;手机号&gt;</code> - 取消手机号授权\n` +
+          `• <code>/authlist</code> - 查看已授权手机号列表\n\n` +
+          `<b>💰 玩家积分管理与查询：</b>\n` +
+          `• <code>/score &lt;手机号/昵称&gt;</code> - 搜索玩家并查看积分档案\n` +
+          `• <code>/add &lt;手机号&gt; &lt;数量&gt;</code> - 给玩家增加积分\n` +
+          `• <code>/del &lt;手机号&gt; &lt;数量&gt;</code> - 给玩家扣减积分\n` +
+          `• <code>/set &lt;手机号&gt; &lt;数量&gt;</code> - 设置玩家指定积分\n` +
+          `• <code>/players</code> - 列出全部玩家及积分\n` +
+          `• <code>/rank</code> - 全服积分排行榜\n` +
+          `• <code>/stats</code> - 游戏全局数据总览`,
         reply_markup: {
           inline_keyboard: [
-            [{ text: '🏆 全服风云榜', callback_data: '/rank' }, { text: '📊 游戏全局统计', callback_data: '/stats' }],
-            [{ text: '👥 活跃玩家列表', callback_data: '/players' }, { text: '📜 最新对局历史', callback_data: '/history' }]
+            [{ text: '👥 玩家名录与积分', callback_data: '/players' }, { text: '📱 授权手机号列表', callback_data: '/authlist' }],
+            [{ text: '🏆 全服风云榜', callback_data: '/rank' }, { text: '📊 统计总览', callback_data: '/stats' }]
           ]
         }
       }

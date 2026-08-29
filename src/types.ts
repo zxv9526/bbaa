@@ -73,7 +73,7 @@ export interface PlayerScoreDetail {
 export interface GameRecord {
   id: string;
   playerName: string;
-  mode: 'vs_ai_2p' | 'vs_ai_4p' | 'multiplayer';
+  mode: 'vs_ai_2p' | 'vs_ai_4p' | 'vs_ai_8p' | 'multiplayer';
   pointsWon: number;
   result: 'WIN' | 'LOSE' | 'DRAW' | 'SPECIAL_WIN';
   specialHand?: string | null;
@@ -82,6 +82,28 @@ export interface GameRecord {
   backType: string;
   opponentsSummary: string;
   createdAt: string;
+}
+
+export interface UserAccount {
+  id: string;
+  phone: string; // 注册手机号
+  username: string; // 同 phone
+  nickname: string;
+  avatar: string;
+  points: number;
+  createdAt: string;
+  lastLoginAt: string;
+}
+
+export interface PointsTransaction {
+  id: string;
+  type: 'MATCH_WIN' | 'MATCH_LOSS' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'REGISTER_BONUS' | 'ADMIN_ADJUST' | 'BOT_ADD' | 'BOT_DEDUCT';
+  title: string;
+  amount: number;
+  balanceAfter: number;
+  timestamp: string;
+  relatedPhone?: string;
+  relatedNickname?: string;
 }
 
 export interface PlayerStats {

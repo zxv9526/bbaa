@@ -43,6 +43,22 @@ export function createDeck(): Card[] {
   return deck;
 }
 
+// 8人场需要双副扑克牌 (104张牌)
+export function createDoubleDeck(): Card[] {
+  const suits: Suit[] = ['S', 'H', 'C', 'D'];
+  const ranks: Rank[] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+  const deck: Card[] = [];
+
+  for (let d = 1; d <= 2; d++) {
+    for (const suit of suits) {
+      for (const rank of ranks) {
+        deck.push({ id: `d${d}_${rank}-${suit}`, suit, rank });
+      }
+    }
+  }
+  return deck;
+}
+
 export function shuffle(deck: Card[]): Card[] {
   const newDeck = [...deck];
   for (let i = newDeck.length - 1; i > 0; i--) {
@@ -594,8 +610,8 @@ export function calculateMatchScores(
       }
     }
 
-    // 四人对局全垒打: 打枪场上全部 3 位对手
-    if (n === 4 && gunsAgainstOthers === 3) {
+    // 全垒打判定: 打枪场上所有对手 (如4人场打枪3人，8人场打枪7人)
+    if (n >= 3 && gunsAgainstOthers === n - 1) {
       p.isHomeRun = true;
       sum *= 2; // 全垒打总分翻倍
     }

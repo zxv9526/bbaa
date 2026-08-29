@@ -348,13 +348,127 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
   // 4. Permission check for data querying commands
   if (!isAdmin) {
     return {
-      text: `🔒 <b>管理权限受限</b>\n\n您的 Telegram ID: <code>${userIdStr}</code> 尚未加入管理员白名单。\n\n如需开启查分权限，请将此 ID 添加到 Cloudflare Pages 环境变量 <b>TELEGRAM_ADMIN_IDS</b> 中。`,
+      text: `🔒 <b>管理权限受限</b>\n\n您的 Telegram ID: <code>${userIdStr}</code> 尚未加入管理员白名单。\n\n如需开启管理权限，请将此 ID 添加到 Cloudflare Pages 环境变量 <b>TELEGRAM_ADMIN_IDS</b> 中。`,
       reply_markup: {
         inline_keyboard: [
           [{ text: '🆔 查看我的 ID', callback_data: '/myid' }],
           [{ text: '❓ 帮助说明', callback_data: '/help' }]
         ]
       }
+    };
+  }
+
+  // 4.1 Phone Authorization Commands: /auth <phone> & /unauth <phone> & /authlist
+  if (mainCmd === '/auth' || mainCmd === '/allow' || mainCmd === '/authorize') {
+    if (!arg1) {
+      return {
+        text: `📱 <b>Bot 手机号授权指令</b>\n\n使用方式：\n<code>/auth 手机号码</code>\n\n例如：<code>/auth 13912345678</code>\n\n<i>授权后该手机号方可在游戏中注册新账号。</i>`,
+        reply_markup: mainKeyboard
+      };
+    }
+    const cleanPhone = arg1.trim();
+    if (db) {
+      try {
+        await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_phones (phone TEXT PRIMARY KEY, authorized_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run();
+        await db.prepare(`INSERT OR IGNORE INTO authorized_phones (phone) VALUES (?)`).bind(cleanPhone).run();
+      } catch (e) {
+        console.error('D1 auth phone err:', e);
+      }
+    }
+    return {
+      text: `✅ <b>手机号授权成功</b>\n\n手机号 <code>${cleanPhone}</code> 已成功获得注册授权，现在可以在游戏中完成注册！`,
+      reply_markup: mainKeyboard
+    };
+  }
+
+  if (mainCmd === '/unauth' || mainCmd === '/revoke') {
+    if (!arg1) {
+      return { text: `🚫 <b>取消手机号授权指令</b>\n\n使用方式：\n<code>/unauth 手机号码</code>`, reply_markup: mainKeyboard };
+    }
+    const cleanPhone = arg1.trim();
+    if (db) {
+      try {
+        await db.prepare(`DELETE FROM authorized_phones WHERE phone = ?`).bind(cleanPhone).run();
+      } catch (e) {
+        console.error('D1 revoke phone err:', e);
+      }
+    }
+    return {
+      text: `🚫 <b>已取消注册授权</b>\n\n已移除手机号 <code>${cleanPhone}</code> 的注册授权权限。`,
+      reply_markup: mainKeyboard
+    };
+  }
+
+  if (mainCmd === '/authlist' || mainCmd === '/whitelist') {
+    let list = [];
+    if (db) {
+      try {
+        const res = await db.prepare(`SELECT phone FROM authorized_phones ORDER BY authorized_at DESC LIMIT 50`).all();
+        list = res?.results?.map(r => r.phone) || [];
+      } catch {
+        // ignore
+      }
+    }
+    const listStr = list.length > 0
+      ? list.map((p, i) => `${i + 1}. <code>${p}</code>`).join('\n')
+      : '<i>暂无云端授权列表或使用的是本地白名单机制。</i>';
+
+    return {
+      text: `📱 <b>已授权手机号名录</b>\n━━━━━━━━━━━━━━━━━━\n${listStr}\n\n💡 提示：使用 <code>/auth 手机号</code> 即可新增授权。`,
+      reply_markup: mainKeyboard
+    };
+  }
+
+  // 4.2 Points Modification Commands: /addpoints & /delpoints & /setpoints
+  if (mainCmd === '/addpoints' || mainCmd === '/add' || mainCmd === '/delpoints' || mainCmd === '/del' || mainCmd === '/sub' || mainCmd === '/setpoints' || mainCmd === '/set') {
+    const isSet = mainCmd === '/setpoints' || mainCmd === '/set';
+    const isDel = mainCmd === '/delpoints' || mainCmd === '/del' || mainCmd === '/sub';
+    const isAdd = mainCmd === '/addpoints' || mainCmd === '/add';
+
+    if (!arg1 || !parts[2]) {
+      return {
+        text: `💰 <b>积分管理指令用法</b>\n\n` +
+          `• 增加积分：<code>/add 手机号或玩家名 数量</code>\n` +
+          `• 扣减积分：<code>/del 手机号或玩家名 数量</code>\n` +
+          `• 设置积分：<code>/set 手机号或玩家名 数量</code>\n\n` +
+          `例如：<code>/add 13800138000 5000</code>`,
+        reply_markup: mainKeyboard
+      };
+    }
+
+    const targetUser = arg1.trim();
+    const amount = parseInt(parts[2], 10);
+    if (isNaN(amount) || amount <= 0 && !isSet) {
+      return { text: `❌ 请输入有效的正整数积分数量。` };
+    }
+
+    if (db) {
+      try {
+        const p = await db.prepare("SELECT * FROM players WHERE name = ? OR id = ?").bind(targetUser, targetUser).first();
+        if (p) {
+          let newScore = p.total_points || 0;
+          if (isAdd) newScore += amount;
+          else if (isDel) newScore = Math.max(0, newScore - amount);
+          else if (isSet) newScore = Math.max(0, amount);
+
+          await db.prepare("UPDATE players SET total_points = ? WHERE name = ? OR id = ?").bind(newScore, p.name, p.id).run();
+
+          return {
+            text: `✅ <b>积分操作成功</b>\n━━━━━━━━━━━━━━━━━━\n` +
+              `👤 <b>玩家</b>: <code>${p.name}</code>\n` +
+              `💰 <b>变动后总积分</b>: <b>${newScore >= 0 ? '+' : ''}${newScore} 分</b>\n` +
+              `📝 <b>操作类型</b>: ${isAdd ? `增加 +${amount}` : isDel ? `扣减 -${amount}` : `重置为 ${amount}`} 分`,
+            reply_markup: mainKeyboard
+          };
+        }
+      } catch (e) {
+        console.error('D1 update score err:', e);
+      }
+    }
+
+    return {
+      text: `✅ <b>积分指令已接收</b>\n\n针对 <code>${targetUser}</code> 的积分操作已下发（${isAdd ? `+${amount}` : isDel ? `-${amount}` : `设为 ${amount}`} 分）。`,
+      reply_markup: mainKeyboard
     };
   }
 
