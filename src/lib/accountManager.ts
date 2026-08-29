@@ -35,59 +35,108 @@ function notifyListeners(account: UserAccount) {
 // ----------------------------------------------------
 const INITIAL_AUTHORIZED_PHONES = ['13800138000', '13900000000', '18888888888'];
 
+export function normalizePhone(phone: string): string {
+  if (!phone) return '';
+  let cleaned = phone.trim().replace(/[^\d]/g, '');
+  // 如果带有86且为13位，剥离86前缀
+  if (cleaned.length === 13 && cleaned.startsWith('861')) {
+    cleaned = cleaned.substring(2);
+  }
+  return cleaned;
+}
+
 export function getAuthorizedPhones(): string[] {
   try {
     const raw = localStorage.getItem(AUTHORIZED_PHONES_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return parsed.map(normalizePhone);
       }
     }
   } catch {
     // ignore
   }
   // 默认初始授权手机号
-  localStorage.setItem(AUTHORIZED_PHONES_KEY, JSON.stringify(INITIAL_AUTHORIZED_PHONES));
-  return INITIAL_AUTHORIZED_PHONES;
+  const defaults = INITIAL_AUTHORIZED_PHONES.map(normalizePhone);
+  localStorage.setItem(AUTHORIZED_PHONES_KEY, JSON.stringify(defaults));
+  return defaults;
 }
 
 export function isPhoneAuthorized(phone: string): boolean {
-  const cleanPhone = phone.trim();
-  if (!cleanPhone) return false;
+  const norm = normalizePhone(phone);
+  if (!norm) return false;
   const list = getAuthorizedPhones();
-  return list.includes(cleanPhone);
+  return list.includes(norm);
+}
+
+export async function checkOrSyncPhoneAuthorization(phone: string): Promise<boolean> {
+  const norm = normalizePhone(phone);
+  if (!norm) return false;
+
+  // 1. 本地已授权
+  if (isPhoneAuthorized(norm)) {
+    return true;
+  }
+
+  // 2. 向服务端 API 查询授权状态 (D1 / Bot 授权同步)
+  try {
+    const res = await fetch(`/api/telegram?action=checkAuth&phone=${encodeURIComponent(norm)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.authorized) {
+        authorizePhone(norm);
+        return true;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 3. 兜底拉取完整授权名录同步
+  try {
+    const res = await fetch('/api/telegram?action=authlist');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.list) && data.list.length > 0) {
+        data.list.forEach((p: string) => authorizePhone(p));
+        if (isPhoneAuthorized(norm)) return true;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return false;
 }
 
 export function authorizePhone(phone: string): { success: boolean; message: string; list: string[] } {
-  const cleanPhone = phone.trim();
-  if (!cleanPhone) {
+  const norm = normalizePhone(phone);
+  if (!norm) {
     return { success: false, message: '手机号不能为空', list: getAuthorizedPhones() };
   }
-  if (!/^\d{5,15}$/.test(cleanPhone)) {
+  if (!/^\d{5,15}$/.test(norm)) {
     return { success: false, message: '手机号格式不正确（5-15位数字）', list: getAuthorizedPhones() };
   }
 
   const list = getAuthorizedPhones();
-  if (list.includes(cleanPhone)) {
-    return { success: true, message: `手机号 ${cleanPhone} 已经处于已授权状态`, list };
+  if (!list.includes(norm)) {
+    list.push(norm);
+    localStorage.setItem(AUTHORIZED_PHONES_KEY, JSON.stringify(list));
   }
-
-  list.push(cleanPhone);
-  localStorage.setItem(AUTHORIZED_PHONES_KEY, JSON.stringify(list));
-  return { success: true, message: `✅ 成功授权手机号: ${cleanPhone}，现可正常注册`, list };
+  return { success: true, message: `✅ 成功授权手机号: ${norm}，现可正常注册`, list };
 }
 
 export function revokePhone(phone: string): { success: boolean; message: string; list: string[] } {
-  const cleanPhone = phone.trim();
+  const norm = normalizePhone(phone);
   let list = getAuthorizedPhones();
-  if (!list.includes(cleanPhone)) {
-    return { success: false, message: `手机号 ${cleanPhone} 不在授权列表中`, list };
+  if (!list.includes(norm)) {
+    return { success: false, message: `手机号 ${norm} 不在授权列表中`, list };
   }
 
-  list = list.filter(p => p !== cleanPhone);
+  list = list.filter(p => p !== norm);
   localStorage.setItem(AUTHORIZED_PHONES_KEY, JSON.stringify(list));
-  return { success: true, message: `🚫 已取消对手机号 ${cleanPhone} 的注册授权`, list };
+  return { success: true, message: `🚫 已取消对手机号 ${norm} 的注册授权`, list };
 }
 
 // ----------------------------------------------------
@@ -167,29 +216,30 @@ export function saveAccount(account: UserAccount) {
 }
 
 // 注册：手机号（需Bot授权） + 昵称 + 6位数密码（不限制大小写字母字符）
-export function registerAccount(
+export async function registerAccount(
   phone: string,
   nickname: string,
   password: string,
   avatar?: string
-): { success: boolean; message: string; account?: UserAccount } {
-  const cleanPhone = phone.trim();
+): Promise<{ success: boolean; message: string; account?: UserAccount }> {
+  const cleanPhone = normalizePhone(phone);
   const cleanNickname = nickname.trim();
 
   if (!cleanPhone) {
     return { success: false, message: '请输入手机号' };
   }
 
-  // 校验手机号格式：纯数字或手机号常用字符
+  // 校验手机号格式：纯数字或手机号常用字符（5-15位）
   if (!/^\d{5,15}$/.test(cleanPhone)) {
     return { success: false, message: '请输入有效的手机号码（5-15位数字）' };
   }
 
-  // 必须经 Bot 管理员授权后方可注册
-  if (!isPhoneAuthorized(cleanPhone)) {
+  // 必须经 Bot 管理员授权后方可注册（支持本地与服务端 D1/Bot 实时同步）
+  const authorized = await checkOrSyncPhoneAuthorization(cleanPhone);
+  if (!authorized) {
     return {
       success: false,
-      message: '该手机号未获得Bot管理员授权，无法注册！请先联系Bot管理员进行号码授权。'
+      message: `手机号 ${cleanPhone} 未获得Bot管理员授权，无法注册！请先在 Telegram Bot 中发送 "/auth ${cleanPhone}" 授权。`
     };
   }
 
@@ -203,7 +253,8 @@ export function registerAccount(
   }
 
   const db = getAllAccounts();
-  if (db[cleanPhone]) {
+  const existingKey = Object.keys(db).find(k => normalizePhone(k) === cleanPhone);
+  if (existingKey) {
     return { success: false, message: '该手机号已注册，请直接登录' };
   }
 
@@ -238,13 +289,14 @@ export function loginAccount(
   phone: string,
   password: string
 ): { success: boolean; message: string; account?: UserAccount } {
-  const cleanPhone = phone.trim();
+  const cleanPhone = normalizePhone(phone);
   if (!cleanPhone || !password) {
     return { success: false, message: '请输入手机号和 6 位密码' };
   }
 
   const db = getAllAccounts();
-  const found = db[cleanPhone];
+  const foundKey = Object.keys(db).find(k => normalizePhone(k) === cleanPhone) || cleanPhone;
+  const found = db[foundKey];
 
   if (!found) {
     return { success: false, message: '该手机号尚未注册，请先注册' };

@@ -87,6 +87,41 @@ export async function onRequest(context) {
       return new Response(JSON.stringify({ ok: true, command: commandText, response }), { headers });
     }
 
+    // 1.1b Check Phone Authorization
+    if (action === 'checkAuth') {
+      const rawPhone = url.searchParams.get('phone') || '';
+      const phoneDigits = rawPhone.trim().replace(/[^\d]/g, '');
+      let authorized = false;
+
+      if (db && phoneDigits) {
+        try {
+          await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_phones (phone TEXT PRIMARY KEY, authorized_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run();
+          const clean11 = phoneDigits.length > 11 ? phoneDigits.slice(-11) : phoneDigits;
+          const res = await db.prepare("SELECT phone FROM authorized_phones WHERE phone = ? OR phone = ? OR phone LIKE ? LIMIT 1").bind(phoneDigits, `+${phoneDigits}`, `%${clean11}`).first();
+          if (res) authorized = true;
+        } catch (e) {
+          console.error('D1 checkAuth err:', e);
+        }
+      }
+
+      return new Response(JSON.stringify({ ok: true, phone: phoneDigits, authorized }), { headers });
+    }
+
+    // 1.1c Get Authorized Phones List
+    if (action === 'authlist') {
+      let list = [];
+      if (db) {
+        try {
+          await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_phones (phone TEXT PRIMARY KEY, authorized_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run();
+          const res = await db.prepare("SELECT phone FROM authorized_phones ORDER BY authorized_at DESC").all();
+          list = res?.results?.map(r => r.phone) || [];
+        } catch (e) {
+          // ignore
+        }
+      }
+      return new Response(JSON.stringify({ ok: true, list }), { headers });
+    }
+
     // 1.2 Default Status Response
     return new Response(
       JSON.stringify({

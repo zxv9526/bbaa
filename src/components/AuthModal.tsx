@@ -76,7 +76,7 @@ export function AuthModal({
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
 
@@ -95,7 +95,7 @@ export function AuthModal({
       return;
     }
 
-    const res = registerAccount(regPhone, regNickname, regPassword, regAvatar);
+    const res = await registerAccount(regPhone, regNickname, regPassword, regAvatar);
     if (res.success && res.account) {
       setMessage({ type: 'success', text: res.message });
       onAccountChange(res.account);

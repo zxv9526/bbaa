@@ -269,21 +269,13 @@ export default function App() {
     );
   };
 
-  // Move all selected cards to target row ('front' | 'mid' | 'back' | 'pool')
-  const handleMoveSelectedTo = (target: 'front' | 'mid' | 'back' | 'pool') => {
+  // Move all selected cards to target row ('front' | 'mid' | 'back')
+  const handleMoveSelectedTo = (target: 'front' | 'mid' | 'back') => {
     if (selectedCardIds.length === 0) return;
 
     sounds.playCardPick();
     const selectedSet = new Set(selectedCardIds);
     const movedCards: Card[] = [];
-
-    const newPool = pool.filter(c => {
-      if (c && selectedSet.has(c.id)) {
-        movedCards.push(c);
-        return false;
-      }
-      return true;
-    });
 
     const newFront = front.filter(c => {
       if (c && selectedSet.has(c.id)) {
@@ -313,30 +305,22 @@ export default function App() {
       setFront([...newFront, ...movedCards]);
       setMid(newMid);
       setBack(newBack);
-      setPool(newPool);
     } else if (target === 'mid') {
       setFront(newFront);
       setMid([...newMid, ...movedCards]);
       setBack(newBack);
-      setPool(newPool);
     } else if (target === 'back') {
       setFront(newFront);
       setMid(newMid);
       setBack([...newBack, ...movedCards]);
-      setPool(newPool);
-    } else if (target === 'pool') {
-      setFront(newFront);
-      setMid(newMid);
-      setBack(newBack);
-      setPool(sortCards([...newPool, ...movedCards]));
     }
 
     setSelectedCardIds([]);
     setErrorMsg('');
   };
 
-  // Recall all placed cards to pool
-  const handleRecallAllToPool = () => {
+  // Reset hand cards to initial 3/5/5 distribution
+  const handleResetHand = () => {
     sounds.playCardPick();
     const all = sortCards([
       ...front,
@@ -344,10 +328,10 @@ export default function App() {
       ...back,
       ...pool
     ]);
-    setFront([]);
-    setMid([]);
-    setBack([]);
-    setPool(all);
+    setFront(all.slice(0, 3));
+    setMid(all.slice(3, 8));
+    setBack(all.slice(8, 13));
+    setPool([]);
     setSelectedCardIds([]);
     setErrorMsg('');
   };
@@ -770,11 +754,11 @@ export default function App() {
                   <ArrowUpDown className="w-3.5 h-3.5" /> 中后互换
                 </button>
                 <button
-                  onClick={handleRecallAllToPool}
+                  onClick={handleResetHand}
                   className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
-                  title="清空所有墩，牌全部回收至手牌区"
+                  title="恢复初始推荐分布 (3/5/5)"
                 >
-                  <RotateCcw className="w-3.5 h-3.5 text-rose-400" /> 全部回收
+                  <RotateCcw className="w-3.5 h-3.5 text-blue-400" /> 重置理牌
                 </button>
                 {isCurrentDaoShui && (
                   <button
@@ -1022,71 +1006,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 4. POOL (未分配手牌) */}
-              <div
-                onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('pool')}
-                className={`flex flex-col gap-1 p-2.5 rounded-2xl border transition-all ${
-                  selectedCardIds.length > 0
-                    ? 'border-emerald-500/60 bg-emerald-950/30 cursor-pointer hover:bg-emerald-900/40 hover:border-emerald-400 shadow-md'
-                    : 'border-slate-800/80 bg-slate-950/40'
-                }`}
-              >
-                <div className="flex items-center justify-between w-full text-xs font-bold">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                    <span className="text-slate-300">未分配手牌区</span>
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${
-                      pool.length > 0 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-800 text-slate-400'
-                    }`}>
-                      {pool.length} 张
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {pool.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedCardIds(pool.map(c => c.id));
-                        }}
-                        className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold"
-                      >
-                        全选手牌
-                      </button>
-                    )}
-                    {selectedCardIds.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleMoveSelectedTo('pool');
-                        }}
-                        className="px-2.5 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow transition active:scale-95"
-                      >
-                        退回手牌 ({selectedCardIds.length})
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 min-h-[64px] p-1 rounded-xl bg-slate-900/40">
-                  {pool.length === 0 ? (
-                    <div className="w-full py-1.5 text-center text-xs text-slate-500 font-medium">
-                      手牌已全部分配
-                    </div>
-                  ) : (
-                    pool.map(c => (
-                      <CardView
-                        key={c.id}
-                        card={c}
-                        size="md"
-                        selected={selectedCardIds.includes(c.id)}
-                        onClick={() => handleToggleCardSelect(c.id)}
-                      />
-                    ))
-                  )}
-                </div>
-              </div>
-
             </div>
 
             {/* Bottom Submit Action */}
@@ -1096,7 +1015,7 @@ export default function App() {
                 className="w-full max-w-md py-3 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
               >
                 <CheckCircle2 className="w-5 h-5" />
-                提交牌型 ({front.length + mid.length + back.length}/13张已分配)
+                提交牌型 ({front.length + mid.length + back.length}/13张)
               </button>
             </div>
           </div>
