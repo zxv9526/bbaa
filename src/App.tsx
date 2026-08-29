@@ -366,11 +366,11 @@ export default function App() {
   const handleChangePattern = () => {
     sounds.playCardPick();
     if (patternChangerRef.current) {
-      const nextPattern = patternChangerRef.current.getNextPattern();
-      if (nextPattern) {
-        setFront(nextPattern.front);
-        setMid(nextPattern.middle);
-        setBack(nextPattern.back);
+      const res = patternChangerRef.current.getNextPatternWithMeta();
+      if (res) {
+        setFront(res.pattern.front);
+        setMid(res.pattern.middle);
+        setBack(res.pattern.back);
         setPool([]);
         setSelectedCardIds([]);
         setErrorMsg('');
@@ -808,6 +808,39 @@ export default function App() {
                 )}
               </div>
             </div>
+
+            {/* Smart Strategy Selection Chips */}
+            {suggestions.length > 0 && (
+              <div className="w-full flex items-center gap-1.5 overflow-x-auto py-1 px-1 scrollbar-none text-xs">
+                <span className="text-amber-400/90 font-bold text-[11px] shrink-0 flex items-center gap-1 bg-amber-500/10 px-2 py-1 rounded-xl border border-amber-500/20">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" /> 智能方案:
+                </span>
+                {suggestions.map((option, idx) => {
+                  const isCurrentOption =
+                    front.length === 3 &&
+                    mid.length === 5 &&
+                    back.length === 5 &&
+                    option.front.every((c, i) => c.id === front[i]?.id) &&
+                    option.middle.every((c, i) => c.id === mid[i]?.id) &&
+                    option.back.every((c, i) => c.id === back[i]?.id);
+
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => applySuggestion(option)}
+                      className={`px-3 py-1 rounded-xl text-xs font-bold shrink-0 transition flex items-center gap-1 border active:scale-95 ${
+                        isCurrentOption
+                          ? 'bg-amber-500/25 text-amber-200 border-amber-400 shadow-md shadow-amber-500/10 scale-[1.02]'
+                          : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:bg-slate-800 hover:text-amber-300 hover:border-slate-700'
+                      }`}
+                      title={option.title}
+                    >
+                      {option.tag}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Arrangement Card Containers */}
             <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-3.5 sm:p-4 shadow-xl flex flex-col gap-3">

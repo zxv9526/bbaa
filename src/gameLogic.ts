@@ -398,11 +398,25 @@ export interface ArrangementOption {
 
 export function getSuggestedArrangements(cards: Card[]): ArrangementOption[] {
   if (cards.length !== 13) return [];
-  const options: ArrangementOption[] = [];
-  const seenSignatures = new Set<string>();
 
-  // 组合搜索：生成几千种有效排列，选取最佳不同策略
-  const tries = 3500;
+  interface ValidComb {
+    front: Card[];
+    middle: Card[];
+    back: Card[];
+    fEval: HandEvaluation;
+    mEval: HandEvaluation;
+    bEval: HandEvaluation;
+    estScore: number;
+    bonusTotal: number;
+    sig: string;
+    cardSig: string;
+  }
+
+  const validCombs: ValidComb[] = [];
+  const seenCardSigs = new Set<string>();
+
+  // 1. 高速多重抽样搜寻合法摆法 (6000 次)
+  const tries = 6000;
   for (let t = 0; t < tries; t++) {
     const shuffled = shuffle(cards);
     const front = shuffled.slice(0, 3);
@@ -410,37 +424,37 @@ export function getSuggestedArrangements(cards: Card[]): ArrangementOption[] {
     const back = shuffled.slice(8, 13);
 
     if (isValidArrangement(front, middle, back)) {
-      const fEval = evaluateHand(front, 'front');
-      const mEval = evaluateHand(middle, 'middle');
-      const bEval = evaluateHand(back, 'back');
+      const sortedFront = sortCards(front);
+      const sortedMiddle = sortCards(middle);
+      const sortedBack = sortCards(back);
 
-      const estScore = bEval.score * 1.5 + mEval.score * 1.2 + fEval.score + 
-                       (fEval.bonusPoints || 0) * 100000000 + 
-                       (mEval.bonusPoints || 0) * 100000000 + 
-                       (bEval.bonusPoints || 0) * 100000000;
+      const fEval = evaluateHand(sortedFront, 'front');
+      const mEval = evaluateHand(sortedMiddle, 'middle');
+      const bEval = evaluateHand(sortedBack, 'back');
 
-      const sig = `${bEval.type}_${mEval.type}_${fEval.type}`;
-      if (!seenSignatures.has(sig) || options.length < 5) {
-        seenSignatures.add(sig);
-        options.push({
-          title: `${HAND_TYPE_CN[bEval.type]} + ${HAND_TYPE_CN[mEval.type]} + ${HAND_TYPE_CN[fEval.type]}`,
-          tag: options.length === 0 ? '综合最佳推荐' : options.length === 1 ? '稳健防守型' : '激进进攻型',
-          front: sortCards(front),
-          middle: sortCards(middle),
-          back: sortCards(back),
-          frontEval: fEval,
-          midEval: mEval,
-          backEval: bEval,
-          totalEstScore: estScore
+      const bonusTotal = (fEval.bonusPoints || 0) + (mEval.bonusPoints || 0) + (bEval.bonusPoints || 0);
+      const estScore = bEval.score * 1.5 + mEval.score * 1.2 + fEval.score + bonusTotal * 100000000;
+      const cardSig = sortedFront.map(c => c.id).join(',') + '|' + sortedMiddle.map(c => c.id).join(',') + '|' + sortedBack.map(c => c.id).join(',');
+
+      if (!seenCardSigs.has(cardSig)) {
+        seenCardSigs.add(cardSig);
+        validCombs.push({
+          front: sortedFront,
+          middle: sortedMiddle,
+          back: sortedBack,
+          fEval,
+          mEval,
+          bEval,
+          estScore,
+          bonusTotal,
+          sig: `${bEval.type}_${mEval.type}_${fEval.type}`,
+          cardSig
         });
       }
     }
   }
 
-  // 降序排序
-  options.sort((a, b) => b.totalEstScore - a.totalEstScore);
-
-  if (options.length === 0) {
+  if (validCombs.length === 0) {
     // 兜底保底
     const sorted = sortCards(cards);
     const front = sorted.slice(10, 13);
@@ -449,7 +463,7 @@ export function getSuggestedArrangements(cards: Card[]): ArrangementOption[] {
     const fEval = evaluateHand(front, 'front');
     const mEval = evaluateHand(middle, 'middle');
     const bEval = evaluateHand(back, 'back');
-    options.push({
+    return [{
       title: '默认排序排列',
       tag: '保底方案',
       front,
@@ -459,11 +473,83 @@ export function getSuggestedArrangements(cards: Card[]): ArrangementOption[] {
       midEval: mEval,
       backEval: bEval,
       totalEstScore: 0
-    });
+    }];
   }
 
-  // 返回前 3 种不同特色的最佳方案
-  return options.slice(0, 3);
+  // 2. 提取不同维度的智能策略
+  const strategies: { tag: string; pick: (combs: ValidComb[]) => ValidComb }[] = [
+    {
+      tag: '🌟 综合最佳',
+      pick: combs => combs.reduce((best, c) => c.estScore > best.estScore ? c : best, combs[0])
+    },
+    {
+      tag: '🛡️ 稳健防守',
+      pick: combs => combs.reduce((best, c) => (c.bEval.score * 1.6 + c.mEval.score * 1.2) > (best.bEval.score * 1.6 + best.mEval.score * 1.2) ? c : best, combs[0])
+    },
+    {
+      tag: '⚡ 冲前三张',
+      pick: combs => combs.reduce((best, c) => c.fEval.score > best.fEval.score ? c : best, combs[0])
+    },
+    {
+      tag: '💥 中墩强攻',
+      pick: combs => combs.reduce((best, c) => c.mEval.score > best.mEval.score ? c : best, combs[0])
+    },
+    {
+      tag: '👑 喜分猎手',
+      pick: combs => combs.reduce((best, c) => c.bonusTotal > best.bonusTotal ? c : (c.bonusTotal === best.bonusTotal && c.estScore > best.estScore ? c : best), combs[0])
+    },
+    {
+      tag: '⚖️ 均衡组合',
+      pick: combs => combs.reduce((best, c) => {
+        const minC = Math.min(c.fEval.score, c.mEval.score, c.bEval.score);
+        const minB = Math.min(best.fEval.score, best.mEval.score, best.bEval.score);
+        return minC > minB ? c : best;
+      }, combs[0])
+    }
+  ];
+
+  const results: ArrangementOption[] = [];
+  const addedCardSigs = new Set<string>();
+
+  for (const strat of strategies) {
+    const chosen = strat.pick(validCombs);
+    if (chosen && !addedCardSigs.has(chosen.cardSig)) {
+      addedCardSigs.add(chosen.cardSig);
+      results.push({
+        title: `前:${HAND_TYPE_CN[chosen.fEval.type]} | 中:${HAND_TYPE_CN[chosen.mEval.type]} | 后:${HAND_TYPE_CN[chosen.bEval.type]}`,
+        tag: strat.tag,
+        front: chosen.front,
+        middle: chosen.middle,
+        back: chosen.back,
+        frontEval: chosen.fEval,
+        midEval: chosen.mEval,
+        backEval: chosen.bEval,
+        totalEstScore: chosen.estScore
+      });
+    }
+  }
+
+  // 补充备选方案
+  validCombs.sort((a, b) => b.estScore - a.estScore);
+  for (const comb of validCombs) {
+    if (results.length >= 6) break;
+    if (!addedCardSigs.has(comb.cardSig)) {
+      addedCardSigs.add(comb.cardSig);
+      results.push({
+        title: `前:${HAND_TYPE_CN[comb.fEval.type]} | 中:${HAND_TYPE_CN[comb.mEval.type]} | 后:${HAND_TYPE_CN[comb.bEval.type]}`,
+        tag: `🎯 备选方案 ${results.length + 1}`,
+        front: comb.front,
+        middle: comb.middle,
+        back: comb.back,
+        frontEval: comb.fEval,
+        midEval: comb.mEval,
+        backEval: comb.bEval,
+        totalEstScore: comb.estScore
+      });
+    }
+  }
+
+  return results;
 }
 
 // AI 摆牌
