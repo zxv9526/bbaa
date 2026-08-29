@@ -69,8 +69,21 @@ import {
   UserCheck,
   ChevronRight,
   Gem,
-  Gift
+  Gift,
+  Train
 } from 'lucide-react';
+
+import {
+  getOrCreateCurrentCarriage,
+  submitCarriageHandAndAdvance,
+  getCarriageStats,
+  getPlayerCarriageIndexProgress,
+  setPlayerCarriageIndexProgress,
+  CarriagePoolStats,
+  resetCarriagePool
+} from './lib/carriageManager';
+import { CarriageHeaderBar } from './components/CarriageHeaderBar';
+import { CarriageHubModal } from './components/CarriageHubModal';
 
 type GameMode = 'vs_ai_8p' | 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer';
 
@@ -83,6 +96,14 @@ export default function App() {
   const [roomCode, setRoomCode] = useState<string>('');
   const [joinInputCode8P, setJoinInputCode8P] = useState<string>('');
   const [joinInputCode4P, setJoinInputCode4P] = useState<string>('');
+
+  // Carriage Mode State (8-player Async Carriage Flow)
+  const [carriageSeatIndex, setCarriageSeatIndex] = useState<number>(0);
+  const [carriageIndex, setCarriageIndex] = useState<number>(() => getPlayerCarriageIndexProgress());
+  const [carriageId, setCarriageId] = useState<string>('');
+  const [carriageStats, setCarriageStats] = useState<CarriagePoolStats>(() => getCarriageStats());
+  const [showCarriageHubModal, setShowCarriageHubModal] = useState<boolean>(false);
+  const [carriageToast, setCarriageToast] = useState<{ show: boolean; msg: string; pts: number } | null>(null);
 
   // Audio mute state
   const [isMuted, setIsMuted] = useState(false);
@@ -178,13 +199,91 @@ export default function App() {
   };
 
   // Start a new local match (8P, 4P, or 2P)
-  const startNewMatch = (selectedMode: GameMode = mode) => {
+  const startNewMatch = (selectedMode: GameMode = mode, seatOverride?: number) => {
     sounds.playDeal();
     setMode(selectedMode);
-    const is8P = selectedMode === 'vs_ai_8p';
-    const deck = shuffle(is8P ? createDoubleDeck() : createDeck());
+    setErrorMsg('');
+    setMatchResults(null);
+    setUseSpecialHand(false);
 
-    const numPlayers = selectedMode === 'vs_ai_2p' ? 2 : selectedMode === 'vs_ai_8p' ? 8 : 4;
+    // 🚆 8人模式：使用预生牌存储异步车厢连战系统
+    if (selectedMode === 'vs_ai_8p') {
+      const activeSeat = typeof seatOverride === 'number' ? seatOverride : carriageSeatIndex;
+      const { carriage, seatIndex, handCards, stats } = getOrCreateCurrentCarriage(activeSeat);
+      
+      setCarriageSeatIndex(seatIndex);
+      setCarriageIndex(carriage.index);
+      setCarriageId(carriage.id);
+      setCarriageStats(stats);
+
+      const sortedPlayerHand = sortCards(handCards);
+      setOriginalHand(sortedPlayerHand);
+      setPool([]);
+      setFront(sortedPlayerHand.slice(0, 3));
+      setMid(sortedPlayerHand.slice(3, 8));
+      setBack(sortedPlayerHand.slice(8, 13));
+      setSelectedCardIds([]);
+
+      // Detect Special Hand
+      const special = detectSpecialHand(sortedPlayerHand);
+      setSpecialHand(special);
+
+      // Compute AI Suggestions for player
+      const smartSuggestions = getSuggestedArrangements(sortedPlayerHand);
+      setSuggestions(smartSuggestions);
+      patternChangerRef.current = new PatternChanger(sortedPlayerHand);
+
+      // Prepare players list for 8-player carriage room
+      const playersList: {
+        id: string;
+        name: string;
+        isAi: boolean;
+        avatar: string;
+        cards: Card[];
+        arrangement: PlayerArrangement;
+      }[] = [
+        {
+          id: 'player_user',
+          name: currentAccount.nickname || playerName,
+          isAi: false,
+          avatar: currentAccount.avatar || '😎',
+          cards: sortedPlayerHand,
+          arrangement: {
+            front: [],
+            middle: [],
+            back: [],
+            specialHand: null,
+            isValid: false,
+            isDaoShui: false
+          }
+        }
+      ];
+
+      const aiAvatars = ['🦁', '🐯', '🦊', '🐰', '🐼', '鹰', '🦄'];
+      const aiNames = ['赌神阿发', '雀圣阿旺', '十三水老强', '爆牌九哥', '顺子妹子', '同花顺大佬', '铁支杀手'];
+
+      for (let i = 1; i < 8; i++) {
+        const s = (seatIndex + i) % 8;
+        const seatCards = carriage.hands[s]?.cards || [];
+        const aiArrange = aiArrangeCards(seatCards);
+        playersList.push({
+          id: `ai_${i}`,
+          name: `${aiNames[i - 1]} (${s + 1}号位)`,
+          isAi: true,
+          avatar: aiAvatars[i - 1] || '🤖',
+          cards: seatCards,
+          arrangement: aiArrange
+        });
+      }
+
+      setPlayersInMatch(playersList);
+      setGameState('arranging');
+      return;
+    }
+
+    // 4人场与2人场：标准对局逻辑
+    const deck = shuffle(createDeck());
+    const numPlayers = selectedMode === 'vs_ai_2p' ? 2 : 4;
     const playerDealt = deck.slice(0, 13);
     const sortedPlayerHand = sortCards(playerDealt);
 
@@ -194,9 +293,6 @@ export default function App() {
     setMid(sortedPlayerHand.slice(3, 8));
     setBack(sortedPlayerHand.slice(8, 13));
     setSelectedCardIds([]);
-    setErrorMsg('');
-    setMatchResults(null);
-    setUseSpecialHand(false);
 
     // Detect Special Hand
     const special = detectSpecialHand(sortedPlayerHand);
@@ -469,6 +565,64 @@ export default function App() {
   };
 
   const settleMatch = async (userArrangement: PlayerArrangement) => {
+    // 🚆 8人模式：车厢异步结算并自动秒入下一节车厢
+    if (mode === 'vs_ai_8p') {
+      try {
+        const res = await submitCarriageHandAndAdvance({
+          carriageId,
+          seatIndex: carriageSeatIndex,
+          playerAccount: currentAccount,
+          arrangement: userArrangement,
+          handCards: originalHand
+        });
+
+        if (res.playerResult.finalPoints > 0) {
+          sounds.playVictory();
+          confetti({ particleCount: 70, spread: 70, origin: { y: 0.5 } });
+        } else {
+          sounds.playDunWin();
+        }
+
+        const deltaStr = res.playerResult.finalPoints >= 0 ? `+${res.playerResult.finalPoints}` : `${res.playerResult.finalPoints}`;
+        setCarriageToast({
+          show: true,
+          msg: `🎉 第 ${res.completedCarriage.index} 节车厢理牌完成！获得 ${deltaStr} 水！已自动进入第 ${res.nextCarriageData.carriage.index} 节车厢继续理牌...`,
+          pts: res.playerResult.finalPoints
+        });
+
+        setTimeout(() => {
+          setCarriageToast(null);
+        }, 4500);
+
+        // 自动无缝切换到下一节车厢
+        setCarriageIndex(res.nextCarriageData.carriage.index);
+        setCarriageId(res.nextCarriageData.carriage.id);
+        setCarriageStats(res.updatedStats);
+
+        const nextHand = sortCards(res.nextCarriageData.handCards);
+        setOriginalHand(nextHand);
+        setPool([]);
+        setFront(nextHand.slice(0, 3));
+        setMid(nextHand.slice(3, 8));
+        setBack(nextHand.slice(8, 13));
+        setSelectedCardIds([]);
+        setErrorMsg('');
+        setUseSpecialHand(false);
+
+        const special = detectSpecialHand(nextHand);
+        setSpecialHand(special);
+        const smartSuggestions = getSuggestedArrangements(nextHand);
+        setSuggestions(smartSuggestions);
+        patternChangerRef.current = new PatternChanger(nextHand);
+
+        refreshPlayerStats(currentAccount.nickname || playerName);
+      } catch (err: any) {
+        setErrorMsg(err.message || '车厢理牌提交失败');
+      }
+      return;
+    }
+
+    // 4人场与2人场标准结算
     const updatedPlayers = playersInMatch.map(p => {
       if (!p.isAi) {
         return { ...p, arrangement: userArrangement };
@@ -487,7 +641,7 @@ export default function App() {
       addPoints(
         pointsDelta,
         pointsDelta >= 0 ? 'MATCH_WIN' : 'MATCH_LOSS',
-        `${mode === 'vs_ai_8p' ? '八人巅峰战' : mode === 'vs_ai_4p' ? '四人经典战' : '双人单挑'}结算 (${userResult.finalPoints >= 0 ? '+' : ''}${userResult.finalPoints}道)`
+        `${mode === 'vs_ai_4p' ? '四人经典战' : '双人单挑'}结算 (${userResult.finalPoints >= 0 ? '+' : ''}${userResult.finalPoints}道)`
       );
 
       // Record to D1
@@ -625,7 +779,7 @@ export default function App() {
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-3 flex flex-col items-center justify-center overflow-hidden">
         {gameState === 'menu' && (
           <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 my-auto">
-            {/* BLOCK 1: 八人场 (8-Player Arena) */}
+            {/* BLOCK 1: 八人车厢场 (8-Player Carriage Async Arena) */}
             <div
               id="arena-8p-section"
               onClick={() => startNewMatch('vs_ai_8p')}
@@ -634,25 +788,29 @@ export default function App() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-red-600 text-slate-950 flex items-center justify-center text-2xl font-black shadow-lg shadow-red-600/30 group-hover:scale-105 transition duration-300">
-                    👑
+                    🚆
                   </div>
-                  <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/30">
-                    双副 104 牌
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/30 flex items-center gap-1">
+                      <Layers className="w-3 h-3 text-amber-400" /> 预存300局车厢
+                    </span>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight group-hover:text-amber-300 transition">
-                    八人场
+                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight group-hover:text-amber-300 transition flex items-center gap-2">
+                    八人车厢连战
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                    双副扑克牌 · 8人同台竞技 · 7枪全垒打狂暴翻倍
+                    预发牌300局存储 • 提交理牌自动瞬移下一车厢 • 缺50局自动满额
                   </p>
                 </div>
               </div>
 
               <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-sm sm:text-base font-bold text-amber-400 group-hover:text-amber-300">
-                <span>立即进入八人场</span>
+                <span className="flex items-center gap-1.5">
+                  <Train className="w-4 h-4" /> 进入第 {carriageIndex} 节车厢
+                </span>
                 <div className="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center group-hover:translate-x-1.5 transition">
                   <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
@@ -719,6 +877,36 @@ export default function App() {
         )}
         {gameState === 'arranging' && (
           <div className="w-full max-w-5xl flex flex-col items-center gap-3 py-1">
+            {/* 🚆 Carriage Header Bar for 8-Player Async Mode */}
+            {mode === 'vs_ai_8p' && (
+              <CarriageHeaderBar
+                currentCarriageIndex={carriageIndex}
+                seatIndex={carriageSeatIndex}
+                onSeatChange={newSeat => {
+                  setCarriageSeatIndex(newSeat);
+                  startNewMatch('vs_ai_8p', newSeat);
+                }}
+                stats={carriageStats}
+                onOpenHub={() => setShowCarriageHubModal(true)}
+              />
+            )}
+
+            {/* 🚆 Carriage Transition Toast Notification */}
+            {carriageToast && carriageToast.show && (
+              <div className="w-full bg-gradient-to-r from-emerald-950/90 via-slate-900 to-indigo-950/90 border border-emerald-500/40 rounded-2xl px-4 py-3 shadow-xl flex items-center justify-between text-xs font-bold text-emerald-300 animate-in slide-in-from-top duration-300">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-lg">🚆</span>
+                  <span>{carriageToast.msg}</span>
+                </div>
+                <button
+                  onClick={() => setCarriageToast(null)}
+                  className="text-slate-400 hover:text-white px-2 py-1 transition"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* Special Hand Alert Banner */}
             {specialHand && (
               <SpecialHandBanner
@@ -1065,6 +1253,20 @@ export default function App() {
       <CardSkinModal
         isOpen={showSkinModal}
         onClose={() => setShowSkinModal(false)}
+      />
+
+      <CarriageHubModal
+        isOpen={showCarriageHubModal}
+        onClose={() => setShowCarriageHubModal(false)}
+        currentCarriageIndex={carriageIndex}
+        onSelectCarriageIndex={idx => {
+          setPlayerCarriageIndexProgress(idx);
+          startNewMatch('vs_ai_8p');
+          setShowCarriageHubModal(false);
+        }}
+        onResetPool={() => {
+          startNewMatch('vs_ai_8p');
+        }}
       />
     </div>
   );
