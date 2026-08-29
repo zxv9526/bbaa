@@ -315,12 +315,50 @@ export class ApiClient {
     // Local simulator fallback when API is not running directly
     const rawCmd = (command || '').trim();
     const parts = rawCmd.split(/\s+/);
-    const mainCmd = parts[0].toLowerCase();
+    let mainCmd = parts[0].toLowerCase();
     const arg1 = parts[1];
     const arg2 = parts[2];
 
+    if (rawCmd === '📱 授权手机号' || rawCmd === '📱 授权名录') mainCmd = '/authlist';
+    else if (rawCmd === '🚫 移除授权' || rawCmd === '🚫 取消授权') mainCmd = '/help_unauth';
+    else if (rawCmd === '🗑️ 删除玩家' || rawCmd === '🗑️ 删除账号') mainCmd = '/help_deluser';
+    else if (rawCmd === '💰 积分管理' || rawCmd === '💰 调整积分') mainCmd = '/help_points';
+    else if (rawCmd === '👥 活跃玩家' || rawCmd === '👥 玩家名录') mainCmd = '/players';
+    else if (rawCmd === '🏆 全服风云榜' || rawCmd === '🏆 排行榜') mainCmd = '/rank';
+    else if (rawCmd === '📊 数据总览' || rawCmd === '📊 全局统计') mainCmd = '/stats';
+    else if (rawCmd === '📜 最新对局' || rawCmd === '📜 对局流水') mainCmd = '/history';
+    else if (rawCmd === '🆔 我的状态' || rawCmd === '🆔 身份信息') mainCmd = '/myid';
+    else if (rawCmd === '❓ 帮助说明' || rawCmd === '❓ 指令菜单') mainCmd = '/help';
+
     const allUsers = getAllUsersList();
     const authPhones = getAuthorizedPhones();
+
+    if (mainCmd === '/help_unauth') {
+      return {
+        ok: true,
+        response: {
+          text: `🚫 <b>取消手机号注册授权指南</b>\n━━━━━━━━━━━━━━━━━━\n<b>指令格式：</b>\n<code>/unauth 手机号码</code>\n\n<b>使用示例：</b>\n<code>/unauth 13912345678</code>\n\n<i>取消授权后，该手机号将无法在游戏中注册新账号。</i>`
+        }
+      };
+    }
+
+    if (mainCmd === '/help_deluser') {
+      return {
+        ok: true,
+        response: {
+          text: `🗑️ <b>彻底删除玩家账号与战绩指南</b>\n━━━━━━━━━━━━━━━━━━\n<b>指令格式：</b>\n<code>/deluser 手机号或玩家名字</code>\n\n<b>使用示例：</b>\n• <code>/deluser 13912345678</code>\n• <code>/deluser 雀圣阿旺</code>\n\n⚠️ <b>警告：</b>删除后该玩家的积分、战绩历史及注册授权将被完全擦除。`
+        }
+      };
+    }
+
+    if (mainCmd === '/help_points') {
+      return {
+        ok: true,
+        response: {
+          text: `💰 <b>管理员积分增加/扣减指南</b>\n━━━━━━━━━━━━━━━━━━\n<b>增加积分：</b>\n<code>/add 手机号或玩家名 数量</code> (例: <code>/add 雀圣阿旺 5000</code>)\n\n<b>扣减积分：</b>\n<code>/del 手机号或玩家名 数量</code> (例: <code>/del 雀圣阿旺 2000</code>)\n\n<b>设置积分：</b>\n<code>/set 手机号或玩家名 数量</code> (例: <code>/set 雀圣阿旺 10000</code>)`
+        }
+      };
+    }
 
     // 1. 授权手机号注册: /auth <phone> 或 /allow <phone>
     if (mainCmd === '/auth' || mainCmd === '/allow' || mainCmd === '/authorize') {

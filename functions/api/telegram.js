@@ -359,10 +359,45 @@ export async function onRequest(context) {
 }
 
 // ----------------------------------------------------
-// Telegram Message Sender
+// Telegram Message Sender & Command Menu Sync
 // ----------------------------------------------------
+let commandsRegistered = false;
+async function registerBotCommands(botToken) {
+  if (!botToken || commandsRegistered) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        commands: [
+          { command: 'start', description: '启动 Bot 并打开交互菜单' },
+          { command: 'help', description: '查看管理员与查分指令指南' },
+          { command: 'auth', description: '[手机号] 授权手机号注册' },
+          { command: 'unauth', description: '[手机号] 移除手机号注册授权' },
+          { command: 'deluser', description: '[手机号/玩家名] 彻底删除玩家账号及战绩' },
+          { command: 'authlist', description: '查看已授权手机号白名单' },
+          { command: 'add', description: '[手机号/玩家名] [分值] 增加玩家积分' },
+          { command: 'del', description: '[手机号/玩家名] [分值] 扣减玩家积分' },
+          { command: 'score', description: '[玩家名] 查询玩家战绩与近5局明细' },
+          { command: 'rank', description: '查看全服积分风云排行榜' },
+          { command: 'players', description: '查看全服活跃玩家名录' },
+          { command: 'stats', description: '查看全局运行与对局统计' },
+          { command: 'history', description: '查看全服最新对局流水明细' },
+          { command: 'myid', description: '查看您的 Telegram ID 与管理权限' }
+        ]
+      })
+    });
+    commandsRegistered = true;
+  } catch (err) {
+    console.error('Failed to setMyCommands:', err);
+  }
+}
+
 async function sendTelegramMessage(botToken, chatId, text, replyMarkup = null) {
   try {
+    if (botToken) {
+      registerBotCommands(botToken);
+    }
     const payload = {
       chat_id: chatId,
       text: text,
@@ -435,13 +470,16 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
   const userIdStr = String(user?.id || '');
   const usernameStr = user?.username ? `@${user.username}` : '无用户名';
 
-  if (rawCmd === '📱 授权手机号') mainCmd = '/authlist';
-  else if (rawCmd === '👥 活跃玩家') mainCmd = '/players';
-  else if (rawCmd === '🏆 全服风云榜') mainCmd = '/rank';
-  else if (rawCmd === '📊 数据总览') mainCmd = '/stats';
-  else if (rawCmd === '📜 最新对局') mainCmd = '/history';
-  else if (rawCmd === '🆔 我的状态') mainCmd = '/myid';
-  else if (rawCmd === '❓ 帮助说明') mainCmd = '/help';
+  if (rawCmd === '📱 授权手机号' || rawCmd === '📱 授权名录') mainCmd = '/authlist';
+  else if (rawCmd === '🚫 移除授权' || rawCmd === '🚫 取消授权') mainCmd = '/help_unauth';
+  else if (rawCmd === '🗑️ 删除玩家' || rawCmd === '🗑️ 删除账号') mainCmd = '/help_deluser';
+  else if (rawCmd === '💰 积分管理' || rawCmd === '💰 调整积分') mainCmd = '/help_points';
+  else if (rawCmd === '👥 活跃玩家' || rawCmd === '👥 玩家名录') mainCmd = '/players';
+  else if (rawCmd === '🏆 全服风云榜' || rawCmd === '🏆 排行榜') mainCmd = '/rank';
+  else if (rawCmd === '📊 数据总览' || rawCmd === '📊 全局统计') mainCmd = '/stats';
+  else if (rawCmd === '📜 最新对局' || rawCmd === '📜 对局流水') mainCmd = '/history';
+  else if (rawCmd === '🆔 我的状态' || rawCmd === '🆔 身份信息') mainCmd = '/myid';
+  else if (rawCmd === '❓ 帮助说明' || rawCmd === '❓ 指令菜单') mainCmd = '/help';
   else if (/^1[3-9]\d{9}$/.test(rawCmd)) {
     mainCmd = '/auth';
     arg1 = rawCmd;
@@ -450,27 +488,57 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
   // Check admin authorization
   const isAdmin = isSimulation || (await isUserAdmin(user, db, configuredAdminIds));
 
-  // Quick Navigation Keyboard
+  // Quick Navigation Persistent Reply Keyboard
   const mainKeyboard = {
     keyboard: [
       [
         { text: '📱 授权手机号' },
-        { text: '👥 活跃玩家' }
+        { text: '🚫 移除授权' }
+      ],
+      [
+        { text: '🗑️ 删除玩家' },
+        { text: '💰 积分管理' }
       ],
       [
         { text: '🏆 全服风云榜' },
-        { text: '📊 数据总览' }
+        { text: '👥 活跃玩家' }
       ],
       [
-        { text: '📜 最新对局' },
-        { text: '🆔 我的状态' }
+        { text: '📊 数据总览' },
+        { text: '📜 最新对局' }
       ],
       [
+        { text: '🆔 我的状态' },
         { text: '❓ 帮助说明' }
       ]
     ],
     resize_keyboard: true,
     is_persistent: true
+  };
+
+  // Inline Clickable Action Menu Keyboard
+  const inlineHelpKeyboard = {
+    inline_keyboard: [
+      [
+        { text: '📱 授权手机号', callback_data: '/authlist' },
+        { text: '🚫 移除授权指南', callback_data: '/help_unauth' }
+      ],
+      [
+        { text: '🗑️ 删除玩家指南', callback_data: '/help_deluser' },
+        { text: '💰 积分增减指南', callback_data: '/help_points' }
+      ],
+      [
+        { text: '🏆 全服风云榜', callback_data: '/rank' },
+        { text: '👥 活跃玩家名录', callback_data: '/players' }
+      ],
+      [
+        { text: '📊 全局数据总览', callback_data: '/stats' },
+        { text: '📜 最新对局流水', callback_data: '/history' }
+      ],
+      [
+        { text: '🆔 我的身份与权限', callback_data: '/myid' }
+      ]
+    ]
   };
 
   // 1. Command: /myid or /id or /whoami (View current Telegram ID and authorization)
@@ -495,14 +563,56 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
     };
   }
 
-  // 2. Command: /start or /help
+  // Sub-Help Handlers
   if (mainCmd === '/help_auth') {
     return {
-      text: `📱 <b>Bot 手机号授权指令</b>\n\n使用方式：\n<code>/auth 手机号码</code>\n\n例如：<code>/auth 13912345678</code>\n\n<i>授权后该手机号方可在游戏中注册新账号。</i>`,
-      reply_markup: mainKeyboard
+      text: `📱 <b>Bot 手机号授权指令</b>\n━━━━━━━━━━━━━━━━━━\n<b>使用方式：</b>\n<code>/auth 手机号码</code>\n\n例如：<code>/auth 13912345678</code>\n\n<i>授权后该手机号方可在游戏中注册新账号。</i>`,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '📱 查看已授权列表', callback_data: '/authlist' }],
+          [{ text: '🔙 返回主菜单', callback_data: '/help' }]
+        ]
+      }
+    };
+  }
+
+  if (mainCmd === '/help_unauth') {
+    return {
+      text: `🚫 <b>取消手机号注册授权指南</b>\n━━━━━━━━━━━━━━━━━━\n<b>指令格式：</b>\n<code>/unauth 手机号码</code>\n\n<b>使用示例：</b>\n<code>/unauth 13912345678</code>\n\n<i>取消授权后，该手机号将无法在游戏中注册新账号。</i>`,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '📱 查看已授权列表', callback_data: '/authlist' }],
+          [{ text: '🔙 返回主菜单', callback_data: '/help' }]
+        ]
+      }
+    };
+  }
+
+  if (mainCmd === '/help_deluser') {
+    return {
+      text: `🗑️ <b>彻底删除玩家账号与战绩指南</b>\n━━━━━━━━━━━━━━━━━━\n<b>指令格式：</b>\n<code>/deluser 手机号或玩家名字</code>\n\n<b>使用示例：</b>\n• <code>/deluser 13912345678</code>\n• <code>/deluser 雀圣阿旺</code>\n\n⚠️ <b>警告：</b>删除后该玩家的积分、战绩历史及注册授权将被完全擦除。`,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '👥 查看活跃玩家名录', callback_data: '/players' }],
+          [{ text: '🔙 返回主菜单', callback_data: '/help' }]
+        ]
+      }
+    };
+  }
+
+  if (mainCmd === '/help_points') {
+    return {
+      text: `💰 <b>管理员积分增加/扣减指南</b>\n━━━━━━━━━━━━━━━━━━\n<b>增加积分：</b>\n<code>/add 手机号或玩家名 数量</code> (例: <code>/add 雀圣阿旺 5000</code>)\n\n<b>扣减积分：</b>\n<code>/del 手机号或玩家名 数量</code> (例: <code>/del 雀圣阿旺 2000</code>)\n\n<b>设置积分：</b>\n<code>/set 手机号或玩家名 数量</code> (例: <code>/set 雀圣阿旺 10000</code>)`,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🏆 查看全服风云榜', callback_data: '/rank' }],
+          [{ text: '🔙 返回主菜单', callback_data: '/help' }]
+        ]
+      }
     };
   }
   
+  // 2. Command: /start or /help
   if (mainCmd === '/start' || mainCmd === '/help') {
     const statusText = isAdmin
       ? `👑 <b>管理权限</b>: ✅ 已授权管理员`
@@ -521,13 +631,13 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
         `• <code>/score &lt;玩家名&gt;</code> - 查询玩家净胜分、胜率与近5局明细\n` +
         `• <code>/rank [数量]</code> - 查看全服积分风云排行榜 (默认前10名)\n` +
         `• <code>/players</code> - 列出活跃玩家名录及当前总分\n` +
-        `• <code>/add &lt;手机号&gt; &lt;数量&gt;</code> - 增加玩家积分\n` +
-        `• <code>/del &lt;手机号&gt; &lt;数量&gt;</code> - 扣减玩家积分\n` +
+        `• <code>/add &lt;手机号/玩家名&gt; &lt;数量&gt;</code> - 增加玩家积分\n` +
+        `• <code>/del &lt;手机号/玩家名&gt; &lt;数量&gt;</code> - 扣减玩家积分\n` +
         `• <code>/stats</code> - 查看全局对局总量、特殊牌总数统计\n` +
         `• <code>/history [数量]</code> - 查看最近完成的对局明细流水\n` +
         `• <code>/id</code> - 查看您的 Telegram ID 与授权状态\n\n` +
-        `💡 <i>快捷技巧：您也可以直接在对话框发送 <b>玩家名字</b>，机器人将自动为您查分！</i>`,
-      reply_markup: mainKeyboard
+        `💡 <i>点击下方的交互按钮或直接发送 <b>玩家名字</b> 即可查分！</i>`,
+      reply_markup: inlineHelpKeyboard
     };
   }
 
