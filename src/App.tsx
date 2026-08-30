@@ -51,6 +51,7 @@ import {
   AlertTriangle,
   Flame,
   ArrowRight,
+  ArrowLeft,
   User,
   Plus,
   Compass,
@@ -132,8 +133,9 @@ export default function App() {
   const [specialHand, setSpecialHand] = useState<SpecialHandType | null>(null);
   const [useSpecialHand, setUseSpecialHand] = useState<boolean>(false);
 
-  // AI Suggestions
+  // AI Suggestions & Pattern Changer
   const [suggestions, setSuggestions] = useState<ArrangementOption[]>([]);
+  const [patternInfo, setPatternInfo] = useState<{ tag: string; index: number; total: number } | null>(null);
   const patternChangerRef = useRef<PatternChanger | null>(null);
   
   // Match State (Supports 2, 4, or 8 players)
@@ -470,16 +472,21 @@ export default function App() {
 
   // Smart Pattern Changer
   const handleChangePattern = () => {
-    sounds.playCardPick();
+    sounds.playSwap();
     if (patternChangerRef.current) {
-      const res = patternChangerRef.current.getNextPatternWithMeta();
+      const res = patternChangerRef.current.getNextPatternDifferentFrom(front, mid, back);
       if (res) {
-        setFront(res.pattern.front);
-        setMid(res.pattern.middle);
-        setBack(res.pattern.back);
+        setFront([...res.pattern.front]);
+        setMid([...res.pattern.middle]);
+        setBack([...res.pattern.back]);
         setPool([]);
         setSelectedCardIds([]);
         setErrorMsg('');
+        setPatternInfo({
+          tag: res.pattern.tag,
+          index: res.index,
+          total: res.total
+        });
       }
     }
   };
@@ -788,73 +795,71 @@ export default function App() {
   return (
     <div className="h-screen w-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
       {/* 1. Header Bar */}
-      {gameState === 'menu' ? (
-        <header className="shrink-0 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
-          {/* TOP LEFT: Registration / Login / Profile Entry */}
+      <header className="shrink-0 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-8 py-3 flex items-center justify-between shadow-sm">
+        {/* TOP LEFT: Registration / Profile or Back to Menu */}
+        {gameState === 'menu' ? (
           <button
             id="user-auth-entry-btn"
             onClick={() => setShowAuthModal(true)}
-            className="flex items-center gap-3 px-3.5 py-2 rounded-2xl border border-slate-800 bg-slate-950/80 hover:bg-slate-900 hover:border-blue-500/50 transition active:scale-95 text-left group shadow-sm"
+            className="flex items-center gap-3 px-3 py-1.5 rounded-2xl border border-slate-800 bg-slate-950/80 hover:bg-slate-900 hover:border-blue-500/50 transition active:scale-95 text-left group shadow-sm"
             title="手机号登录 / 注册 / 个人中心"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600/30 to-indigo-600/30 border border-blue-500/40 flex items-center justify-center text-xl shadow-inner group-hover:scale-105 transition">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600/30 to-indigo-600/30 border border-blue-500/40 flex items-center justify-center text-lg shadow-inner group-hover:scale-105 transition">
               {currentAccount.avatar}
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="text-sm font-bold text-white group-hover:text-blue-300 transition truncate max-w-[120px]">
+                <span className="text-xs sm:text-sm font-bold text-white group-hover:text-blue-300 transition truncate max-w-[110px]">
                   {currentAccount.nickname}
                 </span>
               </div>
-              <div className="text-[11px] text-slate-400 font-mono">
+              <div className="text-[10px] text-slate-400 font-mono">
                 {currentAccount.phone}
               </div>
             </div>
           </button>
-          
-          {/* Center Brand Title */}
-          <div
+        ) : (
+          <button
+            id="btn-back-to-menu"
             onClick={() => setGameState('menu')}
-            className="cursor-pointer select-none text-center"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-800 bg-slate-950/80 hover:bg-slate-800 text-slate-300 hover:text-white transition active:scale-95 text-xs sm:text-sm font-bold shadow-sm"
+            title="返回大厅"
           >
-            <h1 className="font-black text-xl tracking-wider text-white flex items-center justify-center gap-2">
-              十三水
-            </h1>
-          </div>
+            <ArrowLeft className="w-4 h-4 text-slate-400" />
+            <span>返回大厅</span>
+          </button>
+        )}
+        
+        {/* Center Brand Title */}
+        <div
+          onClick={() => setGameState('menu')}
+          className="cursor-pointer select-none text-center"
+        >
+          <h1 className="font-black text-lg sm:text-xl tracking-wider text-white flex items-center justify-center gap-1.5">
+            十三水
+          </h1>
+        </div>
 
-          {/* TOP RIGHT: Points Management Entry */}
-          <div className="flex items-center gap-3">
-            <button
-              id="points-management-entry-btn"
-              onClick={() => setShowPointsModal(true)}
-              className="flex items-center gap-2.5 px-3.5 sm:px-4 py-2 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/50 to-slate-950 hover:border-amber-400 text-amber-300 transition active:scale-95 shadow-md shadow-amber-500/10 group"
-              title="点击打开积分管理：手机号互赠积分"
-            >
-              <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-base text-amber-400 group-hover:scale-110 transition">
-                🪙
+        {/* TOP RIGHT: Points Management Entry */}
+        <div className="flex items-center gap-3">
+          <button
+            id="points-management-entry-btn"
+            onClick={() => setShowPointsModal(true)}
+            className="flex items-center gap-2 px-3 sm:px-3.5 py-1.5 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/50 to-slate-950 hover:border-amber-400 text-amber-300 transition active:scale-95 shadow-md shadow-amber-500/10 group"
+            title="点击打开积分管理：手机号互赠积分"
+          >
+            <div className="w-7 h-7 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-sm text-amber-400 group-hover:scale-110 transition">
+              🪙
+            </div>
+            <div className="text-left">
+              <div className="text-[9px] text-amber-400/80 font-bold leading-tight">积分</div>
+              <div className="text-xs sm:text-sm font-black text-amber-400 leading-none">
+                {currentAccount.points.toLocaleString()}
               </div>
-              <div className="text-left">
-                <div className="text-[10px] text-amber-400/80 font-bold">积分管理</div>
-                <div className="text-sm font-black text-amber-400 leading-none">
-                  {currentAccount.points.toLocaleString()}
-                </div>
-              </div>
-            </button>
-          </div>
-        </header>
-      ) : (
-        <header className="shrink-0 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 px-4 py-2 flex items-center justify-center shadow-sm overflow-x-auto no-scrollbar">
-          <div className="flex flex-nowrap items-center justify-center gap-3 w-full max-w-5xl whitespace-nowrap">
-            <span className="text-xs font-bold text-slate-400 shrink-0">参赛玩家：</span>
-            {playersInMatch.map(p => (
-              <div key={p.id} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/80 rounded-xl border border-slate-700/50 shrink-0">
-                <span className="text-sm">{p.avatar}</span>
-                <span className="text-xs font-bold text-slate-200">{p.name} {p.isAi ? '' : '(我)'}</span>
-              </div>
-            ))}
-          </div>
-        </header>
-      )}
+            </div>
+          </button>
+        </div>
+      </header>
 
       {/* 2. Main Body Content: Minimalist & Clean Two Arena Blocks */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-3 flex flex-col items-center justify-center overflow-hidden">
@@ -1225,26 +1230,35 @@ export default function App() {
             </div>
 
             {/* Bottom Actions: Exactly Two Buttons (变换牌型 & 提交牌型) */}
-            <div className="w-full max-w-2xl mx-auto flex items-center justify-center gap-3 sm:gap-4 pt-1">
-              <button
-                id="btn-change-pattern"
-                onClick={handleChangePattern}
-                className="flex-1 py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-amber-950/30 transition active:scale-95 cursor-pointer"
-                title="智能切换下一组牌型"
-              >
-                <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
-                <span>变换牌型</span>
-              </button>
+            <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1.5 pt-1">
+              {patternInfo && (
+                <div className="text-xs font-bold text-amber-300 bg-amber-950/40 border border-amber-500/30 px-3 py-0.5 rounded-full animate-in fade-in flex items-center gap-1.5">
+                  <span>✨ 当前方案:</span>
+                  <span className="text-amber-200">{patternInfo.tag}</span>
+                  <span className="text-slate-400 font-medium">({patternInfo.index}/{patternInfo.total})</span>
+                </div>
+              )}
+              <div className="w-full flex items-center justify-center gap-3 sm:gap-4">
+                <button
+                  id="btn-change-pattern"
+                  onClick={handleChangePattern}
+                  className="flex-1 py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-amber-950/30 transition active:scale-95 cursor-pointer"
+                  title="点击切换下一组牌型"
+                >
+                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+                  <span>变换牌型</span>
+                </button>
 
-              <button
-                id="btn-submit-arrangement"
-                onClick={handleSubmitArrangement}
-                className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
-                title="提交牌型"
-              >
-                <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span>提交牌型 ({front.length + mid.length + back.length}/13张)</span>
-              </button>
+                <button
+                  id="btn-submit-arrangement"
+                  onClick={handleSubmitArrangement}
+                  className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
+                  title="提交牌型"
+                >
+                  <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span>提交牌型 ({front.length + mid.length + back.length}/13张)</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

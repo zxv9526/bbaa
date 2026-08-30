@@ -68,18 +68,29 @@ export function RuleModal({ isOpen, onClose }: RuleModalProps) {
             </div>
           </section>
 
-          {/* 牌型大小 */}
+          {/* 牌型大小与喜分加分 */}
           <section className="space-y-2">
             <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-base">
               <Trophy className="w-4 h-4 text-amber-500" />
-              2. 常见牌型大小关系
+              2. 常见牌型大小关系与墩位喜分
             </h4>
             <p className="text-xs text-slate-600 dark:text-slate-400">
-              同花顺 &gt; 铁支 (四条) &gt; 葫芦 (三带二) &gt; 同花 &gt; 顺子 &gt; 三条 &gt; 两对 &gt; 一对 &gt; 乌龙 (单张高牌)。
+              五条 (八人双副牌) &gt; 同花顺 &gt; 铁支 (四条) &gt; 葫芦 (三带二) &gt; 同花 &gt; 顺子 &gt; 三条 &gt; 两对 &gt; 一对 &gt; 乌龙 (单张高牌)。
             </p>
-            <div className="text-xs bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1">
-              <div>• 点数大小：A &gt; K &gt; Q &gt; J &gt; 10 &gt; 9 &gt; 8 &gt; 7 &gt; 6 &gt; 5 &gt; 4 &gt; 3 &gt; 2</div>
-              <div>• 花色大小：黑桃 ♠ &gt; 红桃 ♥ &gt; 梅花 ♣ &gt; 方块 ♦</div>
+            <div className="text-xs bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1.5">
+              <div>• <strong>点数大小：</strong>A &gt; K &gt; Q &gt; J &gt; 10 &gt; 9 &gt; 8 &gt; 7 &gt; 6 &gt; 5 &gt; 4 &gt; 3 &gt; 2</div>
+              <div>• <strong>花色大小：</strong>黑桃 ♠ &gt; 红桃 ♥ &gt; 梅花 ♣ &gt; 方块 ♦</div>
+              <div className="pt-1 border-t border-slate-200 dark:border-slate-700">
+                <span className="font-bold text-amber-600 dark:text-amber-400">✨ 墩位喜分奖励 (获胜额外计水)：</span>
+                <div className="grid grid-cols-2 gap-1 mt-1 text-[11px] text-slate-600 dark:text-slate-400">
+                  <div>• 前墩三条：+3 水</div>
+                  <div>• 中墩葫芦：+2 水</div>
+                  <div>• 铁支：中墩+8水 / 后墩+4水</div>
+                  <div>• 同花顺：中墩+10水 / 后墩+5水</div>
+                  <div>• 五条：中墩+16水 / 后墩+8水</div>
+                  <div>• 打枪：总得分翻倍 (+3水)</div>
+                </div>
+              </div>
             </div>
           </section>
 

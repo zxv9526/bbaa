@@ -16,7 +16,8 @@ export type HandType =
   | 'Flush'           // 同花
   | 'Full House'      // 葫芦
   | 'Four of a Kind'  // 铁支 / 炸弹
-  | 'Straight Flush'; // 同花顺
+  | 'Straight Flush'  // 同花顺
+  | 'Five of a Kind'; // 五条 / 五同 (双副牌)
 
 export type SpecialHandType =
   | 'Supreme Dragon'       // 至尊青龙 (同花一条龙)
