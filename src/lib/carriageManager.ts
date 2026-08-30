@@ -208,17 +208,53 @@ export function setPlayerCarriageIndexProgress(index: number, mode: 'vs_ai_4p' |
   } catch (e) {}
 }
 
+// 📍 获取当前正在进行的房间位置占用与剩余信息
+export function getCurrentCarriageOccupancy(mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p'): {
+  totalSeats: number;
+  occupiedCount: number;
+  remainingSeats: number;
+  isFull: boolean;
+  carriageIndex: number;
+  submissions: { [seatIndex: number]: CarriageSubmission };
+} {
+  const totalSeats = mode === 'vs_ai_8p' ? 8 : 4;
+  const storage = loadCarriageStorage(mode);
+  const playerIndex = getPlayerCarriageIndexProgress(mode);
+  let carriage = storage.carriages.find(c => c.index === playerIndex);
+  if (!carriage) {
+    const unclaimed = storage.carriages.find(c => c.status === 'unclaimed');
+    if (unclaimed) {
+      carriage = unclaimed;
+    } else {
+      carriage = generateSingleCarriage(playerIndex, mode);
+    }
+  }
+  const submissions = carriage.submissions || {};
+  const occupiedCount = Object.keys(submissions).length;
+  const remainingSeats = Math.max(0, totalSeats - occupiedCount);
+  return {
+    totalSeats,
+    occupiedCount,
+    remainingSeats,
+    isFull: remainingSeats === 0,
+    carriageIndex: carriage.index,
+    submissions
+  };
+}
+
 // 🚂 获取玩家进入的当前/下一局 (如当前牌局不存在，自动从预发牌池分配)
 export function getOrCreateCurrentCarriage(preferredSeatIndex: number = 0, mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p'): {
   carriage: Carriage;
   seatIndex: number;
   handCards: Card[];
   stats: CarriagePoolStats;
+  isFull: boolean;
 } {
   const stats = checkAndReplenishCarriages(mode);
   const storage = loadCarriageStorage(mode);
   const playerIndex = getPlayerCarriageIndexProgress(mode);
-  const maxSeat = mode === 'vs_ai_8p' ? 7 : 3;
+  const totalSeats = mode === 'vs_ai_8p' ? 8 : 4;
+  const maxSeat = totalSeats - 1;
 
   let carriage = storage.carriages.find(c => c.index === playerIndex);
 
@@ -239,14 +275,29 @@ export function getOrCreateCurrentCarriage(preferredSeatIndex: number = 0, mode:
     saveCarriageStorage(storage, mode);
   }
 
-  const validSeat = Math.max(0, Math.min(maxSeat, preferredSeatIndex));
+  const submissions = carriage.submissions || {};
+  const occupiedCount = Object.keys(submissions).length;
+  const isFull = occupiedCount >= totalSeats;
+
+  // 如果首选位置已被占用，自动寻找空余位置
+  let validSeat = Math.max(0, Math.min(maxSeat, preferredSeatIndex));
+  if (submissions[validSeat]) {
+    for (let s = 0; s < totalSeats; s++) {
+      if (!submissions[s]) {
+        validSeat = s;
+        break;
+      }
+    }
+  }
+
   const handCards = carriage.hands[validSeat]?.cards || [];
 
   return {
     carriage,
     seatIndex: validSeat,
     handCards,
-    stats: getCarriageStats(storage.carriages, storage.totalGeneratedCount, mode)
+    stats: getCarriageStats(storage.carriages, storage.totalGeneratedCount, mode),
+    isFull
   };
 }
 
@@ -293,8 +344,7 @@ export async function submitCarriageHandAndAdvance(params: {
     submittedAt: new Date().toISOString()
   };
 
-  // 2. 为其余位置自动匹配/生成 AI 玩家理牌结果
-  const usedAiNames = new Set<string>();
+  // 2. 收集所有已有真实提交的玩家理牌结果 (已移除 AI 自动补位!)
   const matchPlayersInput: {
     id: string;
     name: string;
@@ -302,62 +352,14 @@ export async function submitCarriageHandAndAdvance(params: {
     avatar: string;
     cards: Card[];
     arrangement: PlayerArrangement;
-  }[] = [];
-
-  for (let s = 0; s < numPlayers; s++) {
-    if (s === seatIndex) {
-      matchPlayersInput.push({
-        id: 'player_user',
-        name: playerAccount.nickname || '玩家',
-        isAi: false,
-        avatar: playerAccount.avatar || '😎',
-        cards: handCards,
-        arrangement
-      });
-    } else {
-      const existing = carriage.submissions[s];
-      const seatHandCards = carriage.hands[s]?.cards || [];
-
-      if (existing) {
-        matchPlayersInput.push({
-          id: existing.playerId,
-          name: existing.playerName,
-          isAi: existing.isAi,
-          avatar: existing.avatar,
-          cards: existing.cards,
-          arrangement: existing.arrangement
-        });
-      } else {
-        let aiMeta = AI_NAMES_POOL[s % AI_NAMES_POOL.length];
-        if (usedAiNames.has(aiMeta.name)) {
-          aiMeta = AI_NAMES_POOL.find(a => !usedAiNames.has(a.name)) || aiMeta;
-        }
-        usedAiNames.add(aiMeta.name);
-
-        const aiArr = aiArrangeCards(seatHandCards);
-        const aiSubmission: CarriageSubmission = {
-          playerId: `ai_bot_${s + 1}`,
-          playerName: aiMeta.name,
-          avatar: aiMeta.avatar,
-          isAi: true,
-          arrangement: aiArr,
-          cards: seatHandCards,
-          submittedAt: new Date().toISOString()
-        };
-
-        carriage.submissions[s] = aiSubmission;
-
-        matchPlayersInput.push({
-          id: `ai_bot_${s + 1}`,
-          name: aiMeta.name,
-          isAi: true,
-          avatar: aiMeta.avatar,
-          cards: seatHandCards,
-          arrangement: aiArr
-        });
-      }
-    }
-  }
+  }[] = Object.values(carriage.submissions).map(sub => ({
+    id: sub.playerId,
+    name: sub.playerName,
+    isAi: sub.isAi,
+    avatar: sub.avatar,
+    cards: sub.cards,
+    arrangement: sub.arrangement
+  }));
 
   // 3. 调用各自独立的 4 人场或 8 人场比牌计分模块
   const allMatchResults = is8P
@@ -366,9 +368,13 @@ export async function submitCarriageHandAndAdvance(params: {
 
   const playerResult = allMatchResults.find(r => r.playerId === 'player_user') || allMatchResults[0];
 
-  // 4. 标注牌局完成
-  carriage.status = 'completed';
-  carriage.completedAt = new Date().toISOString();
+  // 4. 满座时标注牌局完成，否则标记为进行中
+  if (Object.keys(carriage.submissions).length >= numPlayers) {
+    carriage.status = 'completed';
+    carriage.completedAt = new Date().toISOString();
+  } else {
+    carriage.status = 'in_progress';
+  }
   carriage.matchResults = allMatchResults;
 
   // 5. 更新本地存储

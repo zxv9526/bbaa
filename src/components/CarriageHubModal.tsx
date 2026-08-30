@@ -25,6 +25,7 @@ interface CarriageHubModalProps {
   currentCarriageIndex: number;
   onSelectCarriageIndex: (index: number) => void;
   onResetPool: () => void;
+  mode?: 'vs_ai_4p' | 'vs_ai_8p';
 }
 
 export function CarriageHubModal({
@@ -32,9 +33,14 @@ export function CarriageHubModal({
   onClose,
   currentCarriageIndex,
   onSelectCarriageIndex,
-  onResetPool
+  onResetPool,
+  mode = 'vs_ai_8p'
 }: CarriageHubModalProps) {
-  const [stats, setStats] = useState<CarriagePoolStats>(() => getCarriageStats());
+  const is8P = mode === 'vs_ai_8p';
+  const modeName = is8P ? '八人场' : '四人场';
+  const totalSeats = is8P ? 8 : 4;
+
+  const [stats, setStats] = useState<CarriagePoolStats>(() => getCarriageStats(undefined, undefined, mode));
   const [completedList, setCompletedList] = useState<Carriage[]>([]);
   const [inspectCarriage, setInspectCarriage] = useState<Carriage | null>(null);
 
@@ -42,12 +48,12 @@ export function CarriageHubModal({
     if (isOpen) {
       refreshData();
     }
-  }, [isOpen]);
+  }, [isOpen, mode]);
 
   const refreshData = () => {
-    const s = getCarriageStats();
+    const s = getCarriageStats(undefined, undefined, mode);
     setStats(s);
-    setCompletedList(getCompletedCarriagesList());
+    setCompletedList(getCompletedCarriagesList(mode));
   };
 
   if (!isOpen) return null;
@@ -59,8 +65,8 @@ export function CarriageHubModal({
   }, 0);
 
   const handleReset = () => {
-    if (window.confirm('确定要刷新并重新生成 300 局预发牌车厢库吗？')) {
-      resetCarriagePool();
+    if (window.confirm(`确定要刷新并重新生成 300 局【${modeName}】预发牌数据池吗？`)) {
+      resetCarriagePool(mode);
       onResetPool();
       refreshData();
     }
@@ -73,14 +79,16 @@ export function CarriageHubModal({
         {/* Header */}
         <div className="px-6 py-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-red-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-red-500/20">
-              8
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg ${
+              is8P ? 'bg-gradient-to-tr from-amber-500 to-red-600 shadow-red-500/20' : 'bg-gradient-to-tr from-blue-500 to-indigo-600 shadow-blue-500/20'
+            }`}>
+              {totalSeats}
             </div>
             <div>
               <h2 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
-                八人场战绩中心
+                {modeName}战绩中心
                 <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-bold">
-                  8人大局比拼
+                  {is8P ? '8人大局比拼' : '4人经典对决'}
                 </span>
               </h2>
               <p className="text-xs text-slate-400">

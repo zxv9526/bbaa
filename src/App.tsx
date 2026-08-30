@@ -79,7 +79,9 @@ import {
   getCarriageStats,
   getPlayerCarriageIndexProgress,
   setPlayerCarriageIndexProgress,
+  getCurrentCarriageOccupancy,
   CarriagePoolStats,
+  CarriageSubmission,
   resetCarriagePool
 } from './lib/carriageManager';
 import { CarriageHeaderBar } from './components/CarriageHeaderBar';
@@ -97,11 +99,12 @@ export default function App() {
   const [joinInputCode8P, setJoinInputCode8P] = useState<string>('');
   const [joinInputCode4P, setJoinInputCode4P] = useState<string>('');
 
-  // Carriage Mode State (8-player Async Carriage Flow)
+  // Carriage Mode State (8-player & 4-player Async Carriage Flow)
   const [carriageSeatIndex, setCarriageSeatIndex] = useState<number>(0);
   const [carriageIndex, setCarriageIndex] = useState<number>(() => getPlayerCarriageIndexProgress());
   const [carriageId, setCarriageId] = useState<string>('');
   const [carriageStats, setCarriageStats] = useState<CarriagePoolStats>(() => getCarriageStats());
+  const [carriageSubmissions, setCarriageSubmissions] = useState<{ [seatIndex: number]: CarriageSubmission }>({});
   const [showCarriageHubModal, setShowCarriageHubModal] = useState<boolean>(false);
   const [carriageToast, setCarriageToast] = useState<{ show: boolean; msg: string; pts: number } | null>(null);
 
@@ -209,12 +212,19 @@ export default function App() {
     // 🚆 8人模式与4人模式：使用预发牌存储与无缝连战逻辑
     if (selectedMode === 'vs_ai_8p' || selectedMode === 'vs_ai_4p') {
       const activeSeat = typeof seatOverride === 'number' ? seatOverride : carriageSeatIndex;
-      const { carriage, seatIndex, handCards, stats } = getOrCreateCurrentCarriage(activeSeat, selectedMode);
+      const { carriage, seatIndex, handCards, stats, isFull } = getOrCreateCurrentCarriage(activeSeat, selectedMode);
+
+      const totalSeats = selectedMode === 'vs_ai_8p' ? 8 : 4;
+      if (isFull && carriage.submissions && Object.keys(carriage.submissions).length >= totalSeats && !carriage.submissions[seatIndex]) {
+        setErrorMsg(`该【${selectedMode === 'vs_ai_8p' ? '八人场' : '四人场'}】房间已满座 (0/${totalSeats})，无法再进入！`);
+        return;
+      }
       
       setCarriageSeatIndex(seatIndex);
       setCarriageIndex(carriage.index);
       setCarriageId(carriage.id);
       setCarriageStats(stats);
+      setCarriageSubmissions(carriage.submissions || {});
 
       const sortedPlayerHand = sortCards(handCards);
       setOriginalHand(sortedPlayerHand);
@@ -236,7 +246,7 @@ export default function App() {
       const is8P = selectedMode === 'vs_ai_8p';
       const numPlayers = is8P ? 8 : 4;
 
-      // Prepare players list
+      // Prepare players list (User at seatIndex + other submissions or empty seat placeholders; NO AI BOTS)
       const playersList: {
         id: string;
         name: string;
@@ -244,43 +254,52 @@ export default function App() {
         avatar: string;
         cards: Card[];
         arrangement: PlayerArrangement;
-      }[] = [
-        {
-          id: 'player_user',
-          name: currentAccount.nickname || playerName,
-          isAi: false,
-          avatar: currentAccount.avatar || '😎',
-          cards: sortedPlayerHand,
-          arrangement: {
-            front: [],
-            middle: [],
-            back: [],
-            specialHand: null,
-            isValid: false,
-            isDaoShui: false
-          }
+      }[] = [];
+
+      for (let s = 0; s < numPlayers; s++) {
+        if (s === seatIndex) {
+          playersList.push({
+            id: 'player_user',
+            name: `${currentAccount.nickname || playerName} (${s + 1}号位)`,
+            isAi: false,
+            avatar: currentAccount.avatar || '😎',
+            cards: sortedPlayerHand,
+            arrangement: {
+              front: [],
+              middle: [],
+              back: [],
+              specialHand: null,
+              isValid: false,
+              isDaoShui: false
+            }
+          });
+        } else if (carriage.submissions && carriage.submissions[s]) {
+          const sub = carriage.submissions[s];
+          playersList.push({
+            id: sub.playerId,
+            name: `${sub.playerName} (${s + 1}号位)`,
+            isAi: sub.isAi,
+            avatar: sub.avatar,
+            cards: sub.cards,
+            arrangement: sub.arrangement
+          });
+        } else {
+          playersList.push({
+            id: `empty_${s}`,
+            name: `空位 (${s + 1}号位)`,
+            isAi: false,
+            avatar: '🪑',
+            cards: [],
+            arrangement: {
+              front: [],
+              middle: [],
+              back: [],
+              specialHand: null,
+              isValid: false,
+              isDaoShui: false
+            }
+          });
         }
-      ];
-
-      const aiAvatars = is8P
-        ? ['🦁', '🐯', '🦊', '🐰', '🐼', '鹰', '🦄']
-        : ['🤖', '🦊', '🐼'];
-      const aiNames = is8P
-        ? ['赌神阿发', '雀圣阿旺', '十三水老强', '爆牌九哥', '顺子妹子', '同花顺大佬', '铁支杀手']
-        : ['智多星 (AI)', '百胜侯 (AI)', '十三叔 (AI)'];
-
-      for (let i = 1; i < numPlayers; i++) {
-        const s = (seatIndex + i) % numPlayers;
-        const seatCards = carriage.hands[s]?.cards || [];
-        const aiArrange = aiArrangeCards(seatCards);
-        playersList.push({
-          id: `ai_${i}`,
-          name: `${aiNames[i - 1]} (${s + 1}号位)`,
-          isAi: true,
-          avatar: aiAvatars[i - 1] || '🤖',
-          cards: seatCards,
-          arrangement: aiArrange
-        });
       }
 
       setPlayersInMatch(playersList);
@@ -606,6 +625,7 @@ export default function App() {
         setCarriageIndex(res.nextCarriageData.carriage.index);
         setCarriageId(res.nextCarriageData.carriage.id);
         setCarriageStats(res.updatedStats);
+        setCarriageSubmissions(res.nextCarriageData.carriage.submissions || {});
 
         const nextHand = sortCards(res.nextCarriageData.handCards);
         setOriginalHand(nextHand);
@@ -622,6 +642,59 @@ export default function App() {
         const smartSuggestions = getSuggestedArrangements(nextHand);
         setSuggestions(smartSuggestions);
         patternChangerRef.current = new PatternChanger(nextHand);
+
+        const is8P = mode === 'vs_ai_8p';
+        const numPlayers = is8P ? 8 : 4;
+        const nextCarriage = res.nextCarriageData.carriage;
+        const nextSeatIndex = res.nextCarriageData.seatIndex;
+
+        const nextPlayersList: typeof playersInMatch = [];
+        for (let s = 0; s < numPlayers; s++) {
+          if (s === nextSeatIndex) {
+            nextPlayersList.push({
+              id: 'player_user',
+              name: `${currentAccount.nickname || playerName} (${s + 1}号位)`,
+              isAi: false,
+              avatar: currentAccount.avatar || '😎',
+              cards: nextHand,
+              arrangement: {
+                front: [],
+                middle: [],
+                back: [],
+                specialHand: null,
+                isValid: false,
+                isDaoShui: false
+              }
+            });
+          } else if (nextCarriage.submissions && nextCarriage.submissions[s]) {
+            const sub = nextCarriage.submissions[s];
+            nextPlayersList.push({
+              id: sub.playerId,
+              name: `${sub.playerName} (${s + 1}号位)`,
+              isAi: sub.isAi,
+              avatar: sub.avatar,
+              cards: sub.cards,
+              arrangement: sub.arrangement
+            });
+          } else {
+            nextPlayersList.push({
+              id: `empty_${s}`,
+              name: `空位 (${s + 1}号位)`,
+              isAi: false,
+              avatar: '🪑',
+              cards: [],
+              arrangement: {
+                front: [],
+                middle: [],
+                back: [],
+                specialHand: null,
+                isValid: false,
+                isDaoShui: false
+              }
+            });
+          }
+        }
+        setPlayersInMatch(nextPlayersList);
 
         refreshPlayerStats(currentAccount.nickname || playerName);
       } catch (err: any) {
@@ -785,79 +858,116 @@ export default function App() {
 
       {/* 2. Main Body Content: Minimalist & Clean Two Arena Blocks */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-3 flex flex-col items-center justify-center overflow-hidden">
-        {gameState === 'menu' && (
-          <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 my-auto">
-            {/* BLOCK 1: 八人场 (8-Player Arena) */}
-            <div
-              id="arena-8p-section"
-              onClick={() => startNewMatch('vs_ai_8p')}
-              className="relative bg-gradient-to-br from-red-950/70 via-slate-900 to-slate-950 border-2 border-red-900/60 hover:border-amber-500 p-6 sm:p-8 rounded-3xl flex flex-col justify-between gap-6 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-red-950/50 group"
-            >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-red-600 text-slate-950 flex items-center justify-center text-2xl font-black shadow-lg shadow-red-600/30 group-hover:scale-105 transition duration-300">
-                    👑
+        {gameState === 'menu' && (() => {
+          const occ8P = getCurrentCarriageOccupancy('vs_ai_8p');
+          const occ4P = getCurrentCarriageOccupancy('vs_ai_4p');
+
+          return (
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 my-auto">
+              {/* BLOCK 1: 八人场 (8-Player Arena) */}
+              <div
+                id="arena-8p-section"
+                onClick={() => {
+                  if (occ8P.isFull) {
+                    setErrorMsg('八人场当前房间已满座 (0/8)，无法进入！');
+                    return;
+                  }
+                  startNewMatch('vs_ai_8p');
+                }}
+                className={`relative bg-gradient-to-br from-red-950/70 via-slate-900 to-slate-950 border-2 border-red-900/60 p-6 sm:p-8 rounded-3xl flex flex-col justify-between gap-6 cursor-pointer transition-all duration-300 group ${
+                  occ8P.isFull ? 'opacity-80 hover:border-red-600/50' : 'hover:border-amber-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-red-950/50'
+                }`}
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-red-600 text-slate-950 flex items-center justify-center text-2xl font-black shadow-lg shadow-red-600/30 group-hover:scale-105 transition duration-300">
+                      👑
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/30">
+                        双副 104 牌
+                      </span>
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                        occ8P.isFull
+                          ? 'text-rose-400 bg-rose-500/10 border-rose-500/30'
+                          : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                      }`}>
+                        {occ8P.isFull ? '🔴 满座 (0/8)' : `🟢 剩余位置: ${occ8P.remainingSeats}/8`}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/30">
-                      双副 104 牌
-                    </span>
+
+                  <div className="space-y-1.5">
+                    <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight group-hover:text-amber-300 transition">
+                      八人场
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                      双副扑克牌 · 8人同台竞技 · 7枪全垒打狂暴翻倍
+                    </p>
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight group-hover:text-amber-300 transition">
-                    八人场
-                  </h2>
-                  <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                    双副扑克牌 · 8人同台竞技 · 7枪全垒打狂暴翻倍
-                  </p>
+                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-sm sm:text-base font-bold text-amber-400 group-hover:text-amber-300">
+                  <span>{occ8P.isFull ? '已满座 (无法进入)' : '立即进入八人场'}</span>
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center group-hover:translate-x-1.5 transition">
+                    <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-sm sm:text-base font-bold text-amber-400 group-hover:text-amber-300">
-                <span>立即进入八人场</span>
-                <div className="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center group-hover:translate-x-1.5 transition">
-                  <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+              {/* BLOCK 2: 四人场 (4-Player Arena) */}
+              <div
+                id="arena-4p-section"
+                onClick={() => {
+                  if (occ4P.isFull) {
+                    setErrorMsg('四人场当前房间已满座 (0/4)，无法进入！');
+                    return;
+                  }
+                  startNewMatch('vs_ai_4p');
+                }}
+                className={`relative bg-gradient-to-br from-blue-950/70 via-slate-900 to-slate-950 border-2 border-blue-900/60 p-6 sm:p-8 rounded-3xl flex flex-col justify-between gap-6 cursor-pointer transition-all duration-300 group ${
+                  occ4P.isFull ? 'opacity-80 hover:border-blue-600/50' : 'hover:border-blue-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-950/50'
+                }`}
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-slate-950 flex items-center justify-center text-2xl font-black shadow-lg shadow-blue-600/30 group-hover:scale-105 transition duration-300">
+                      ⚔️
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/30">
+                        单副 52 牌
+                      </span>
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                        occ4P.isFull
+                          ? 'text-rose-400 bg-rose-500/10 border-rose-500/30'
+                          : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                      }`}>
+                        {occ4P.isFull ? '🔴 满座 (0/4)' : `🟢 剩余位置: ${occ4P.remainingSeats}/4`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight group-hover:text-blue-300 transition">
+                      四人场
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                      单副扑克牌 · 经典四人对决 · 正宗三墩比拼
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-sm sm:text-base font-bold text-blue-400 group-hover:text-blue-300">
+                  <span>{occ4P.isFull ? '已满座 (无法进入)' : '立即进入四人场'}</span>
+                  <div className="w-9 h-9 rounded-xl bg-blue-500/20 flex items-center justify-center group-hover:translate-x-1.5 transition">
+                    <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
                 </div>
               </div>
             </div>
-
-            {/* BLOCK 2: 四人场 (4-Player Arena) */}
-            <div
-              id="arena-4p-section"
-              onClick={() => startNewMatch('vs_ai_4p')}
-              className="relative bg-gradient-to-br from-blue-950/70 via-slate-900 to-slate-950 border-2 border-blue-900/60 hover:border-blue-500 p-6 sm:p-8 rounded-3xl flex flex-col justify-between gap-6 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-950/50 group"
-            >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-slate-950 flex items-center justify-center text-2xl font-black shadow-lg shadow-blue-600/30 group-hover:scale-105 transition duration-300">
-                    ⚔️
-                  </div>
-                  <span className="text-xs font-bold text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/30">
-                    单副 52 牌
-                  </span>
-                </div>
-
-                <div className="space-y-1.5">
-                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight group-hover:text-blue-300 transition">
-                    四人场
-                  </h2>
-                  <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                    单副扑克牌 · 经典四人对决 · 正宗三墩比拼
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-sm sm:text-base font-bold text-blue-400 group-hover:text-blue-300">
-                <span>立即进入四人场</span>
-                <div className="w-9 h-9 rounded-xl bg-blue-500/20 flex items-center justify-center group-hover:translate-x-1.5 transition">
-                  <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* 3. Multiplayer Lobby View */}
         {gameState === 'room_lobby' && (
@@ -883,14 +993,16 @@ export default function App() {
         )}
         {gameState === 'arranging' && (
           <div className="w-full max-w-5xl flex flex-col items-center gap-3 py-1">
-            {/* 🚆 Carriage Header Bar for 8-Player Async Mode */}
-            {mode === 'vs_ai_8p' && (
+            {/* 🚆 Carriage Header Bar for 8-Player and 4-Player Async Mode */}
+            {(mode === 'vs_ai_8p' || mode === 'vs_ai_4p') && (
               <CarriageHeaderBar
+                mode={mode}
                 currentCarriageIndex={carriageIndex}
                 seatIndex={carriageSeatIndex}
+                submissions={carriageSubmissions}
                 onSeatChange={newSeat => {
                   setCarriageSeatIndex(newSeat);
-                  startNewMatch('vs_ai_8p', newSeat);
+                  startNewMatch(mode, newSeat);
                 }}
                 stats={carriageStats}
                 onOpenHub={() => setShowCarriageHubModal(true)}
@@ -1264,14 +1376,17 @@ export default function App() {
       <CarriageHubModal
         isOpen={showCarriageHubModal}
         onClose={() => setShowCarriageHubModal(false)}
+        mode={mode === 'vs_ai_8p' || mode === 'vs_ai_4p' ? mode : 'vs_ai_8p'}
         currentCarriageIndex={carriageIndex}
         onSelectCarriageIndex={idx => {
-          setPlayerCarriageIndexProgress(idx);
-          startNewMatch('vs_ai_8p');
+          const activeMode = mode === 'vs_ai_8p' || mode === 'vs_ai_4p' ? mode : 'vs_ai_8p';
+          setPlayerCarriageIndexProgress(idx, activeMode);
+          startNewMatch(activeMode);
           setShowCarriageHubModal(false);
         }}
         onResetPool={() => {
-          startNewMatch('vs_ai_8p');
+          const activeMode = mode === 'vs_ai_8p' || mode === 'vs_ai_4p' ? mode : 'vs_ai_8p';
+          startNewMatch(activeMode);
         }}
       />
     </div>
