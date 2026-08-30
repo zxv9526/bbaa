@@ -1,10 +1,10 @@
 import { Card, PlayerArrangement, PlayerScoreDetail, UserAccount } from '../types';
-import { createDoubleDeck, shuffle, aiArrangeCards, calculateMatchScores, detectSpecialHand } from '../gameLogic';
+import { createDeck, createDoubleDeck, shuffle, aiArrangeCards, calculate4PlayerMatchScores, calculate8PlayerMatchScores, detectSpecialHand } from '../gameLogic';
 import { addPoints } from './accountManager';
 import { ApiClient } from '../api';
 
 export interface CarriageHand {
-  seatIndex: number; // 0..7 (1号..8号位置)
+  seatIndex: number; // 0..7 (8人场) 或 0..3 (4人场)
   cards: Card[];     // 13张牌
 }
 
@@ -19,10 +19,10 @@ export interface CarriageSubmission {
 }
 
 export interface Carriage {
-  id: string;              // e.g. "car_000001"
-  index: number;           // 车厢序号 (1, 2, 3...)
+  id: string;              // e.g. "car_8p_000001" or "car_4p_000001"
+  index: number;           // 局数/车厢序号 (1, 2, 3...)
   createdAt: string;
-  hands: CarriageHand[];   // 8副手牌
+  hands: CarriageHand[];   // 8副或4副手牌
   submissions: { [seatIndex: number]: CarriageSubmission };
   status: 'unclaimed' | 'in_progress' | 'completed';
   completedAt?: string;
@@ -30,15 +30,25 @@ export interface Carriage {
 }
 
 export interface CarriagePoolStats {
-  totalCarriagesGenerated: number; // 累计生成车厢总数
+  totalCarriagesGenerated: number; // 累计生成总数
   unclaimedCount: number;         // 当前已发牌未领取的库存数
-  inProgressCount: number;        // 进行中车厢数
-  completedCount: number;         // 已结算车厢数
-  currentPlayingIndex: number;    // 玩家当前处于第几节车厢
+  inProgressCount: number;        // 进行中数
+  completedCount: number;         // 已结算数
+  currentPlayingIndex: number;    // 玩家当前处于第几局
 }
 
-const CARRIAGE_STORAGE_KEY = 'thirteen_water_carriage_pool_v3';
-const PLAYER_PROGRESS_KEY = 'thirteen_water_player_carriage_progress_v3';
+const CARRIAGE_STORAGE_KEY_8P = 'thirteen_water_carriage_pool_v3';
+const PLAYER_PROGRESS_KEY_8P = 'thirteen_water_player_carriage_progress_v3';
+
+const CARRIAGE_STORAGE_KEY_4P = 'thirteen_water_carriage_pool_4p_v1';
+const PLAYER_PROGRESS_KEY_4P = 'thirteen_water_player_carriage_progress_4p_v1';
+
+function getStorageKeys(mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p') {
+  if (mode === 'vs_ai_4p') {
+    return { poolKey: CARRIAGE_STORAGE_KEY_4P, progressKey: PLAYER_PROGRESS_KEY_4P };
+  }
+  return { poolKey: CARRIAGE_STORAGE_KEY_8P, progressKey: PLAYER_PROGRESS_KEY_8P };
+}
 
 // 🤖 8人AI角色池 (确保比牌名册生动真实)
 const AI_NAMES_POOL = [
@@ -56,13 +66,15 @@ const AI_NAMES_POOL = [
   { name: '稳如泰山', avatar: '🐘' }
 ];
 
-// Helper: 生成一节标准8人车厢 (双副扑克牌104张 -> 8副13张)
-function generateSingleCarriage(index: number): Carriage {
-  const doubleDeck = shuffle(createDoubleDeck());
+// Helper: 生成一节标准牌局 (8P模式用双副104张 -> 8副13张；4P模式用单副52张 -> 4副13张)
+function generateSingleCarriage(index: number, mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p'): Carriage {
+  const is8P = mode === 'vs_ai_8p';
+  const numSeats = is8P ? 8 : 4;
+  const deck = shuffle(is8P ? createDoubleDeck() : createDeck());
   const hands: CarriageHand[] = [];
 
-  for (let s = 0; s < 8; s++) {
-    const handCards = doubleDeck.slice(s * 13, (s + 1) * 13);
+  for (let s = 0; s < numSeats; s++) {
+    const handCards = deck.slice(s * 13, (s + 1) * 13);
     hands.push({
       seatIndex: s,
       cards: handCards
@@ -70,7 +82,7 @@ function generateSingleCarriage(index: number): Carriage {
   }
 
   return {
-    id: `car_${String(index).padStart(6, '0')}`,
+    id: `car_${mode}_${String(index).padStart(6, '0')}`,
     index,
     createdAt: new Date().toISOString(),
     hands,
@@ -79,13 +91,14 @@ function generateSingleCarriage(index: number): Carriage {
   };
 }
 
-// 📦 从 LocalStorage 获取全部车厢数据
-function loadCarriageStorage(): {
+// 📦 从 LocalStorage 获取全部牌局数据
+function loadCarriageStorage(mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p'): {
   totalGeneratedCount: number;
   carriages: Carriage[];
 } {
+  const { poolKey } = getStorageKeys(mode);
   try {
-    const raw = localStorage.getItem(CARRIAGE_STORAGE_KEY);
+    const raw = localStorage.getItem(poolKey);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.carriages) && typeof parsed.totalGeneratedCount === 'number') {
@@ -93,24 +106,25 @@ function loadCarriageStorage(): {
       }
     }
   } catch (e) {
-    console.error('Failed to load carriage storage:', e);
+    console.error(`Failed to load carriage storage for ${mode}:`, e);
   }
 
-  // 第一次初始化：生成 300 局预发牌车厢
-  return initialize300Carriages(0, []);
+  // 第一次初始化：生成 300 局预发牌
+  return initialize300Carriages(0, [], mode);
 }
 
-// 💾 保存车厢数据至 LocalStorage
-function saveCarriageStorage(data: { totalGeneratedCount: number; carriages: Carriage[] }) {
+// 💾 保存牌局数据至 LocalStorage
+function saveCarriageStorage(data: { totalGeneratedCount: number; carriages: Carriage[] }, mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p') {
+  const { poolKey } = getStorageKeys(mode);
   try {
-    localStorage.setItem(CARRIAGE_STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(poolKey, JSON.stringify(data));
   } catch (e) {
-    console.error('Failed to save carriage storage:', e);
+    console.error(`Failed to save carriage storage for ${mode}:`, e);
   }
 }
 
 // ⚡ 初始化或补充 300 局预发牌
-function initialize300Carriages(currentTotal: number, existingCarriages: Carriage[]): {
+function initialize300Carriages(currentTotal: number, existingCarriages: Carriage[], mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p'): {
   totalGeneratedCount: number;
   carriages: Carriage[];
 } {
@@ -126,7 +140,7 @@ function initialize300Carriages(currentTotal: number, existingCarriages: Carriag
   const newGenerated: Carriage[] = [];
 
   for (let i = 0; i < needed; i++) {
-    newGenerated.push(generateSingleCarriage(nextIndex));
+    newGenerated.push(generateSingleCarriage(nextIndex, mode));
     nextIndex++;
   }
 
@@ -136,34 +150,33 @@ function initialize300Carriages(currentTotal: number, existingCarriages: Carriag
     carriages: updatedCarriages
   };
 
-  saveCarriageStorage(updatedData);
+  saveCarriageStorage(updatedData, mode);
   return updatedData;
 }
 
-// 🔄 检查库存：若可用未领取的车厢不足 50 局，则自动补充回 300 局
-export function checkAndReplenishCarriages(): CarriagePoolStats {
-  const data = loadCarriageStorage();
+// 🔄 检查库存：若可用未领取的牌局不足 50 局，则自动补充回 300 局
+export function checkAndReplenishCarriages(mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p'): CarriagePoolStats {
+  const data = loadCarriageStorage(mode);
   const unclaimed = data.carriages.filter(c => c.status === 'unclaimed');
 
-  // 当库存不足 50 局时，自动补充满 300 局
   if (unclaimed.length < 50) {
-    const replenished = initialize300Carriages(data.totalGeneratedCount, data.carriages);
-    return getCarriageStats(replenished.carriages, replenished.totalGeneratedCount);
+    const replenished = initialize300Carriages(data.totalGeneratedCount, data.carriages, mode);
+    return getCarriageStats(replenished.carriages, replenished.totalGeneratedCount, mode);
   }
 
-  return getCarriageStats(data.carriages, data.totalGeneratedCount);
+  return getCarriageStats(data.carriages, data.totalGeneratedCount, mode);
 }
 
-// 📊 获取当前车厢库存与进度统计
-export function getCarriageStats(carriagesInput?: Carriage[], totalGenInput?: number): CarriagePoolStats {
+// 📊 获取当前牌局库存与进度统计
+export function getCarriageStats(carriagesInput?: Carriage[], totalGenInput?: number, mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p'): CarriagePoolStats {
   const storage = carriagesInput
     ? { carriages: carriagesInput, totalGeneratedCount: totalGenInput || carriagesInput.length }
-    : loadCarriageStorage();
+    : loadCarriageStorage(mode);
 
   const unclaimedCount = storage.carriages.filter(c => c.status === 'unclaimed').length;
   const inProgressCount = storage.carriages.filter(c => c.status === 'in_progress').length;
   const completedCount = storage.carriages.filter(c => c.status === 'completed').length;
-  const currentProgress = getPlayerCarriageIndexProgress();
+  const currentProgress = getPlayerCarriageIndexProgress(mode);
 
   return {
     totalCarriagesGenerated: storage.totalGeneratedCount,
@@ -174,10 +187,11 @@ export function getCarriageStats(carriagesInput?: Carriage[], totalGenInput?: nu
   };
 }
 
-// 📍 获取玩家当前的车厢轮次进度 (默认第 1 节车厢)
-export function getPlayerCarriageIndexProgress(): number {
+// 📍 获取玩家当前的车厢/局数轮次进度
+export function getPlayerCarriageIndexProgress(mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p'): number {
+  const { progressKey } = getStorageKeys(mode);
   try {
-    const raw = localStorage.getItem(PLAYER_PROGRESS_KEY);
+    const raw = localStorage.getItem(progressKey);
     if (raw) {
       const idx = parseInt(raw, 10);
       if (!isNaN(idx) && idx > 0) return idx;
@@ -186,29 +200,28 @@ export function getPlayerCarriageIndexProgress(): number {
   return 1;
 }
 
-// 📍 设置玩家当前车厢轮次进度
-export function setPlayerCarriageIndexProgress(index: number) {
+// 📍 设置玩家当前局数轮次进度
+export function setPlayerCarriageIndexProgress(index: number, mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p') {
+  const { progressKey } = getStorageKeys(mode);
   try {
-    localStorage.setItem(PLAYER_PROGRESS_KEY, String(index));
+    localStorage.setItem(progressKey, String(index));
   } catch (e) {}
 }
 
-// 🚂 获取玩家进入的当前/下一节车厢 (如当前车厢不存在，自动从预发牌池分配)
-export function getOrCreateCurrentCarriage(preferredSeatIndex: number = 0): {
+// 🚂 获取玩家进入的当前/下一局 (如当前牌局不存在，自动从预发牌池分配)
+export function getOrCreateCurrentCarriage(preferredSeatIndex: number = 0, mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p'): {
   carriage: Carriage;
   seatIndex: number;
   handCards: Card[];
   stats: CarriagePoolStats;
 } {
-  // 1. 检查并补充库存 (低于 50 局自动补回 300 局)
-  const stats = checkAndReplenishCarriages();
-  const storage = loadCarriageStorage();
-  const playerIndex = getPlayerCarriageIndexProgress();
+  const stats = checkAndReplenishCarriages(mode);
+  const storage = loadCarriageStorage(mode);
+  const playerIndex = getPlayerCarriageIndexProgress(mode);
+  const maxSeat = mode === 'vs_ai_8p' ? 7 : 3;
 
-  // 2. 查找是否已存在该序号的车厢
   let carriage = storage.carriages.find(c => c.index === playerIndex);
 
-  // 3. 若无，从未分配的领用第一个，或新建该序号车厢
   if (!carriage) {
     const unclaimed = storage.carriages.find(c => c.status === 'unclaimed');
     if (unclaimed) {
@@ -216,36 +229,35 @@ export function getOrCreateCurrentCarriage(preferredSeatIndex: number = 0): {
       unclaimed.status = 'in_progress';
       carriage = unclaimed;
     } else {
-      // 紧急分配新车厢
-      carriage = generateSingleCarriage(playerIndex);
+      carriage = generateSingleCarriage(playerIndex, mode);
       carriage.status = 'in_progress';
       storage.carriages.push(carriage);
     }
-    saveCarriageStorage(storage);
+    saveCarriageStorage(storage, mode);
   } else if (carriage.status === 'unclaimed') {
     carriage.status = 'in_progress';
-    saveCarriageStorage(storage);
+    saveCarriageStorage(storage, mode);
   }
 
-  // 4. 获取该车厢指定手牌位置的 13 张牌
-  const validSeat = Math.max(0, Math.min(7, preferredSeatIndex));
+  const validSeat = Math.max(0, Math.min(maxSeat, preferredSeatIndex));
   const handCards = carriage.hands[validSeat]?.cards || [];
 
   return {
     carriage,
     seatIndex: validSeat,
     handCards,
-    stats: getCarriageStats(storage.carriages, storage.totalGeneratedCount)
+    stats: getCarriageStats(storage.carriages, storage.totalGeneratedCount, mode)
   };
 }
 
-// 📝 提交理牌并自动结算车厢 & 无缝跳转下一节车厢
+// 📝 提交理牌并自动结算牌局 & 无缝跳转下一局
 export async function submitCarriageHandAndAdvance(params: {
   carriageId: string;
   seatIndex: number;
   playerAccount: UserAccount;
   arrangement: PlayerArrangement;
   handCards: Card[];
+  mode?: 'vs_ai_4p' | 'vs_ai_8p';
 }): Promise<{
   completedCarriage: Carriage;
   playerResult: PlayerScoreDetail;
@@ -257,12 +269,15 @@ export async function submitCarriageHandAndAdvance(params: {
   };
   updatedStats: CarriagePoolStats;
 }> {
-  const { carriageId, seatIndex, playerAccount, arrangement, handCards } = params;
-  const storage = loadCarriageStorage();
+  const { carriageId, seatIndex, playerAccount, arrangement, handCards, mode = 'vs_ai_8p' } = params;
+  const is8P = mode === 'vs_ai_8p';
+  const numPlayers = is8P ? 8 : 4;
+
+  const storage = loadCarriageStorage(mode);
   const carriageIndex = storage.carriages.findIndex(c => c.id === carriageId);
 
   if (carriageIndex === -1) {
-    throw new Error('未找到对应车厢牌局');
+    throw new Error('未找到对应牌局');
   }
 
   const carriage = storage.carriages[carriageIndex];
@@ -278,7 +293,7 @@ export async function submitCarriageHandAndAdvance(params: {
     submittedAt: new Date().toISOString()
   };
 
-  // 2. 为其余 7 个位置自动匹配/生成 AI 玩家理牌结果，确保 8 人场结算
+  // 2. 为其余位置自动匹配/生成 AI 玩家理牌结果
   const usedAiNames = new Set<string>();
   const matchPlayersInput: {
     id: string;
@@ -289,9 +304,8 @@ export async function submitCarriageHandAndAdvance(params: {
     arrangement: PlayerArrangement;
   }[] = [];
 
-  for (let s = 0; s < 8; s++) {
+  for (let s = 0; s < numPlayers; s++) {
     if (s === seatIndex) {
-      // 本人
       matchPlayersInput.push({
         id: 'player_user',
         name: playerAccount.nickname || '玩家',
@@ -301,9 +315,8 @@ export async function submitCarriageHandAndAdvance(params: {
         arrangement
       });
     } else {
-      // 检查该位置是否有先提交的玩家，没有则补充 AI
       const existing = carriage.submissions[s];
-      const seatHandCards = carriage.hands[s].cards;
+      const seatHandCards = carriage.hands[s]?.cards || [];
 
       if (existing) {
         matchPlayersInput.push({
@@ -315,7 +328,6 @@ export async function submitCarriageHandAndAdvance(params: {
           arrangement: existing.arrangement
         });
       } else {
-        // 分配一个形象生动的 AI 玩家
         let aiMeta = AI_NAMES_POOL[s % AI_NAMES_POOL.length];
         if (usedAiNames.has(aiMeta.name)) {
           aiMeta = AI_NAMES_POOL.find(a => !usedAiNames.has(a.name)) || aiMeta;
@@ -347,49 +359,52 @@ export async function submitCarriageHandAndAdvance(params: {
     }
   }
 
-  // 3. 计算 8 人十三水比牌结果 (8人对决)
-  const allMatchResults = calculateMatchScores(matchPlayersInput);
+  // 3. 调用各自独立的 4 人场或 8 人场比牌计分模块
+  const allMatchResults = is8P
+    ? calculate8PlayerMatchScores(matchPlayersInput)
+    : calculate4PlayerMatchScores(matchPlayersInput);
+
   const playerResult = allMatchResults.find(r => r.playerId === 'player_user') || allMatchResults[0];
 
-  // 4. 标注车厢完成
+  // 4. 标注牌局完成
   carriage.status = 'completed';
   carriage.completedAt = new Date().toISOString();
   carriage.matchResults = allMatchResults;
 
   // 5. 更新本地存储
   storage.carriages[carriageIndex] = carriage;
-  saveCarriageStorage(storage);
+  saveCarriageStorage(storage, mode);
 
   // 6. 给玩家结算积分与战绩历史
   const pointsDelta = playerResult.finalPoints;
   addPoints(
     pointsDelta * 100,
     pointsDelta >= 0 ? 'MATCH_WIN' : 'MATCH_LOSS',
-    `【第 ${carriage.index} 节车厢】8人场比牌`
+    `【第 ${carriage.index} 局】${is8P ? '8人场' : '4人场'}比牌`
   );
 
   try {
     await ApiClient.recordGame({
       playerName: playerAccount.nickname,
-      mode: 'vs_ai_8p',
+      mode: is8P ? 'vs_ai_8p' : 'vs_ai_4p',
       pointsWon: pointsDelta,
       result: pointsDelta > 0 ? (playerResult.specialHand ? 'SPECIAL_WIN' : 'WIN') : pointsDelta < 0 ? 'LOSE' : 'DRAW',
       specialHand: playerResult.specialHand || null,
       frontType: playerResult.frontScore.type,
       midType: playerResult.midScore.type,
       backType: playerResult.backScore.type,
-      opponentsSummary: `车厢 #${carriage.index} (8人场)`
+      opponentsSummary: `第 ${carriage.index} 局 (${is8P ? '8人场' : '4人场'})`
     });
   } catch (e) {
-    console.error('Cloud sync carriage record error:', e);
+    console.error(`Cloud sync carriage record error (${mode}):`, e);
   }
 
-  // 7. 车厢自动前进：轮次 progress + 1
+  // 7. 自动前进：轮次 progress + 1
   const nextCarriageIndex = carriage.index + 1;
-  setPlayerCarriageIndexProgress(nextCarriageIndex);
+  setPlayerCarriageIndexProgress(nextCarriageIndex, mode);
 
-  // 8. 自动拉取下一节车厢 (保持在相同位置, 例如 1号手牌 seatIndex)
-  const nextCarriageData = getOrCreateCurrentCarriage(seatIndex);
+  // 8. 自动拉取下一局
+  const nextCarriageData = getOrCreateCurrentCarriage(seatIndex, mode);
 
   return {
     completedCarriage: carriage,
@@ -404,21 +419,22 @@ export async function submitCarriageHandAndAdvance(params: {
   };
 }
 
-// 📜 获取已结算的车厢战绩记录列表
-export function getCompletedCarriagesList(): Carriage[] {
-  const storage = loadCarriageStorage();
+// 📜 获取已结算的战绩记录列表
+export function getCompletedCarriagesList(mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p'): Carriage[] {
+  const storage = loadCarriageStorage(mode);
   return storage.carriages
     .filter(c => c.status === 'completed')
     .sort((a, b) => b.index - a.index);
 }
 
-// 🧹 重置车厢库存池 (重新生成 300 局)
-export function resetCarriagePool(): CarriagePoolStats {
+// 🧹 重置牌局库存池 (重新生成 300 局)
+export function resetCarriagePool(mode: 'vs_ai_4p' | 'vs_ai_8p' = 'vs_ai_8p'): CarriagePoolStats {
+  const { poolKey, progressKey } = getStorageKeys(mode);
   try {
-    localStorage.removeItem(CARRIAGE_STORAGE_KEY);
-    localStorage.removeItem(PLAYER_PROGRESS_KEY);
+    localStorage.removeItem(poolKey);
+    localStorage.removeItem(progressKey);
   } catch (e) {}
 
-  const newStorage = initialize300Carriages(0, []);
-  return getCarriageStats(newStorage.carriages, newStorage.totalGeneratedCount);
+  const newStorage = initialize300Carriages(0, [], mode);
+  return getCarriageStats(newStorage.carriages, newStorage.totalGeneratedCount, mode);
 }

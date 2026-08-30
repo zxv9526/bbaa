@@ -206,10 +206,10 @@ export default function App() {
     setMatchResults(null);
     setUseSpecialHand(false);
 
-    // 🚆 8人模式：使用预生牌存储异步车厢连战系统
-    if (selectedMode === 'vs_ai_8p') {
+    // 🚆 8人模式与4人模式：使用预发牌存储与无缝连战逻辑
+    if (selectedMode === 'vs_ai_8p' || selectedMode === 'vs_ai_4p') {
       const activeSeat = typeof seatOverride === 'number' ? seatOverride : carriageSeatIndex;
-      const { carriage, seatIndex, handCards, stats } = getOrCreateCurrentCarriage(activeSeat);
+      const { carriage, seatIndex, handCards, stats } = getOrCreateCurrentCarriage(activeSeat, selectedMode);
       
       setCarriageSeatIndex(seatIndex);
       setCarriageIndex(carriage.index);
@@ -233,7 +233,10 @@ export default function App() {
       setSuggestions(smartSuggestions);
       patternChangerRef.current = new PatternChanger(sortedPlayerHand);
 
-      // Prepare players list for 8-player carriage room
+      const is8P = selectedMode === 'vs_ai_8p';
+      const numPlayers = is8P ? 8 : 4;
+
+      // Prepare players list
       const playersList: {
         id: string;
         name: string;
@@ -259,11 +262,15 @@ export default function App() {
         }
       ];
 
-      const aiAvatars = ['🦁', '🐯', '🦊', '🐰', '🐼', '鹰', '🦄'];
-      const aiNames = ['赌神阿发', '雀圣阿旺', '十三水老强', '爆牌九哥', '顺子妹子', '同花顺大佬', '铁支杀手'];
+      const aiAvatars = is8P
+        ? ['🦁', '🐯', '🦊', '🐰', '🐼', '鹰', '🦄']
+        : ['🤖', '🦊', '🐼'];
+      const aiNames = is8P
+        ? ['赌神阿发', '雀圣阿旺', '十三水老强', '爆牌九哥', '顺子妹子', '同花顺大佬', '铁支杀手']
+        : ['智多星 (AI)', '百胜侯 (AI)', '十三叔 (AI)'];
 
-      for (let i = 1; i < 8; i++) {
-        const s = (seatIndex + i) % 8;
+      for (let i = 1; i < numPlayers; i++) {
+        const s = (seatIndex + i) % numPlayers;
         const seatCards = carriage.hands[s]?.cards || [];
         const aiArrange = aiArrangeCards(seatCards);
         playersList.push({
@@ -565,15 +572,16 @@ export default function App() {
   };
 
   const settleMatch = async (userArrangement: PlayerArrangement) => {
-    // 🚆 8人模式：车厢异步结算并自动秒入下一节车厢
-    if (mode === 'vs_ai_8p') {
+    // 🚆 8人模式与4人模式：预发牌异步结算并自动秒入下一局
+    if (mode === 'vs_ai_8p' || mode === 'vs_ai_4p') {
       try {
         const res = await submitCarriageHandAndAdvance({
           carriageId,
           seatIndex: carriageSeatIndex,
           playerAccount: currentAccount,
           arrangement: userArrangement,
-          handCards: originalHand
+          handCards: originalHand,
+          mode
         });
 
         if (res.playerResult.finalPoints > 0) {
@@ -586,7 +594,7 @@ export default function App() {
         const deltaStr = res.playerResult.finalPoints >= 0 ? `+${res.playerResult.finalPoints}` : `${res.playerResult.finalPoints}`;
         setCarriageToast({
           show: true,
-          msg: `🎉 第 ${res.completedCarriage.index} 节车厢理牌完成！获得 ${deltaStr} 水！已自动进入第 ${res.nextCarriageData.carriage.index} 节车厢继续理牌...`,
+          msg: `🎉 理牌完成！获得 ${deltaStr} 水！已自动为你加载下一局...`,
           pts: res.playerResult.finalPoints
         });
 
@@ -594,7 +602,7 @@ export default function App() {
           setCarriageToast(null);
         }, 4500);
 
-        // 自动无缝切换到下一节车厢
+        // 自动无缝切换到下一局
         setCarriageIndex(res.nextCarriageData.carriage.index);
         setCarriageId(res.nextCarriageData.carriage.id);
         setCarriageStats(res.updatedStats);
@@ -617,7 +625,7 @@ export default function App() {
 
         refreshPlayerStats(currentAccount.nickname || playerName);
       } catch (err: any) {
-        setErrorMsg(err.message || '车厢理牌提交失败');
+        setErrorMsg(err.message || '理牌提交失败');
       }
       return;
     }
@@ -779,7 +787,7 @@ export default function App() {
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-3 flex flex-col items-center justify-center overflow-hidden">
         {gameState === 'menu' && (
           <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 my-auto">
-            {/* BLOCK 1: 八人车厢场 (8-Player Carriage Async Arena) */}
+            {/* BLOCK 1: 八人场 (8-Player Arena) */}
             <div
               id="arena-8p-section"
               onClick={() => startNewMatch('vs_ai_8p')}
@@ -788,29 +796,27 @@ export default function App() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-red-600 text-slate-950 flex items-center justify-center text-2xl font-black shadow-lg shadow-red-600/30 group-hover:scale-105 transition duration-300">
-                    🚆
+                    👑
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/30 flex items-center gap-1">
-                      <Layers className="w-3 h-3 text-amber-400" /> 预存300局车厢
+                    <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/30">
+                      双副 104 牌
                     </span>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight group-hover:text-amber-300 transition flex items-center gap-2">
-                    八人车厢连战
+                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight group-hover:text-amber-300 transition">
+                    八人场
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                    预发牌300局存储 • 提交理牌自动瞬移下一车厢 • 缺50局自动满额
+                    双副扑克牌 · 8人同台竞技 · 7枪全垒打狂暴翻倍
                   </p>
                 </div>
               </div>
 
               <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-sm sm:text-base font-bold text-amber-400 group-hover:text-amber-300">
-                <span className="flex items-center gap-1.5">
-                  <Train className="w-4 h-4" /> 进入第 {carriageIndex} 节车厢
-                </span>
+                <span>立即进入八人场</span>
                 <div className="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center group-hover:translate-x-1.5 transition">
                   <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>

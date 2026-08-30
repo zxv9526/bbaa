@@ -568,8 +568,10 @@ export function aiArrangeCards(cards: Card[]): PlayerArrangement {
   };
 }
 
-// 完整比牌与算分引擎 (支持 2~4 名玩家)
-export function calculateMatchScores(
+// ----------------------------------------------------
+// 独立比牌与算分模块：四人场 (4-Player Match Calculation Module)
+// ----------------------------------------------------
+export function calculate4PlayerMatchScores(
   playersData: {
     id: string;
     name: string;
@@ -613,7 +615,7 @@ export function calculateMatchScores(
 
   const n = details.length;
 
-  // 两两对比 (Pairwise Comparison)
+  // 4人场两两对比 (Pairwise Comparison for 4 players)
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const p1 = details[i];
@@ -639,7 +641,7 @@ export function calculateMatchScores(
         continue;
       }
 
-      // 处理倒水 (倒水玩家自动输给对方全部三墩并被判打枪)
+      // 处理倒水
       if (p1.arrangement.isDaoShui && p2.arrangement.isDaoShui) {
         p1.dunScores[p2.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: 0 };
         p2.dunScores[p1.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: 0 };
@@ -663,7 +665,6 @@ export function calculateMatchScores(
       const mDiff = p1.midScore.score > p2.midScore.score ? 1 : p1.midScore.score < p2.midScore.score ? -1 : 0;
       const bDiff = p1.backScore.score > p2.backScore.score ? 1 : p1.backScore.score < p2.backScore.score ? -1 : 0;
 
-      // 喜分加水：胜墩者享受该墩的特殊喜分
       const fBonus = fDiff > 0 ? (p1.frontScore.bonusPoints || 0) : fDiff < 0 ? -(p2.frontScore.bonusPoints || 0) : 0;
       const mBonus = mDiff > 0 ? (p1.midScore.bonusPoints || 0) : mDiff < 0 ? -(p2.midScore.bonusPoints || 0) : 0;
       const bBonus = bDiff > 0 ? (p1.backScore.bonusPoints || 0) : bDiff < 0 ? -(p2.backScore.bonusPoints || 0) : 0;
@@ -674,41 +675,24 @@ export function calculateMatchScores(
 
       if (fDiff > 0 && mDiff > 0 && bDiff > 0) {
         p1Gun = true;
-        gunPts = 3; // 打枪追加3水 (基础3墩 + 打枪3水 = 6水)
+        gunPts = 3;
       } else if (fDiff < 0 && mDiff < 0 && bDiff < 0) {
         p2Gun = true;
-        gunPts = -3; // 被打枪扣除3水
+        gunPts = -3;
       }
 
       const totalVsOpponent = (fDiff + fBonus) + (mDiff + mBonus) + (bDiff + bBonus) + gunPts;
 
       p1.dunScores[p2.playerId] = {
-        front: fDiff,
-        frontBonus: fBonus,
-        mid: mDiff,
-        midBonus: mBonus,
-        back: bDiff,
-        backBonus: bBonus,
-        isGun: p1Gun,
-        gunPoints: gunPts,
-        total: totalVsOpponent
+        front: fDiff, frontBonus: fBonus, mid: mDiff, midBonus: mBonus, back: bDiff, backBonus: bBonus, isGun: p1Gun, gunPoints: gunPts, total: totalVsOpponent
       };
-
       p2.dunScores[p1.playerId] = {
-        front: -fDiff,
-        frontBonus: -fBonus,
-        mid: -mDiff,
-        midBonus: -mBonus,
-        back: -bDiff,
-        backBonus: -bBonus,
-        isGun: p2Gun,
-        gunPoints: -gunPts,
-        total: -totalVsOpponent
+        front: -fDiff, frontBonus: -fBonus, mid: -mDiff, midBonus: -mBonus, back: -bDiff, backBonus: -bBonus, isGun: p2Gun, gunPoints: -gunPts, total: -totalVsOpponent
       };
     }
   }
 
-  // 结算每位玩家总分并检查全垒打 (Home Run)
+  // 4人场总分与全垒打判定 (4人场全垒打打枪3人)
   for (const p of details) {
     let sum = 0;
     let gunsAgainstOthers = 0;
@@ -721,11 +705,9 @@ export function calculateMatchScores(
       }
     }
 
-    // 全垒打判定: 打枪场上所有对手 (如4人场打枪3人，8人场打枪7人)
     if (n >= 3 && gunsAgainstOthers === n - 1) {
       p.isHomeRun = true;
-      sum *= 2; // 全垒打总分翻倍
-      // 保持对手零和扣分同步
+      sum *= 2;
       for (const oppId of opponentIds) {
         if (p.dunScores[oppId]) {
           p.dunScores[oppId].total *= 2;
@@ -737,6 +719,177 @@ export function calculateMatchScores(
   }
 
   return details;
+}
+
+// ----------------------------------------------------
+// 独立比牌与算分模块：八人场 (8-Player Match Calculation Module)
+// ----------------------------------------------------
+export function calculate8PlayerMatchScores(
+  playersData: {
+    id: string;
+    name: string;
+    isAi: boolean;
+    avatar: string;
+    cards: Card[];
+    arrangement: PlayerArrangement;
+  }[]
+): PlayerScoreDetail[] {
+  const details: PlayerScoreDetail[] = playersData.map(p => {
+    const fEval = evaluateHand(p.arrangement.front, 'front');
+    const mEval = evaluateHand(p.arrangement.middle, 'middle');
+    const bEval = evaluateHand(p.arrangement.back, 'back');
+    const isDao = !isValidArrangement(p.arrangement.front, p.arrangement.middle, p.arrangement.back) && !p.arrangement.specialHand;
+
+    const bonus = (fEval.bonusPoints || 0) + (mEval.bonusPoints || 0) + (bEval.bonusPoints || 0);
+    const specialBonus = p.arrangement.specialHand ? SPECIAL_HAND_CN[p.arrangement.specialHand].points : 0;
+
+    return {
+      playerId: p.id,
+      name: p.name,
+      isAi: p.isAi,
+      avatar: p.avatar,
+      cards: p.cards,
+      arrangement: {
+        ...p.arrangement,
+        isDaoShui: isDao,
+        isValid: !isDao
+      },
+      frontScore: fEval,
+      midScore: mEval,
+      backScore: bEval,
+      specialHand: p.arrangement.specialHand,
+      dunScores: {},
+      bonusPoints: bonus,
+      specialPoints: specialBonus,
+      finalPoints: 0,
+      isHomeRun: false
+    };
+  });
+
+  const n = details.length;
+
+  // 8人场两两对比 (8-player Pairwise Comparison)
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const p1 = details[i];
+      const p2 = details[j];
+
+      // 特殊牌型
+      if (p1.specialHand || p2.specialHand) {
+        if (p1.specialHand && p2.specialHand) {
+          const s1 = SPECIAL_HAND_CN[p1.specialHand].points;
+          const s2 = SPECIAL_HAND_CN[p2.specialHand].points;
+          const diff = s1 - s2;
+          p1.dunScores[p2.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: diff };
+          p2.dunScores[p1.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: -diff };
+        } else if (p1.specialHand) {
+          const s1 = SPECIAL_HAND_CN[p1.specialHand].points;
+          p1.dunScores[p2.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: s1 };
+          p2.dunScores[p1.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: -s1 };
+        } else if (p2.specialHand) {
+          const s2 = SPECIAL_HAND_CN[p2.specialHand!].points;
+          p1.dunScores[p2.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: -s2 };
+          p2.dunScores[p1.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: s2 };
+        }
+        continue;
+      }
+
+      // 倒水处理
+      if (p1.arrangement.isDaoShui && p2.arrangement.isDaoShui) {
+        p1.dunScores[p2.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: 0 };
+        p2.dunScores[p1.playerId] = { front: 0, frontBonus: 0, mid: 0, midBonus: 0, back: 0, backBonus: 0, isGun: false, gunPoints: 0, total: 0 };
+        continue;
+      } else if (p1.arrangement.isDaoShui) {
+        const p2WinBonus = (p2.frontScore.bonusPoints || 0) + (p2.midScore.bonusPoints || 0) + (p2.backScore.bonusPoints || 0);
+        const totalP2Win = 6 + p2WinBonus;
+        p1.dunScores[p2.playerId] = { front: -1, frontBonus: -(p2.frontScore.bonusPoints || 0), mid: -1, midBonus: -(p2.midScore.bonusPoints || 0), back: -1, backBonus: -(p2.backScore.bonusPoints || 0), isGun: false, gunPoints: -3, total: -totalP2Win };
+        p2.dunScores[p1.playerId] = { front: 1, frontBonus: p2.frontScore.bonusPoints || 0, mid: 1, midBonus: p2.midScore.bonusPoints || 0, back: 1, backBonus: p2.backScore.bonusPoints || 0, isGun: true, gunPoints: 3, total: totalP2Win };
+        continue;
+      } else if (p2.arrangement.isDaoShui) {
+        const p1WinBonus = (p1.frontScore.bonusPoints || 0) + (p1.midScore.bonusPoints || 0) + (p1.backScore.bonusPoints || 0);
+        const totalP1Win = 6 + p1WinBonus;
+        p1.dunScores[p2.playerId] = { front: 1, frontBonus: p1.frontScore.bonusPoints || 0, mid: 1, midBonus: p1.midScore.bonusPoints || 0, back: 1, backBonus: p1.backScore.bonusPoints || 0, isGun: true, gunPoints: 3, total: totalP1Win };
+        p2.dunScores[p1.playerId] = { front: -1, frontBonus: -(p1.frontScore.bonusPoints || 0), mid: -1, midBonus: -(p1.midScore.bonusPoints || 0), back: -1, backBonus: -(p1.backScore.bonusPoints || 0), isGun: false, gunPoints: -3, total: -totalP1Win };
+        continue;
+      }
+
+      // 正常比三墩
+      const fDiff = p1.frontScore.score > p2.frontScore.score ? 1 : p1.frontScore.score < p2.frontScore.score ? -1 : 0;
+      const mDiff = p1.midScore.score > p2.midScore.score ? 1 : p1.midScore.score < p2.midScore.score ? -1 : 0;
+      const bDiff = p1.backScore.score > p2.backScore.score ? 1 : p1.backScore.score < p2.backScore.score ? -1 : 0;
+
+      const fBonus = fDiff > 0 ? (p1.frontScore.bonusPoints || 0) : fDiff < 0 ? -(p2.frontScore.bonusPoints || 0) : 0;
+      const mBonus = mDiff > 0 ? (p1.midScore.bonusPoints || 0) : mDiff < 0 ? -(p2.midScore.bonusPoints || 0) : 0;
+      const bBonus = bDiff > 0 ? (p1.backScore.bonusPoints || 0) : bDiff < 0 ? -(p2.backScore.bonusPoints || 0) : 0;
+
+      let p1Gun = false;
+      let p2Gun = false;
+      let gunPts = 0;
+
+      if (fDiff > 0 && mDiff > 0 && bDiff > 0) {
+        p1Gun = true;
+        gunPts = 3;
+      } else if (fDiff < 0 && mDiff < 0 && bDiff < 0) {
+        p2Gun = true;
+        gunPts = -3;
+      }
+
+      const totalVsOpponent = (fDiff + fBonus) + (mDiff + mBonus) + (bDiff + bBonus) + gunPts;
+
+      p1.dunScores[p2.playerId] = {
+        front: fDiff, frontBonus: fBonus, mid: mDiff, midBonus: mBonus, back: bDiff, backBonus: bBonus, isGun: p1Gun, gunPoints: gunPts, total: totalVsOpponent
+      };
+      p2.dunScores[p1.playerId] = {
+        front: -fDiff, frontBonus: -fBonus, mid: -mDiff, midBonus: -mBonus, back: -bDiff, backBonus: -bBonus, isGun: p2Gun, gunPoints: -gunPts, total: -totalVsOpponent
+      };
+    }
+  }
+
+  // 8人场总分与全垒打 (8人场全垒打打枪7人)
+  for (const p of details) {
+    let sum = 0;
+    let gunsAgainstOthers = 0;
+    const opponentIds = Object.keys(p.dunScores);
+
+    for (const oppId of opponentIds) {
+      sum += p.dunScores[oppId].total;
+      if (p.dunScores[oppId].isGun) {
+        gunsAgainstOthers++;
+      }
+    }
+
+    if (n >= 3 && gunsAgainstOthers === n - 1) {
+      p.isHomeRun = true;
+      sum *= 2;
+      for (const oppId of opponentIds) {
+        if (p.dunScores[oppId]) {
+          p.dunScores[oppId].total *= 2;
+        }
+      }
+    }
+
+    p.finalPoints = sum;
+  }
+
+  return details;
+}
+
+// 统一对外调用接口
+export function calculateMatchScores(
+  playersData: {
+    id: string;
+    name: string;
+    isAi: boolean;
+    avatar: string;
+    cards: Card[];
+    arrangement: PlayerArrangement;
+  }[]
+): PlayerScoreDetail[] {
+  if (playersData.length > 4) {
+    return calculate8PlayerMatchScores(playersData);
+  } else {
+    return calculate4PlayerMatchScores(playersData);
+  }
 }
 
 // ----------------------------------------------------

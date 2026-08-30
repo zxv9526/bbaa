@@ -73,18 +73,18 @@ export function CarriageHubModal({
         {/* Header */}
         <div className="px-6 py-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-              <Train className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-red-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-red-500/20">
+              8
             </div>
             <div>
               <h2 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
-                异步发牌车厢控制中心
+                八人场战绩中心
                 <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-bold">
-                  8人模式 300局预存
+                  8人大局比拼
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
-                进入车厢自动接力发牌 • 提交后秒入下一节车厢 • 自动补足300局库存
+                查看历局比牌记录、胜负积分与牌局复盘
               </p>
             </div>
           </div>
@@ -122,14 +122,14 @@ export function CarriageHubModal({
           <div className="p-6 overflow-y-auto flex-1 space-y-6">
             
             {/* Top Stats Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="bg-slate-800/60 border border-slate-750 p-4 rounded-2xl">
                 <div className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                  <Train className="w-4 h-4 text-blue-400" />
-                  当前车厢
+                  <Flame className="w-4 h-4 text-amber-400" />
+                  当前局数
                 </div>
-                <div className="mt-2 text-2xl font-black text-blue-400 font-mono">
-                  第 {currentCarriageIndex} 节
+                <div className="mt-2 text-2xl font-black text-amber-400 font-mono">
+                  第 {currentCarriageIndex} 局
                 </div>
                 <div className="mt-1 text-[11px] text-slate-500">
                   即刻准备理牌
@@ -138,64 +138,29 @@ export function CarriageHubModal({
 
               <div className="bg-slate-800/60 border border-slate-750 p-4 rounded-2xl">
                 <div className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-amber-400" />
-                  预发牌库存
-                </div>
-                <div className="mt-2 text-2xl font-black text-amber-400 font-mono">
-                  {stats.unclaimedCount} <span className="text-sm font-normal text-slate-400">/ 300局</span>
-                </div>
-                <div className="mt-1 text-[11px] text-emerald-400 flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3" />
-                  低于50局自动满额
-                </div>
-              </div>
-
-              <div className="bg-slate-800/60 border border-slate-750 p-4 rounded-2xl">
-                <div className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  已战车厢数
+                  已战局数
                 </div>
                 <div className="mt-2 text-2xl font-black text-emerald-400 font-mono">
-                  {stats.completedCount} 节
+                  {stats.completedCount} 局
                 </div>
                 <div className="mt-1 text-[11px] text-slate-500">
-                  8人场实时结算
+                  8人场实时比牌
                 </div>
               </div>
 
               <div className="bg-slate-800/60 border border-slate-750 p-4 rounded-2xl">
                 <div className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
                   <Trophy className="w-4 h-4 text-purple-400" />
-                  车厢累计赢输
+                  八人场累计水数
                 </div>
                 <div className={`mt-2 text-2xl font-black font-mono ${totalNetPoints >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
                   {totalNetPoints >= 0 ? `+${totalNetPoints}` : totalNetPoints} 水
                 </div>
                 <div className="mt-1 text-[11px] text-slate-500">
-                  全服自动清算
+                  自动汇总结算
                 </div>
               </div>
-            </div>
-
-            {/* How carriage async mode works */}
-            <div className="bg-gradient-to-r from-blue-950/40 via-indigo-950/30 to-purple-950/40 border border-indigo-500/20 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="text-sm font-bold text-indigo-300 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-indigo-400" />
-                  车厢发牌说明（异步接力机制）
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed max-w-xl">
-                  系统已为您预先生成并洗好了 300 局 8 人模式（双副 104 张牌）车厢。您在第 1 节车厢提交理牌后，系统将自动清算本局并瞬移为您发放第 2 节车厢的扑克牌，无需任何等待！
-                </p>
-              </div>
-
-              <button
-                onClick={handleReset}
-                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 flex items-center gap-1.5 transition shrink-0"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-                重新生成300局牌库
-              </button>
             </div>
 
             {/* Completed Carriage History Table */}
@@ -203,15 +168,21 @@ export function CarriageHubModal({
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <Award className="w-4 h-4 text-amber-400" />
-                  已完成车厢战绩明细 ({completedList.length} 局)
+                  对局战绩记录 ({completedList.length} 局)
                 </h3>
+                <button
+                  onClick={handleReset}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 flex items-center gap-1.5 transition shrink-0"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                  重置洗牌
+                </button>
               </div>
 
               {completedList.length === 0 ? (
                 <div className="py-12 text-center bg-slate-800/30 border border-slate-800 rounded-2xl">
-                  <Train className="w-10 h-10 text-slate-600 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm text-slate-400">暂无已完成车厢记录</p>
-                  <p className="text-xs text-slate-500 mt-1">进入第 {currentCarriageIndex} 节车厢理牌即可开启体验！</p>
+                  <p className="text-sm text-slate-400">暂无完成对局记录</p>
+                  <p className="text-xs text-slate-500 mt-1">点击进入八人场理牌即可自动开启战绩！</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -236,7 +207,7 @@ export function CarriageHubModal({
                           </div>
                           <div>
                             <div className="text-xs font-bold text-white flex items-center gap-2">
-                              第 {c.index} 节车厢
+                              第 {c.index} 局
                               {userResult?.specialHand && (
                                 <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[10px]">
                                   {userResult.specialHand}
@@ -279,7 +250,7 @@ export function CarriageHubModal({
         <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between">
           <div className="text-xs text-slate-400 flex items-center gap-1.5">
             <Zap className="w-3.5 h-3.5 text-amber-400" />
-            支持多车厢无限连战，提交即刻自动进入下一节车厢
+            提交理牌后自动无缝开始下一局
           </div>
 
           <button
