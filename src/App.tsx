@@ -1042,96 +1042,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Quick Actions Bar */}
-            <div className="w-full flex flex-wrap items-center justify-between gap-2 bg-slate-900/80 border border-slate-800 rounded-2xl px-3.5 py-2 shadow-md">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={handleChangePattern}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
-                  title="智能轮巡合法组合"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" /> 变换牌型
-                </button>
-                <button
-                  onClick={handleSwapMidBack}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
-                  title="交换中墩与后墩"
-                >
-                  <ArrowUpDown className="w-3.5 h-3.5" /> 中后互换
-                </button>
-                <button
-                  onClick={handleResetHand}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
-                  title="恢复初始推荐分布 (3/5/5)"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-blue-400" /> 重置理牌
-                </button>
-                {isCurrentDaoShui && (
-                  <button
-                    onClick={handleAutoFix}
-                    className="px-3 py-1.5 rounded-xl bg-rose-600/30 border border-rose-500/50 text-rose-200 hover:bg-rose-600/40 text-xs font-black flex items-center gap-1.5 transition animate-pulse"
-                    title="自动调整倒水"
-                  >
-                    <Wand2 className="w-3.5 h-3.5" /> 一键调水
-                  </button>
-                )}
-              </div>
-
-              {/* Selection Status & Clear selection */}
-              <div className="flex items-center gap-2 text-xs">
-                {selectedCardIds.length > 0 ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-blue-400 font-bold bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/30">
-                      已选 {selectedCardIds.length} 张
-                    </span>
-                    <button
-                      onClick={() => setSelectedCardIds([])}
-                      className="text-slate-400 hover:text-slate-200 underline font-semibold text-[11px]"
-                    >
-                      取消选择
-                    </button>
-                  </div>
-                ) : (
-                  <span className="text-slate-500 font-medium text-[11px]">
-                    点牌选定，点击目标墩完成移动
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Smart Strategy Selection Chips */}
-            {suggestions.length > 0 && (
-              <div className="w-full flex items-center gap-1.5 overflow-x-auto py-1 px-1 scrollbar-none text-xs">
-                <span className="text-amber-400/90 font-bold text-[11px] shrink-0 flex items-center gap-1 bg-amber-500/10 px-2 py-1 rounded-xl border border-amber-500/20">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" /> 智能方案:
-                </span>
-                {suggestions.map((option, idx) => {
-                  const isCurrentOption =
-                    front.length === 3 &&
-                    mid.length === 5 &&
-                    back.length === 5 &&
-                    option.front.every((c, i) => c.id === front[i]?.id) &&
-                    option.middle.every((c, i) => c.id === mid[i]?.id) &&
-                    option.back.every((c, i) => c.id === back[i]?.id);
-
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => applySuggestion(option)}
-                      className={`px-3 py-1 rounded-xl text-xs font-bold shrink-0 transition flex items-center gap-1 border active:scale-95 ${
-                        isCurrentOption
-                          ? 'bg-amber-500/25 text-amber-200 border-amber-400 shadow-md shadow-amber-500/10 scale-[1.02]'
-                          : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:bg-slate-800 hover:text-amber-300 hover:border-slate-700'
-                      }`}
-                      title={option.title}
-                    >
-                      {option.tag}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
             {/* Arrangement Card Containers */}
             <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-3.5 sm:p-4 shadow-xl flex flex-col gap-3">
               
@@ -1314,14 +1224,26 @@ export default function App() {
 
             </div>
 
-            {/* Bottom Submit Action */}
-            <div className="w-full flex items-center justify-center pt-1">
+            {/* Bottom Actions: Exactly Two Buttons (变换牌型 & 提交牌型) */}
+            <div className="w-full max-w-2xl mx-auto flex items-center justify-center gap-3 sm:gap-4 pt-1">
               <button
-                onClick={handleSubmitArrangement}
-                className="w-full max-w-md py-3 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
+                id="btn-change-pattern"
+                onClick={handleChangePattern}
+                className="flex-1 py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-amber-950/30 transition active:scale-95 cursor-pointer"
+                title="智能切换下一组牌型"
               >
-                <CheckCircle2 className="w-5 h-5" />
-                提交牌型 ({front.length + mid.length + back.length}/13张)
+                <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+                <span>变换牌型</span>
+              </button>
+
+              <button
+                id="btn-submit-arrangement"
+                onClick={handleSubmitArrangement}
+                className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
+                title="提交牌型"
+              >
+                <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span>提交牌型 ({front.length + mid.length + back.length}/13张)</span>
               </button>
             </div>
           </div>
