@@ -10,6 +10,7 @@ interface CarriageHeaderBarProps {
   onSeatChange: (seat: number) => void;
   stats: CarriagePoolStats;
   onOpenHub: () => void;
+  points?: number;
 }
 
 export function CarriageHeaderBar({
@@ -19,7 +20,8 @@ export function CarriageHeaderBar({
   submissions = {},
   onSeatChange,
   stats,
-  onOpenHub
+  onOpenHub,
+  points = 0
 }: CarriageHeaderBarProps) {
   const is8P = mode === 'vs_ai_8p';
   const totalSeats = is8P ? 8 : 4;
@@ -42,7 +44,7 @@ export function CarriageHeaderBar({
         </div>
 
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-base font-black text-white tracking-wide flex items-center gap-1.5">
               {is8P ? '八人场' : '四人场'} • 第 <span className="text-amber-400 font-mono text-lg">{currentCarriageIndex}</span> 局
             </h2>
@@ -53,9 +55,14 @@ export function CarriageHeaderBar({
             }`}>
               {isFull ? `🔴 满座 (0/${totalSeats})` : `🟢 剩余位置: ${remainingSeats}/${totalSeats}`}
             </span>
+            {/* 🪙 积分显示在剩余位置旁边 */}
+            <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-black shadow-inner">
+              <span>🪙</span>
+              <span>积分: {points.toLocaleString()}</span>
+            </div>
           </div>
           <div className="text-xs text-slate-400 mt-0.5">
-            提交理牌后自动进入下一局
+            提交理牌后可选择继续进入下一局或结束返回大厅
           </div>
         </div>
       </div>
