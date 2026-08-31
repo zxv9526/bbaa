@@ -26,8 +26,11 @@ export function CarriageHeaderBar({
   const is8P = mode === 'vs_ai_8p';
   const totalSeats = is8P ? 8 : 4;
   const seatsList = Array.from({ length: totalSeats }, (_, i) => i);
-  const occupiedCount = Object.keys(submissions).length;
-  const remainingSeats = Math.max(0, totalSeats - occupiedCount);
+  
+  // 🪑 计算实际在席人数（当前玩家已就座 + 其他已占座位的玩家）
+  const otherOccupiedCount = Object.keys(submissions).filter(s => Number(s) !== seatIndex).length;
+  const seatedCount = Math.min(totalSeats, 1 + otherOccupiedCount);
+  const remainingSeats = Math.max(0, totalSeats - seatedCount);
   const isFull = remainingSeats === 0;
 
   return (
@@ -48,14 +51,25 @@ export function CarriageHeaderBar({
             <h2 className="text-base font-black text-white tracking-wide flex items-center gap-1.5">
               {is8P ? '八人场' : '四人场'} • 第 <span className="text-amber-400 font-mono text-lg">{currentCarriageIndex}</span> 局
             </h2>
-            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+            
+            {/* 🪑 席位显示：精准展示 8/1 (总桌容/已入座) 以及剩余空位 */}
+            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
               isFull
                 ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
                 : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
             }`}>
-              {isFull ? `🔴 满座 (0/${totalSeats})` : `🟢 剩余位置: ${remainingSeats}/${totalSeats}`}
+              <span>🪑</span>
+              <span>席位: {totalSeats}/{seatedCount}</span>
+              <span className="text-emerald-200/80 font-normal">({seatedCount === 1 ? '我已就座' : `已入座${seatedCount}人`}{remainingSeats > 0 ? `·余${remainingSeats}位` : '·满座'})</span>
             </span>
-            {/* 🪙 积分显示在剩余位置旁边 */}
+
+            {/* 👤 当前玩家座位标牌 */}
+            <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[11px] font-bold">
+              <span>👤</span>
+              <span>当前: {seatIndex + 1}号位 (我)</span>
+            </div>
+
+            {/* 🪙 积分显示 */}
             <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-black shadow-inner">
               <span>🪙</span>
               <span>积分: {points.toLocaleString()}</span>
