@@ -1358,7 +1358,7 @@ export default function App() {
 
         {/* 4. Active Game Table (Arranging / Revealing) */}
         {gameState === 'revealing' && matchResults && (
-          <div className="w-full max-w-6xl flex flex-col items-center gap-6">
+          <div className="w-full max-w-6xl flex flex-col items-center gap-6 overflow-y-auto pb-safe p-2 sm:p-4">
             <ShowdownStage
               results={matchResults}
               onPlayAgain={() => startNewMatch(mode)}
