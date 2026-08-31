@@ -16,9 +16,13 @@ export const HAND_TYPE_CN: Record<HandType, string> = {
 };
 
 export const SPECIAL_HAND_CN: Record<SpecialHandType, { name: string; points: number; desc: string }> = {
+  'Eight of a Kind': { name: '八仙过海 (8张A/8同)', points: 108, desc: '8张相同点数(如8张A)或8张同点' },
   'Supreme Dragon': { name: '至尊青龙', points: 108, desc: '同花 A-2-3...K 13张' },
+  'Seven of a Kind': { name: '七星高照 (7张A/7同)', points: 60, desc: '7张相同点数(如7张A)或7张同点' },
   'Dragon': { name: '一条龙', points: 52, desc: 'A到K 13张不同点数' },
+  'Six of a Kind': { name: '六六大顺 (6张A/6同)', points: 40, desc: '6张相同点数(如6张A)或6张同点' },
   'Twelve Royals': { name: '十二皇族', points: 36, desc: '12张及以上J/Q/K/A' },
+  'Five of a Kind Special': { name: '五福临门 (5张A/5同)', points: 28, desc: '5张相同点数(如5张A)特型直通' },
   'Three Straight Flushes': { name: '三同花顺', points: 26, desc: '前中后三墩皆为同花顺' },
   'Three Quads': { name: '三分天下', points: 24, desc: '3套铁支(4条)' },
   'All High': { name: '全大', points: 20, desc: '13张牌全部为8至A' },
@@ -83,6 +87,16 @@ export function detectSpecialHand(cards: Card[]): SpecialHandType | null {
   const ranks = sorted.map(c => c.rank);
   const suits = sorted.map(c => c.suit);
 
+  // 统计牌点出现次数
+  const counts: Record<number, number> = {};
+  ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
+  const countValues = Object.values(counts).sort((a, b) => b - a);
+
+  // 0. 多副牌至尊同点特殊牌型 (5~8张相同点数，如5~8张A)
+  if (countValues[0] >= 8) {
+    return 'Eight of a Kind'; // 八仙过海 (8张A/8同)
+  }
+
   // 1. 至尊青龙 (同花一条龙)
   const isOneSuit = suits.every(s => s === suits[0]);
   const uniqueRanks = new Set(ranks);
@@ -91,14 +105,24 @@ export function detectSpecialHand(cards: Card[]): SpecialHandType | null {
     return 'Dragon'; // 一条龙
   }
 
+  // 0.2 七星高照 (7张A/7同)
+  if (countValues[0] === 7) {
+    return 'Seven of a Kind';
+  }
+
+  // 0.3 六六大顺 (6张A/6同)
+  if (countValues[0] === 6) {
+    return 'Six of a Kind';
+  }
+
   // 2. 十二皇族 (12张或13张为 J, Q, K, A, rank >= 11)
   const royalsCount = ranks.filter(r => r >= 11).length;
   if (royalsCount >= 12) return 'Twelve Royals';
 
-  // 统计牌点出现次数
-  const counts: Record<number, number> = {};
-  ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
-  const countValues = Object.values(counts).sort((a, b) => b - a);
+  // 0.4 五福临门 (5张A/5同) 特殊免摆直接胜
+  if (countValues[0] === 5 && countValues[1] !== 4 && countValues[1] !== 3) {
+    return 'Five of a Kind Special';
+  }
 
   // 3. 三分天下 (3套铁支 / 4条) -> countValues: [4, 4, 4, 1]
   if (countValues[0] === 4 && countValues[1] === 4 && countValues[2] === 4) {
@@ -208,15 +232,17 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
 
   // 1. 前墩 (3张牌规则: 只有三条、一对、乌龙/高牌，或部分玩法支持三张顺子/同花)
   if (isFront) {
-    // 前墩三条 (冲三 / 前墩三条通常有额外加分，如 +3分)
+    // 前墩三条 (冲三 / 前墩三条通常有额外加分，冲三A额外+5分，普通冲三+3分)
     if (countArr[0].count === 3) {
       const r = countArr[0].rank;
+      const isAceTrip = r === 14;
+      const bonus = isAceTrip ? 5 : 3;
       return {
         score: 300000000 + r * 100,
         type: 'Three of a Kind',
         cards: sorted,
-        description: `前墩三条 ${getRankStr(r)}`,
-        bonusPoints: 3
+        description: isAceTrip ? `前墩冲三 A (+${bonus}水)` : `前墩三条 ${getRankStr(r)} (+${bonus}水)`,
+        bonusPoints: bonus
       };
     }
     // 前墩一对
@@ -244,12 +270,14 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
   // 0. 五条 / 五同 (Five of a Kind - 双副牌 8人场)
   if (countArr[0].count >= 5) {
     const fiveRank = countArr[0].rank;
-    const bonus = dun === 'middle' ? 16 : 8; // 中墩五条+16水，后墩五条+8水
+    const isAce = fiveRank === 14;
+    // 五条 A 享受至尊喜分：中墩+20水，后墩+10水；普通五条：中墩+16水，后墩+8水
+    const bonus = isAce ? (dun === 'middle' ? 20 : 10) : (dun === 'middle' ? 16 : 8);
     return {
       score: 900000000 + fiveRank * 10000,
       type: 'Five of a Kind',
       cards: sorted,
-      description: `五条 ${getRankStr(fiveRank)}`,
+      description: isAce ? `至尊五条 A (+${bonus}水)` : `五条 ${getRankStr(fiveRank)} (+${bonus}水)`,
       bonusPoints: bonus
     };
   }
@@ -272,12 +300,13 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
 
   // 同花顺 (Straight Flush)
   if (isFlush && isStraight) {
-    const bonus = dun === 'middle' ? 10 : 5; // 中墩同花顺+10，后墩+5
+    const isRoyal = straightHigh === 14;
+    const bonus = isRoyal ? (dun === 'middle' ? 14 : 8) : (dun === 'middle' ? 10 : 5);
     return {
       score: 800000000 + straightHigh * 100,
       type: 'Straight Flush',
       cards: sorted,
-      description: `同花顺 (${getRankStr(straightHigh)} 高)`,
+      description: isRoyal ? `皇家同花顺 A高 (+${bonus}水)` : `同花顺 (${getRankStr(straightHigh)} 高, +${bonus}水)`,
       bonusPoints: bonus
     };
   }
@@ -286,12 +315,13 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
   if (countArr[0].count === 4) {
     const fourRank = countArr[0].rank;
     const kicker = countArr[1].rank;
-    const bonus = dun === 'middle' ? 8 : 4; // 中墩铁支+8，后墩+4
+    const isAceFour = fourRank === 14;
+    const bonus = isAceFour ? (dun === 'middle' ? 10 : 5) : (dun === 'middle' ? 8 : 4);
     return {
       score: 700000000 + fourRank * 10000 + kicker * 100,
       type: 'Four of a Kind',
       cards: sorted,
-      description: `铁支 ${getRankStr(fourRank)}`,
+      description: isAceFour ? `铁支 A (+${bonus}水)` : `铁支 ${getRankStr(fourRank)} (+${bonus}水)`,
       bonusPoints: bonus
     };
   }
@@ -1142,6 +1172,35 @@ export function autoFixDaoShui(cards: Card[]): { front: Card[]; middle: Card[]; 
 export function generateSpecialHand(type: SpecialHandType): Card[] {
   const suits: Suit[] = ['S', 'H', 'C', 'D'];
   const allCards = createDeck();
+  const doubleDeck = createDoubleDeck();
+
+  // 八仙过海 (8张A)
+  if (type === 'Eight of a Kind') {
+    const aces: Card[] = doubleDeck.filter(c => c.rank === 14).slice(0, 8);
+    const others = doubleDeck.filter(c => c.rank !== 14);
+    return [...aces, ...shuffle(others).slice(0, 5)];
+  }
+
+  // 七星高照 (7张A)
+  if (type === 'Seven of a Kind') {
+    const aces: Card[] = doubleDeck.filter(c => c.rank === 14).slice(0, 7);
+    const others = doubleDeck.filter(c => c.rank !== 14);
+    return [...aces, ...shuffle(others).slice(0, 6)];
+  }
+
+  // 六六大顺 (6张A)
+  if (type === 'Six of a Kind') {
+    const aces: Card[] = doubleDeck.filter(c => c.rank === 14).slice(0, 6);
+    const others = doubleDeck.filter(c => c.rank !== 14);
+    return [...aces, ...shuffle(others).slice(0, 7)];
+  }
+
+  // 五福临门 (5张A)
+  if (type === 'Five of a Kind Special') {
+    const aces: Card[] = doubleDeck.filter(c => c.rank === 14).slice(0, 5);
+    const others = doubleDeck.filter(c => c.rank !== 14);
+    return [...aces, ...shuffle(others).slice(0, 8)];
+  }
 
   if (type === 'Supreme Dragon') {
     // 黑桃 A-K 一条龙

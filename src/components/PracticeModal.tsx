@@ -246,6 +246,10 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
             <div className="flex flex-wrap gap-2">
               {(
                 [
+                  'Eight of a Kind',
+                  'Seven of a Kind',
+                  'Six of a Kind',
+                  'Five of a Kind Special',
                   'Supreme Dragon',
                   'Dragon',
                   'Twelve Royals',
@@ -258,9 +262,13 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
                 <button
                   key={type}
                   onClick={() => handleLoadSpecial(type)}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-300 hover:text-white transition"
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition ${
+                    type === 'Eight of a Kind' || type === 'Seven of a Kind' || type === 'Six of a Kind' || type === 'Five of a Kind Special'
+                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/30'
+                      : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 hover:text-white'
+                  }`}
                 >
-                  ✨ {SPECIAL_HAND_CN[type].name} ({SPECIAL_HAND_CN[type].points}分)
+                  ✨ {SPECIAL_HAND_CN[type].name} (+{SPECIAL_HAND_CN[type].points}水)
                 </button>
               ))}
             </div>

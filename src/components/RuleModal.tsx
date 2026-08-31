@@ -83,12 +83,43 @@ export function RuleModal({ isOpen, onClose }: RuleModalProps) {
               <div className="pt-1 border-t border-slate-200 dark:border-slate-700">
                 <span className="font-bold text-amber-600 dark:text-amber-400">✨ 墩位喜分奖励 (获胜额外计水)：</span>
                 <div className="grid grid-cols-2 gap-1 mt-1 text-[11px] text-slate-600 dark:text-slate-400">
-                  <div>• 前墩三条：+3 水</div>
+                  <div>• 前墩三条：+3 水 (冲三 A 享 +5 水)</div>
                   <div>• 中墩葫芦：+2 水</div>
-                  <div>• 铁支：中墩+8水 / 后墩+4水</div>
-                  <div>• 同花顺：中墩+10水 / 后墩+5水</div>
-                  <div>• 五条：中墩+16水 / 后墩+8水</div>
+                  <div>• 铁支：中墩+8水 (铁支A+10水) / 后墩+4水 (铁支A+5水)</div>
+                  <div>• 同花顺：中墩+10水 (皇家A高+14水) / 后墩+5水 (皇家+8水)</div>
+                  <div>• 五条：中墩+16水 (至尊A+20水) / 后墩+8水 (至尊A+10水)</div>
                   <div>• 打枪：总得分翻倍 (+3水)</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 🌟 专门板块：五到八张 A（同点牌）极品牌型与计分体系 */}
+          <section className="space-y-2 p-3.5 bg-gradient-to-br from-amber-500/10 via-rose-500/5 to-purple-500/10 rounded-2xl border border-amber-500/25">
+            <h4 className="font-bold text-amber-900 dark:text-amber-300 flex items-center gap-2 text-sm">
+              <span>👑</span>
+              3. 五到八张 A（同点牌）特殊计分规则
+            </h4>
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              在八人场（双副牌 104 张）中，若玩家拿到多张相同点数牌（特别是最大牌 A），可享受顶级特殊牌型或分墩绝杀喜分：
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-amber-300/40 space-y-1">
+                <div className="font-bold text-amber-700 dark:text-amber-400">🏆 方式一：特殊牌型免摆直通</div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-400 space-y-0.5">
+                  <div>• <strong>8张A (八仙过海)</strong>：+108 水 (免比三墩通杀全场)</div>
+                  <div>• <strong>7张A (七星高照)</strong>：+60 水 (免比直接胜出)</div>
+                  <div>• <strong>6张A (六六大顺)</strong>：+40 水 (免比直接胜出)</div>
+                  <div>• <strong>5张A (五福临门)</strong>：+28 水 (免比直接胜出)</div>
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-purple-300/40 space-y-1">
+                <div className="font-bold text-purple-700 dark:text-purple-400">🎯 方式二：拆分入三墩获巨额喜分</div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-400 space-y-0.5">
+                  <div>• <strong>后墩五条 A</strong>：基础胜 + 额外喜分 <strong>+10 水</strong></div>
+                  <div>• <strong>中墩五条 A</strong>：基础胜 + 额外喜分 <strong>+20 水</strong></div>
+                  <div>• <strong>前墩冲三 A</strong>：基础胜 + 额外喜分 <strong>+5 水</strong></div>
+                  <div>• <strong>8张A拆法</strong>：前冲三A(+5) + 后五条A(+10)，极大概率打枪全场！</div>
                 </div>
               </div>
             </div>
@@ -98,7 +129,7 @@ export function RuleModal({ isOpen, onClose }: RuleModalProps) {
           <section className="space-y-2">
             <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-base">
               <Sparkles className="w-4 h-4 text-indigo-500" />
-              3. 打枪 (Gun) 与 全垒打 (Home Run)
+              4. 打枪 (Gun) 与 全垒打 (Home Run)
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div className="p-3 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 rounded-xl space-y-1">
