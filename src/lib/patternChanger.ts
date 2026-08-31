@@ -1,16 +1,39 @@
 import { Card } from '../types';
-import { getSuggestedArrangements, ArrangementOption, isValidArrangement } from '../gameLogic';
+import { getSuggestedArrangements, ArrangementOption, isValidArrangement, autoFixDaoShui, evaluateHand } from '../gameLogic';
 
 export class PatternChanger {
   private patterns: ArrangementOption[] = [];
   private currentIndex: number = 0;
 
   constructor(cards: Card[]) {
-    // Generate patterns and ensure they are valid (no daoshui)
+    // 生成智能理牌建议，并严格过滤出 100% 合法非倒水方案 (后墩 >= 中墩 >= 前墩)
     const suggestions = getSuggestedArrangements(cards);
-    this.patterns = suggestions.filter(opt => isValidArrangement(opt.front, opt.middle, opt.back));
-    if (this.patterns.length === 0 && suggestions.length > 0) {
-       this.patterns = suggestions; // fallback if somehow all are filtered
+    this.patterns = suggestions.filter(opt => 
+      opt.front.length === 3 &&
+      opt.middle.length === 5 &&
+      opt.back.length === 5 &&
+      isValidArrangement(opt.front, opt.middle, opt.back)
+    );
+
+    // 极端异常兜底：若建议列表为空，使用 autoFixDaoShui 强力生成合规方案
+    if (this.patterns.length === 0 && cards && cards.length === 13) {
+      const fixed = autoFixDaoShui(cards);
+      if (fixed && isValidArrangement(fixed.front, fixed.middle, fixed.back)) {
+        const fEval = evaluateHand(fixed.front, 'front');
+        const mEval = evaluateHand(fixed.middle, 'middle');
+        const bEval = evaluateHand(fixed.back, 'back');
+        this.patterns = [{
+          title: '基础合规排列',
+          tag: '🌟 基础合法方案',
+          front: fixed.front,
+          middle: fixed.middle,
+          back: fixed.back,
+          frontEval: fEval,
+          midEval: mEval,
+          backEval: bEval,
+          totalEstScore: bEval.score + mEval.score + fEval.score
+        }];
+      }
     }
   }
 
@@ -30,7 +53,7 @@ export class PatternChanger {
   }
 
   /**
-   * 获取与当前摆牌严格不同的下一个牌型方案，确保每次点击都切实变换
+   * 获取与当前摆牌严格不同的下一个合法牌型方案，确保每次点击都切实变换且绝不倒水
    */
   public getNextPatternDifferentFrom(
     currentFront: Card[],
@@ -38,25 +61,37 @@ export class PatternChanger {
     currentBack: Card[]
   ): { pattern: ArrangementOption; index: number; total: number } | null {
     if (this.patterns.length === 0) return null;
+
+    const isCurrentValid = isValidArrangement(currentFront, currentMid, currentBack);
+    const currentSig = this.getArrangementSig(currentFront, currentMid, currentBack);
+
+    // 若当前手牌为倒水违规状态，优先直接切换为排名第一的最佳合规方案
+    if (!isCurrentValid) {
+      const best = this.patterns[0];
+      this.currentIndex = (1) % this.patterns.length;
+      return { pattern: best, index: 1, total: this.patterns.length };
+    }
+
     if (this.patterns.length === 1) {
       return { pattern: this.patterns[0], index: 1, total: 1 };
     }
 
-    const currentSig = this.getArrangementSig(currentFront, currentMid, currentBack);
-
-    // 循环查找下一个与当前牌面不同的方案
+    // 循环查找下一个与当前牌面不同的合法方案
     for (let attempt = 0; attempt < this.patterns.length; attempt++) {
       const idx = this.currentIndex;
       const candidate = this.patterns[idx];
       this.currentIndex = (this.currentIndex + 1) % this.patterns.length;
 
-      const candidateSig = this.getArrangementSig(candidate.front, candidate.middle, candidate.back);
-      if (candidateSig !== currentSig || attempt === this.patterns.length - 1) {
-        return {
-          pattern: candidate,
-          index: idx + 1,
-          total: this.patterns.length
-        };
+      // 再次严格校验候选方案绝不倒水
+      if (isValidArrangement(candidate.front, candidate.middle, candidate.back)) {
+        const candidateSig = this.getArrangementSig(candidate.front, candidate.middle, candidate.back);
+        if (candidateSig !== currentSig || attempt === this.patterns.length - 1) {
+          return {
+            pattern: candidate,
+            index: idx + 1,
+            total: this.patterns.length
+          };
+        }
       }
     }
 
@@ -65,6 +100,7 @@ export class PatternChanger {
   }
 
   private getArrangementSig(f: Card[], m: Card[], b: Card[]): string {
+    if (!f || !m || !b) return '';
     const fIds = f.map(c => c.id).sort().join(',');
     const mIds = m.map(c => c.id).sort().join(',');
     const bIds = b.map(c => c.id).sort().join(',');

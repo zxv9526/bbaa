@@ -38,14 +38,23 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
     return sortCards(deck.slice(0, 13));
   });
 
-  const [front, setFront] = useState<(Card | null)[]>(() => sortCards(hand).slice(0, 3));
-  const [mid, setMid] = useState<(Card | null)[]>(() => sortCards(hand).slice(3, 8));
-  const [back, setBack] = useState<(Card | null)[]>(() => sortCards(hand).slice(8, 13));
-  const [pool, setPool] = useState<Card[]>([]);
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
-
   const specialDetected = detectSpecialHand(hand);
   const suggestions = getSuggestedArrangements(hand);
+
+  const [front, setFront] = useState<(Card | null)[]>(() => {
+    const smart = getSuggestedArrangements(hand);
+    return smart.length > 0 ? smart[0].front : sortCards(hand).slice(0, 3);
+  });
+  const [mid, setMid] = useState<(Card | null)[]>(() => {
+    const smart = getSuggestedArrangements(hand);
+    return smart.length > 0 ? smart[0].middle : sortCards(hand).slice(3, 8);
+  });
+  const [back, setBack] = useState<(Card | null)[]>(() => {
+    const smart = getSuggestedArrangements(hand);
+    return smart.length > 0 ? smart[0].back : sortCards(hand).slice(8, 13);
+  });
+  const [pool, setPool] = useState<Card[]>([]);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
 
   // Deal random hand
   const handleDealRandom = () => {
@@ -54,9 +63,16 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
     const newHand = sortCards(deck.slice(0, 13));
     setHand(newHand);
     setPool([]);
-    setFront(newHand.slice(0, 3));
-    setMid(newHand.slice(3, 8));
-    setBack(newHand.slice(8, 13));
+    const smart = getSuggestedArrangements(newHand);
+    if (smart.length > 0) {
+      setFront(smart[0].front);
+      setMid(smart[0].middle);
+      setBack(smart[0].back);
+    } else {
+      setFront(newHand.slice(0, 3));
+      setMid(newHand.slice(3, 8));
+      setBack(newHand.slice(8, 13));
+    }
     setSelectedCardId(null);
   };
 
@@ -66,9 +82,16 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
     const newHand = sortCards(generateSpecialHand(type));
     setHand(newHand);
     setPool([]);
-    setFront(newHand.slice(0, 3));
-    setMid(newHand.slice(3, 8));
-    setBack(newHand.slice(8, 13));
+    const smart = getSuggestedArrangements(newHand);
+    if (smart.length > 0) {
+      setFront(smart[0].front);
+      setMid(smart[0].middle);
+      setBack(smart[0].back);
+    } else {
+      setFront(newHand.slice(0, 3));
+      setMid(newHand.slice(3, 8));
+      setBack(newHand.slice(8, 13));
+    }
     setSelectedCardId(null);
   };
 
@@ -96,10 +119,16 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
   // Reset slots
   const handleClearSlots = () => {
     sounds.playCardPick();
-    const sorted = sortCards(hand);
-    setFront(sorted.slice(0, 3));
-    setMid(sorted.slice(3, 8));
-    setBack(sorted.slice(8, 13));
+    if (suggestions.length > 0) {
+      setFront([...suggestions[0].front]);
+      setMid([...suggestions[0].middle]);
+      setBack([...suggestions[0].back]);
+    } else {
+      const sorted = sortCards(hand);
+      setFront(sorted.slice(0, 3));
+      setMid(sorted.slice(3, 8));
+      setBack(sorted.slice(8, 13));
+    }
     setPool([]);
     setSelectedCardId(null);
   };

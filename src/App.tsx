@@ -347,10 +347,25 @@ export default function App() {
       const special = detectSpecialHand(sortedPlayerHand);
       setSpecialHand(special);
 
-      // Compute AI Suggestions for player
+      // Compute AI Suggestions for player (100% legal, non-daoshui)
       const smartSuggestions = getSuggestedArrangements(sortedPlayerHand);
       setSuggestions(smartSuggestions);
       patternChangerRef.current = new PatternChanger(sortedPlayerHand);
+
+      if (smartSuggestions.length > 0) {
+        setFront(smartSuggestions[0].front);
+        setMid(smartSuggestions[0].middle);
+        setBack(smartSuggestions[0].back);
+        setPatternInfo({
+          tag: smartSuggestions[0].tag,
+          index: 1,
+          total: smartSuggestions.length
+        });
+      } else {
+        setFront(sortedPlayerHand.slice(0, 3));
+        setMid(sortedPlayerHand.slice(3, 8));
+        setBack(sortedPlayerHand.slice(8, 13));
+      }
 
       const is8P = selectedMode === 'vs_ai_8p';
       const numPlayers = is8P ? 8 : 4;
@@ -424,19 +439,31 @@ export default function App() {
 
     setOriginalHand(sortedPlayerHand);
     setPool([]);
-    setFront(sortedPlayerHand.slice(0, 3));
-    setMid(sortedPlayerHand.slice(3, 8));
-    setBack(sortedPlayerHand.slice(8, 13));
     setSelectedCardIds([]);
 
     // Detect Special Hand
     const special = detectSpecialHand(sortedPlayerHand);
     setSpecialHand(special);
 
-    // Compute AI Suggestions for player
+    // Compute AI Suggestions for player (100% legal, non-daoshui)
     const smartSuggestions = getSuggestedArrangements(sortedPlayerHand);
     setSuggestions(smartSuggestions);
     patternChangerRef.current = new PatternChanger(sortedPlayerHand);
+
+    if (smartSuggestions.length > 0) {
+      setFront(smartSuggestions[0].front);
+      setMid(smartSuggestions[0].middle);
+      setBack(smartSuggestions[0].back);
+      setPatternInfo({
+        tag: smartSuggestions[0].tag,
+        index: 1,
+        total: smartSuggestions.length
+      });
+    } else {
+      setFront(sortedPlayerHand.slice(0, 3));
+      setMid(sortedPlayerHand.slice(3, 8));
+      setBack(sortedPlayerHand.slice(8, 13));
+    }
 
     // Prepare other players (AI)
     const playersList: {
@@ -550,18 +577,29 @@ export default function App() {
     setErrorMsg('');
   };
 
-  // Reset hand cards to initial 3/5/5 distribution
+  // Reset hand cards to best legal arrangement
   const handleResetHand = () => {
     sounds.playCardPick();
-    const all = sortCards([
-      ...front,
-      ...mid,
-      ...back,
-      ...pool
-    ]);
-    setFront(all.slice(0, 3));
-    setMid(all.slice(3, 8));
-    setBack(all.slice(8, 13));
+    triggerHaptic('light');
+    if (suggestions && suggestions.length > 0) {
+      const best = suggestions[0];
+      setFront([...best.front]);
+      setMid([...best.middle]);
+      setBack([...best.back]);
+      setPatternInfo({
+        tag: best.tag,
+        index: 1,
+        total: suggestions.length
+      });
+    } else {
+      const all = sortCards([...front, ...mid, ...back, ...pool]);
+      const fixed = autoFixDaoShui(all);
+      if (fixed) {
+        setFront(fixed.front);
+        setMid(fixed.middle);
+        setBack(fixed.back);
+      }
+    }
     setPool([]);
     setSelectedCardIds([]);
     setErrorMsg('');
@@ -570,6 +608,7 @@ export default function App() {
   // Swap Middle and Back Duns
   const handleSwapMidBack = () => {
     sounds.playSwap();
+    triggerHaptic('medium');
     const currentMid = [...mid];
     const currentBack = [...back];
     setMid(currentBack);
@@ -577,12 +616,13 @@ export default function App() {
     setErrorMsg('');
   };
 
-  // Smart Pattern Changer
+  // Smart Pattern Changer (严格保证绝不倒水)
   const handleChangePattern = () => {
     sounds.playSwap();
+    triggerHaptic('light');
     if (patternChangerRef.current) {
       const res = patternChangerRef.current.getNextPatternDifferentFrom(front, mid, back);
-      if (res) {
+      if (res && res.pattern) {
         setFront([...res.pattern.front]);
         setMid([...res.pattern.middle]);
         setBack([...res.pattern.back]);
@@ -601,6 +641,7 @@ export default function App() {
   // Auto Fix Dao Shui
   const handleAutoFix = () => {
     sounds.playAutoArrange();
+    triggerHaptic('medium');
     const allPlacedOrPool = [
       ...front,
       ...mid,
@@ -622,6 +663,7 @@ export default function App() {
   // Apply suggestion
   const applySuggestion = (option: ArrangementOption) => {
     sounds.playAutoArrange();
+    triggerHaptic('light');
     setFront([...option.front]);
     setMid([...option.middle]);
     setBack([...option.back]);
@@ -630,18 +672,21 @@ export default function App() {
     setErrorMsg('');
   };
 
-  // Reset slots to original hand order
+  // Reset slots to top legal arrangement
   const handleResetSlots = () => {
     sounds.playCardPick();
-    const allCards = sortCards([
-      ...front,
-      ...mid,
-      ...back,
-      ...pool
-    ]);
-    setFront(allCards.slice(0, 3));
-    setMid(allCards.slice(3, 8));
-    setBack(allCards.slice(8, 13));
+    triggerHaptic('light');
+    if (suggestions && suggestions.length > 0) {
+      const best = suggestions[0];
+      setFront([...best.front]);
+      setMid([...best.middle]);
+      setBack([...best.back]);
+      setPatternInfo({
+        tag: best.tag,
+        index: 1,
+        total: suggestions.length
+      });
+    }
     setPool([]);
     setSelectedCardIds([]);
     setErrorMsg('');
@@ -1522,6 +1567,37 @@ export default function App() {
               </div>
 
             </div>
+
+            {/* Real-time Hand Legality & Dao Shui Alert */}
+            {front.length === 3 && mid.length === 5 && back.length === 5 && (
+              isCurrentDaoShui ? (
+                <div className="w-full max-w-2xl bg-gradient-to-r from-rose-950/90 via-slate-900 to-rose-950/90 border-2 border-rose-500/80 rounded-2xl p-3 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-rose-200 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2 font-bold">
+                    <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+                    <span>⚠️ 倒水违规！(后墩牌力必须 ≥ 中墩 ≥ 前墩)</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={handleSwapMidBack}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold hover:text-white transition cursor-pointer"
+                    >
+                      🔄 对调中后墩
+                    </button>
+                    <button
+                      onClick={handleChangePattern}
+                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black transition cursor-pointer shadow"
+                    >
+                      ✨ 变换合法牌型
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="w-full max-w-2xl bg-emerald-950/40 border border-emerald-500/30 rounded-2xl px-4 py-1.5 text-[11px] font-bold text-emerald-300 flex items-center justify-center gap-2 animate-in fade-in duration-200">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>✅ 牌型合规（后墩 ≥ 中墩 ≥ 前墩，绝无倒水）</span>
+                </div>
+              )
+            )}
 
             {/* Bottom Actions: Exactly Two Buttons (变换牌型 & 提交牌型) */}
             <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1.5 pt-1">
