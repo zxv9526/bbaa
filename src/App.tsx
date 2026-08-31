@@ -519,67 +519,14 @@ export default function App() {
     setGameState('arranging');
   };
 
-  // Card click handler: supports 1-to-1 direct swap across rows (e.g. tap Middle then tap Back to swap)
-  const handleCardClick = (cardId: string) => {
-    // Case 1: Exactly 1 card already selected and user taps a different card -> DIRECT SWAP!
-    if (selectedCardIds.length === 1 && selectedCardIds[0] !== cardId) {
-      const firstId = selectedCardIds[0];
-      const secondId = cardId;
-
-      let firstRow: 'front' | 'mid' | 'back' | null = null;
-      let firstIdx = -1;
-      let secondRow: 'front' | 'mid' | 'back' | null = null;
-      let secondIdx = -1;
-
-      // Find first card
-      if ((firstIdx = front.findIndex(c => c.id === firstId)) !== -1) firstRow = 'front';
-      else if ((firstIdx = mid.findIndex(c => c.id === firstId)) !== -1) firstRow = 'mid';
-      else if ((firstIdx = back.findIndex(c => c.id === firstId)) !== -1) firstRow = 'back';
-
-      // Find second card
-      if ((secondIdx = front.findIndex(c => c.id === secondId)) !== -1) secondRow = 'front';
-      else if ((secondIdx = mid.findIndex(c => c.id === secondId)) !== -1) secondRow = 'mid';
-      else if ((secondIdx = back.findIndex(c => c.id === secondId)) !== -1) secondRow = 'back';
-
-      if (firstRow && secondRow && firstIdx !== -1 && secondIdx !== -1) {
-        sounds.playSwap();
-        triggerHaptic('medium');
-
-        const newFront = [...front];
-        const newMid = [...mid];
-        const newBack = [...back];
-
-        const getRowArray = (row: 'front' | 'mid' | 'back') =>
-          row === 'front' ? newFront : row === 'mid' ? newMid : newBack;
-
-        const row1 = getRowArray(firstRow);
-        const row2 = getRowArray(secondRow);
-
-        const card1 = row1[firstIdx];
-        const card2 = row2[secondIdx];
-
-        row1[firstIdx] = card2;
-        row2[secondIdx] = card1;
-
-        setFront(newFront);
-        setMid(newMid);
-        setBack(newBack);
-        setSelectedCardIds([]);
-        setErrorMsg('');
-        return;
-      }
-    }
-
-    // Case 2: Standard single or multi selection toggle
+  // Multi-card selection toggle (supports selecting multiple cards to move together)
+  const handleToggleCardSelect = (cardId: string) => {
     sounds.playCardPick();
     triggerHaptic('light');
     setSelectedCardIds(prev =>
       prev.includes(cardId) ? prev.filter(id => id !== cardId) : [...prev, cardId]
     );
   };
-
-  // Multi-card selection toggle
-  const handleToggleCardSelect = handleCardClick;
 
   // Move all selected cards to target row ('front' | 'mid' | 'back')
   const handleMoveSelectedTo = (target: 'front' | 'mid' | 'back') => {
@@ -1189,7 +1136,7 @@ export default function App() {
       )}
 
       {/* 2. Main Body Content: Minimalist & Clean Two Arena Blocks */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-3 flex flex-col items-center justify-center overflow-hidden">
+      <main className="flex-1 max-w-5xl w-full mx-auto px-2 sm:px-6 py-1 sm:py-2 flex flex-col items-center justify-start overflow-y-auto no-scrollbar">
         {gameState === 'menu' && (() => {
           const occ8P = getCurrentCarriageOccupancy('vs_ai_8p');
           const occ4P = getCurrentCarriageOccupancy('vs_ai_4p');
@@ -1367,7 +1314,7 @@ export default function App() {
           </div>
         )}
         {gameState === 'arranging' && (
-          <div className="w-full max-w-5xl h-full flex flex-col items-center justify-between gap-1.5 py-0.5 px-0">
+          <div className="w-full max-w-5xl flex-1 flex flex-col items-center justify-between gap-1.5 py-0.5 px-0 min-h-0">
             {/* 🚆 Compact Carriage Header Bar */}
             {(mode === 'vs_ai_8p' || mode === 'vs_ai_4p') && (
               <CarriageHeaderBar
@@ -1396,25 +1343,25 @@ export default function App() {
 
             {/* Error Message Banner */}
             {errorMsg && (
-              <div className="w-full p-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center justify-center gap-2">
+              <div className="w-full p-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center justify-center gap-2 shrink-0">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 {errorMsg}
               </div>
             )}
 
             {/* Arrangement Card Containers - Expanded for Mobile Card Size */}
-            <div className="w-full flex-1 flex flex-col justify-between gap-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl p-2 sm:p-3 shadow-xl min-h-0">
+            <div className="w-full flex-1 flex flex-col justify-between gap-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl p-1.5 sm:p-2.5 shadow-xl min-h-0">
               
               {/* 1. FRONT DUN (前墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('front')}
-                className={`flex-1 flex flex-col justify-between p-1.5 sm:p-2 rounded-xl border transition-all min-h-[96px] sm:min-h-[115px] ${
+                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[110px] sm:min-h-[135px] ${
                   selectedCardIds.length > 0
                     ? 'border-blue-500/60 bg-blue-950/30 cursor-pointer hover:bg-blue-900/40 hover:border-blue-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
                 }`}
               >
-                <div className="flex items-center justify-between w-full text-xs font-bold px-1">
+                <div className="flex items-center justify-between w-full text-xs font-bold px-1 pb-1">
                   <div className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-blue-500" />
                     <span className="text-slate-300 text-xs">前墩</span>
@@ -1445,17 +1392,18 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex flex-nowrap sm:flex-wrap items-center justify-start sm:justify-center gap-1.5 sm:gap-2.5 p-1 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar">
+                <div className="flex flex-nowrap items-center justify-start p-1 sm:p-1.5 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar pl-2 sm:pl-3">
                   {front.length === 0 ? (
-                    <div className="w-full py-2 text-center text-xs text-slate-500 font-medium">
+                    <div className="w-full py-4 text-left pl-3 text-xs text-slate-500 font-medium">
                       {selectedCardIds.length > 0 ? '👉 点击此处放入前墩' : '前墩 (3张)'}
                     </div>
                   ) : (
-                    front.map(c => (
+                    front.map((c, idx) => (
                       <CardView
                         key={c.id}
                         card={c}
                         size="md"
+                        className={idx > 0 ? '-ml-11 min-[375px]:-ml-12 min-[414px]:-ml-13 sm:-ml-17 md:-ml-19' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
                       />
@@ -1467,13 +1415,13 @@ export default function App() {
               {/* 2. MIDDLE DUN (中墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('mid')}
-                className={`flex-1 flex flex-col justify-between p-1.5 sm:p-2 rounded-xl border transition-all min-h-[96px] sm:min-h-[115px] ${
+                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[110px] sm:min-h-[135px] ${
                   selectedCardIds.length > 0
                     ? 'border-indigo-500/60 bg-indigo-950/30 cursor-pointer hover:bg-indigo-900/40 hover:border-indigo-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
                 }`}
               >
-                <div className="flex items-center justify-between w-full text-xs font-bold px-1">
+                <div className="flex items-center justify-between w-full text-xs font-bold px-1 pb-1">
                   <div className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-indigo-500" />
                     <span className="text-slate-300 text-xs">中墩</span>
@@ -1504,17 +1452,18 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex flex-nowrap sm:flex-wrap items-center justify-start sm:justify-center gap-1.5 sm:gap-2.5 p-1 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar">
+                <div className="flex flex-nowrap items-center justify-start p-1 sm:p-1.5 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar pl-2 sm:pl-3">
                   {mid.length === 0 ? (
-                    <div className="w-full py-2 text-center text-xs text-slate-500 font-medium">
+                    <div className="w-full py-4 text-left pl-3 text-xs text-slate-500 font-medium">
                       {selectedCardIds.length > 0 ? '👉 点击此处放入中墩' : '中墩 (5张)'}
                     </div>
                   ) : (
-                    mid.map(c => (
+                    mid.map((c, idx) => (
                       <CardView
                         key={c.id}
                         card={c}
                         size="md"
+                        className={idx > 0 ? '-ml-11 min-[375px]:-ml-12 min-[414px]:-ml-13 sm:-ml-17 md:-ml-19' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
                       />
@@ -1526,13 +1475,13 @@ export default function App() {
               {/* 3. BACK DUN (后墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('back')}
-                className={`flex-1 flex flex-col justify-between p-1.5 sm:p-2 rounded-xl border transition-all min-h-[96px] sm:min-h-[115px] ${
+                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[110px] sm:min-h-[135px] ${
                   selectedCardIds.length > 0
                     ? 'border-purple-500/60 bg-purple-950/30 cursor-pointer hover:bg-purple-900/40 hover:border-purple-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
                 }`}
               >
-                <div className="flex items-center justify-between w-full text-xs font-bold px-1">
+                <div className="flex items-center justify-between w-full text-xs font-bold px-1 pb-1">
                   <div className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-purple-500" />
                     <span className="text-slate-300 text-xs">后墩</span>
@@ -1563,17 +1512,18 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex flex-nowrap sm:flex-wrap items-center justify-start sm:justify-center gap-1.5 sm:gap-2.5 p-1 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar">
+                <div className="flex flex-nowrap items-center justify-start p-1 sm:p-1.5 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar pl-2 sm:pl-3">
                   {back.length === 0 ? (
-                    <div className="w-full py-2 text-center text-xs text-slate-500 font-medium">
+                    <div className="w-full py-4 text-left pl-3 text-xs text-slate-500 font-medium">
                       {selectedCardIds.length > 0 ? '👉 点击此处放入后墩' : '后墩 (5张)'}
                     </div>
                   ) : (
-                    back.map(c => (
+                    back.map((c, idx) => (
                       <CardView
                         key={c.id}
                         card={c}
                         size="md"
+                        className={idx > 0 ? '-ml-11 min-[375px]:-ml-12 min-[414px]:-ml-13 sm:-ml-17 md:-ml-19' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
                       />

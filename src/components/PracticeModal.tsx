@@ -278,7 +278,6 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
                   'Eight of a Kind',
                   'Seven of a Kind',
                   'Six of a Kind',
-                  'Five of a Kind Special',
                   'Supreme Dragon',
                   'Dragon',
                   'Twelve Royals',
@@ -292,7 +291,7 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
                   key={type}
                   onClick={() => handleLoadSpecial(type)}
                   className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition ${
-                    type === 'Eight of a Kind' || type === 'Seven of a Kind' || type === 'Six of a Kind' || type === 'Five of a Kind Special'
+                    type === 'Eight of a Kind' || type === 'Seven of a Kind' || type === 'Six of a Kind'
                       ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/30'
                       : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 hover:text-white'
                   }`}

@@ -24,7 +24,7 @@ export class PatternChanger {
         const bEval = evaluateHand(fixed.back, 'back');
         this.patterns = [{
           title: '基础合规排列',
-          tag: '🌟 基础合法方案',
+          tag: '👑 尾墩最大',
           front: fixed.front,
           middle: fixed.middle,
           back: fixed.back,
@@ -35,6 +35,9 @@ export class PatternChanger {
         }];
       }
     }
+
+    // 默认初始已展示第1个方案(尾墩最大)，故下次点击切换优先步进至第2个方案
+    this.currentIndex = this.patterns.length > 1 ? 1 : 0;
   }
 
   public getNextPattern(): ArrangementOption | null {

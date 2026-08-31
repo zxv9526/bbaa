@@ -22,7 +22,6 @@ export const SPECIAL_HAND_CN: Record<SpecialHandType, { name: string; points: nu
   'Dragon': { name: '一条龙', points: 52, desc: 'A到K 13张不同点数' },
   'Six of a Kind': { name: '六六大顺 (6张A/6同)', points: 40, desc: '6张相同点数(如6张A)或6张同点' },
   'Twelve Royals': { name: '十二皇族', points: 36, desc: '12张及以上J/Q/K/A' },
-  'Five of a Kind Special': { name: '五福临门 (5张A/5同)', points: 28, desc: '5张相同点数(如5张A)特型直通' },
   'Three Straight Flushes': { name: '三同花顺', points: 26, desc: '前中后三墩皆为同花顺' },
   'Three Quads': { name: '三分天下', points: 24, desc: '3套铁支(4条)' },
   'All High': { name: '全大', points: 20, desc: '13张牌全部为8至A' },
@@ -118,11 +117,6 @@ export function detectSpecialHand(cards: Card[]): SpecialHandType | null {
   // 2. 十二皇族 (12张或13张为 J, Q, K, A, rank >= 11)
   const royalsCount = ranks.filter(r => r >= 11).length;
   if (royalsCount >= 12) return 'Twelve Royals';
-
-  // 0.4 五福临门 (5张A/5同) 特殊免摆直接胜
-  if (countValues[0] === 5 && countValues[1] !== 4 && countValues[1] !== 3) {
-    return 'Five of a Kind Special';
-  }
 
   // 3. 三分天下 (3套铁支 / 4条) -> countValues: [4, 4, 4, 1]
   if (countValues[0] === 4 && countValues[1] === 4 && countValues[2] === 4) {
@@ -230,18 +224,23 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
     .map(([r, count]) => ({ rank: parseInt(r), count }))
     .sort((a, b) => b.count - a.count || b.rank - a.rank);
 
-  // 1. 前墩 (3张牌规则: 只有三条、一对、乌龙/高牌，或部分玩法支持三张顺子/同花)
+  // 统一牌力评分体系：基于 10 级牌型及 5 级 Rank (每级基数 100)
+  // score = typeRank * 10^10 + p1 * 10^8 + p2 * 10^6 + p3 * 10^4 + p4 * 10^2 + p5
+  // 严格保证不同墩位(3张 vs 5张)及相同牌型下的精确绝对可比性，彻底消除倒水误判
+
+  // 1. 前墩 (3张牌规则: 冲三、对子、乌龙/高牌)
   if (isFront) {
-    // 前墩三条 (冲三 / 前墩三条通常有额外加分，冲三A额外+5分，普通冲三+3分)
+    // 前墩三条 (冲三 / 前墩三条有额外加分，冲三A额外+5分，普通冲三+3分)
     if (countArr[0].count === 3) {
-      const r = countArr[0].rank;
-      const isAceTrip = r === 14;
+      const tripRank = countArr[0].rank;
+      const isAceTrip = tripRank === 14;
       const bonus = isAceTrip ? 5 : 3;
+      const score = 4 * 10000000000 + tripRank * 100000000;
       return {
-        score: 300000000 + r * 100,
+        score,
         type: 'Three of a Kind',
         cards: sorted,
-        description: isAceTrip ? `前墩冲三 A (+${bonus}水)` : `前墩三条 ${getRankStr(r)} (+${bonus}水)`,
+        description: isAceTrip ? `前墩冲三 A (+${bonus}水)` : `前墩三条 ${getRankStr(tripRank)} (+${bonus}水)`,
         bonusPoints: bonus
       };
     }
@@ -249,8 +248,9 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
     if (countArr[0].count === 2) {
       const pairRank = countArr[0].rank;
       const kicker = countArr[1].rank;
+      const score = 2 * 10000000000 + pairRank * 100000000 + kicker * 1000000;
       return {
-        score: 100000000 + pairRank * 10000 + kicker * 100,
+        score,
         type: 'Pair',
         cards: sorted,
         description: `对 ${getRankStr(pairRank)} (单张 ${getRankStr(kicker)})`
@@ -258,8 +258,9 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
     }
     // 前墩乌龙
     const r0 = ranks[0], r1 = ranks[1], r2 = ranks[2];
+    const score = 1 * 10000000000 + r0 * 100000000 + r1 * 1000000 + r2 * 10000;
     return {
-      score: r0 * 10000 + r1 * 100 + r2,
+      score,
       type: 'High Card',
       cards: sorted,
       description: `乌龙 (${getRankStr(r0)}带头)`
@@ -267,14 +268,14 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
   }
 
   // 2. 中墩 / 后墩 (5张牌规则)
-  // 0. 五条 / 五同 (Five of a Kind - 双副牌 8人场)
+  // 10. 五条 / 五同 (Five of a Kind - 双副牌 8人场)
   if (countArr[0].count >= 5) {
     const fiveRank = countArr[0].rank;
     const isAce = fiveRank === 14;
-    // 五条 A 享受至尊喜分：中墩+20水，后墩+10水；普通五条：中墩+16水，后墩+8水
     const bonus = isAce ? (dun === 'middle' ? 20 : 10) : (dun === 'middle' ? 16 : 8);
+    const score = 10 * 10000000000 + fiveRank * 100000000;
     return {
-      score: 900000000 + fiveRank * 10000,
+      score,
       type: 'Five of a Kind',
       cards: sorted,
       description: isAce ? `至尊五条 A (+${bonus}水)` : `五条 ${getRankStr(fiveRank)} (+${bonus}水)`,
@@ -286,10 +287,10 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
   let isStraight = ranks.every((r, i) => i === 0 || r === ranks[i - 1] - 1);
   let straightHigh = ranks[0];
 
-  // 特殊顺子: A-2-3-4-5 (A算1)
+  // 特殊顺子: A-2-3-4-5 (A算1，5高顺子)
   if (!isStraight && ranks.join(',') === '14,5,4,3,2') {
     isStraight = true;
-    straightHigh = 5; // A2345 最小顺子
+    straightHigh = 5;
   }
 
   const r0 = ranks[0] || 0;
@@ -298,12 +299,13 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
   const r3 = ranks[3] || 0;
   const r4 = ranks[4] || 0;
 
-  // 同花顺 (Straight Flush)
+  // 9. 同花顺 (Straight Flush)
   if (isFlush && isStraight) {
     const isRoyal = straightHigh === 14;
     const bonus = isRoyal ? (dun === 'middle' ? 14 : 8) : (dun === 'middle' ? 10 : 5);
+    const score = 9 * 10000000000 + straightHigh * 100000000;
     return {
-      score: 800000000 + straightHigh * 100,
+      score,
       type: 'Straight Flush',
       cards: sorted,
       description: isRoyal ? `皇家同花顺 A高 (+${bonus}水)` : `同花顺 (${getRankStr(straightHigh)} 高, +${bonus}水)`,
@@ -311,14 +313,15 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
     };
   }
 
-  // 铁支 / 四条 (Four of a Kind)
+  // 8. 铁支 / 四条 (Four of a Kind)
   if (countArr[0].count === 4) {
     const fourRank = countArr[0].rank;
     const kicker = countArr[1].rank;
     const isAceFour = fourRank === 14;
     const bonus = isAceFour ? (dun === 'middle' ? 10 : 5) : (dun === 'middle' ? 8 : 4);
+    const score = 8 * 10000000000 + fourRank * 100000000 + kicker * 1000000;
     return {
-      score: 700000000 + fourRank * 10000 + kicker * 100,
+      score,
       type: 'Four of a Kind',
       cards: sorted,
       description: isAceFour ? `铁支 A (+${bonus}水)` : `铁支 ${getRankStr(fourRank)} (+${bonus}水)`,
@@ -326,13 +329,14 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
     };
   }
 
-  // 葫芦 / 三带二 (Full House)
+  // 7. 葫芦 / 三带二 (Full House)
   if (countArr[0].count === 3 && countArr[1].count === 2) {
     const tripRank = countArr[0].rank;
     const pairRank = countArr[1].rank;
     const bonus = dun === 'middle' ? 2 : 0; // 中墩葫芦+2
+    const score = 7 * 10000000000 + tripRank * 100000000 + pairRank * 1000000;
     return {
-      score: 600000000 + tripRank * 10000 + pairRank * 100,
+      score,
       type: 'Full House',
       cards: sorted,
       description: `葫芦 (${getRankStr(tripRank)}带${getRankStr(pairRank)})`,
@@ -340,69 +344,75 @@ export function evaluateHand(cards: Card[], dun: 'front' | 'middle' | 'back' = '
     };
   }
 
-  // 同花 (Flush)
+  // 6. 同花 (Flush)
   if (isFlush) {
+    const score = 6 * 10000000000 + r0 * 100000000 + r1 * 1000000 + r2 * 10000 + r3 * 100 + r4;
     return {
-      score: 500000000 + r0 * 14**4 + r1 * 14**3 + r2 * 14**2 + r3 * 14 + r4,
+      score,
       type: 'Flush',
       cards: sorted,
       description: `同花 (${sorted[0].suit} ${getRankStr(r0)}高)`
     };
   }
 
-  // 顺子 (Straight)
+  // 5. 顺子 (Straight)
   if (isStraight) {
+    const score = 5 * 10000000000 + straightHigh * 100000000;
     return {
-      score: 400000000 + straightHigh * 100,
+      score,
       type: 'Straight',
       cards: sorted,
       description: `顺子 (${getRankStr(straightHigh)} 高)`
     };
   }
 
-  // 三条 (Three of a Kind)
+  // 4. 三条 (Three of a Kind)
   if (countArr[0].count === 3) {
     const tripRank = countArr[0].rank;
     const k1 = countArr[1].rank;
     const k2 = countArr[2].rank;
+    const score = 4 * 10000000000 + tripRank * 100000000 + k1 * 1000000 + k2 * 10000;
     return {
-      score: 300000000 + tripRank * 14**4 + k1 * 14**3 + k2 * 14**2,
+      score,
       type: 'Three of a Kind',
       cards: sorted,
       description: `三条 ${getRankStr(tripRank)}`
     };
   }
 
-  // 两对 (Two Pair)
+  // 3. 两对 (Two Pair)
   if (countArr[0].count === 2 && countArr[1].count === 2) {
     const highPair = countArr[0].rank;
     const lowPair = countArr[1].rank;
     const kicker = countArr[2].rank;
+    const score = 3 * 10000000000 + highPair * 100000000 + lowPair * 1000000 + kicker * 10000;
     return {
-      score: 200000000 + highPair * 14**4 + lowPair * 14**3 + kicker * 14**2,
+      score,
       type: 'Two Pair',
       cards: sorted,
       description: `两对 (${getRankStr(highPair)}与${getRankStr(lowPair)})`
     };
   }
 
-  // 一对 (Pair)
+  // 2. 一对 (Pair)
   if (countArr[0].count === 2) {
     const pairRank = countArr[0].rank;
     const k1 = countArr[1].rank;
     const k2 = countArr[2].rank;
     const k3 = countArr[3].rank;
+    const score = 2 * 10000000000 + pairRank * 100000000 + k1 * 1000000 + k2 * 10000 + k3 * 100;
     return {
-      score: 100000000 + pairRank * 14**4 + k1 * 14**3 + k2 * 14**2 + k3 * 14,
+      score,
       type: 'Pair',
       cards: sorted,
       description: `对 ${getRankStr(pairRank)}`
     };
   }
 
-  // 乌龙 (High Card)
+  // 1. 乌龙 (High Card)
+  const score = 1 * 10000000000 + r0 * 100000000 + r1 * 1000000 + r2 * 10000 + r3 * 100 + r4;
   return {
-    score: r0 * 14**4 + r1 * 14**3 + r2 * 14**2 + r3 * 14 + r4,
+    score,
     type: 'High Card',
     cards: sorted,
     description: `乌龙 (${getRankStr(r0)}带头)`
@@ -511,82 +521,72 @@ export function getSuggestedArrangements(cards: Card[]): ArrangementOption[] {
     }
   };
 
-  // 1. 结构化全量搜索：从 13 张牌中抽取 5 张作为后墩候选
+  // 全量遍历 C(13, 5) = 1287 组后墩方案，并为每个后墩检索合法的中墩与前墩
   const all5Combs = getKCombinations(cards, 5);
-  // 对所有 5 张牌组合评估牌力并按牌力降序排列
   const scored5Combs = all5Combs.map(c => ({
     cards: c,
     eval: evaluateHand(c, 'back')
   })).sort((a, b) => b.eval.score - a.eval.score);
 
-  // 挑选代表性的优质后墩 (深度搜索前 120 组代表性后墩组合)
-  const candidateBacks = scored5Combs.slice(0, 120);
-  for (const backObj of candidateBacks) {
+  for (const backObj of scored5Combs) {
     const backCards = backObj.cards;
+    const backScore = backObj.eval.score;
     const backIds = new Set(backCards.map(c => c.id));
     const remaining8 = cards.filter(c => !backIds.has(c.id));
     const mid5Combs = getKCombinations(remaining8, 5);
 
     for (const midCards of mid5Combs) {
-      const midIds = new Set(midCards.map(c => c.id));
-      const frontCards = remaining8.filter(c => !midIds.has(c.id));
-      registerComb(frontCards, midCards, backCards);
-    }
-  }
-
-  // 2. 补充高频随机采样（覆盖特殊边角解）
-  const tries = 1500;
-  for (let t = 0; t < tries; t++) {
-    const shuffled = shuffle(cards);
-    registerComb(shuffled.slice(0, 3), shuffled.slice(3, 8), shuffled.slice(8, 13));
-  }
-
-  // 3. 若未搜到合法解，启动保底合法重构器（绝不返回倒水组合）
-  if (validCombs.length === 0) {
-    for (const backObj of scored5Combs) {
-      const backCards = backObj.cards;
-      const backIds = new Set(backCards.map(c => c.id));
-      const remaining8 = cards.filter(c => !backIds.has(c.id));
-      const mid5Combs = getKCombinations(remaining8, 5);
-      for (const midCards of mid5Combs) {
+      const mEval = evaluateHand(midCards, 'middle');
+      if (backScore >= mEval.score) {
         const midIds = new Set(midCards.map(c => c.id));
         const frontCards = remaining8.filter(c => !midIds.has(c.id));
-        registerComb(frontCards, midCards, backCards);
-        if (validCombs.length > 0) break;
+        const fEval = evaluateHand(frontCards, 'front');
+        if (mEval.score >= fEval.score) {
+          registerComb(frontCards, midCards, backCards);
+        }
       }
-      if (validCombs.length > 0) break;
     }
   }
 
-  // 4. 提取不同维度的智能策略 (综合最佳、冲前争胜、中墩强攻、稳健防守、喜分猎手、均衡防枪)
-  const strategies: { tag: string; pick: (combs: ValidComb[]) => ValidComb }[] = [
+  // 若极端情况下未搜到（理论上不可能），按排位降序兜底构造合法牌型
+  if (validCombs.length === 0) {
+    const sorted = sortCards(cards);
+    registerComb(sorted.slice(10, 13), sorted.slice(5, 10), sorted.slice(0, 5));
+  }
+
+  // 精准提取三大标准合法战术方案（尾墩最大、中墩最大、头墩最大，均在100%绝不倒水前提下）
+  const strategies = [
     {
-      tag: '🌟 综合最佳',
-      pick: combs => combs.reduce((best, c) => c.estScore > best.estScore ? c : best, combs[0])
+      tag: '👑 尾墩最大',
+      sortFn: (a: ValidComb, b: ValidComb) => {
+        if (b.bEval.score !== a.bEval.score) return b.bEval.score - a.bEval.score;
+        if (b.mEval.score !== a.mEval.score) return b.mEval.score - a.mEval.score;
+        if (b.fEval.score !== a.fEval.score) return b.fEval.score - a.fEval.score;
+        if (b.bonusTotal !== a.bonusTotal) return b.bonusTotal - a.bonusTotal;
+        return b.estScore - a.estScore;
+      }
     },
     {
-      tag: '⚡ 冲前争胜',
-      pick: combs => combs.reduce((best, c) => c.fEval.score > best.fEval.score ? c : (c.fEval.score === best.fEval.score && c.estScore > best.estScore ? c : best), combs[0])
+      tag: '💥 中墩最大',
+      sortFn: (a: ValidComb, b: ValidComb) => {
+        if (b.mEval.score !== a.mEval.score) return b.mEval.score - a.mEval.score;
+        if (b.bEval.score !== a.bEval.score) return b.bEval.score - a.bEval.score;
+        if (b.fEval.score !== a.fEval.score) return b.fEval.score - a.fEval.score;
+        if (b.bonusTotal !== a.bonusTotal) return b.bonusTotal - a.bonusTotal;
+        return b.estScore - a.estScore;
+      }
     },
     {
-      tag: '💥 中墩强攻',
-      pick: combs => combs.reduce((best, c) => c.mEval.score > best.mEval.score ? c : (c.mEval.score === best.mEval.score && c.estScore > best.estScore ? c : best), combs[0])
-    },
-    {
-      tag: '🛡️ 稳健防守',
-      pick: combs => combs.reduce((best, c) => (c.bEval.score * 1.6 + c.mEval.score * 1.2) > (best.bEval.score * 1.6 + best.mEval.score * 1.2) ? c : best, combs[0])
-    },
-    {
-      tag: '👑 喜分猎手',
-      pick: combs => combs.reduce((best, c) => c.bonusTotal > best.bonusTotal ? c : (c.bonusTotal === best.bonusTotal && c.estScore > best.estScore ? c : best), combs[0])
-    },
-    {
-      tag: '⚖️ 均衡防枪',
-      pick: combs => combs.reduce((best, c) => {
-        const minC = Math.min(c.fEval.score, c.mEval.score, c.bEval.score);
-        const minB = Math.min(best.fEval.score, best.mEval.score, best.bEval.score);
-        return minC > minB ? c : (minC === minB && c.estScore > best.estScore ? c : best);
-      }, combs[0])
+      tag: '⚡ 头墩最大',
+      sortFn: (a: ValidComb, b: ValidComb) => {
+        if (b.fEval.score !== a.fEval.score) return b.fEval.score - a.fEval.score;
+        const bSum = b.bEval.score + b.mEval.score;
+        const aSum = a.bEval.score + a.mEval.score;
+        if (bSum !== aSum) return bSum - aSum;
+        if (b.bEval.score !== a.bEval.score) return b.bEval.score - a.bEval.score;
+        if (b.bonusTotal !== a.bonusTotal) return b.bonusTotal - a.bonusTotal;
+        return b.estScore - a.estScore;
+      }
     }
   ];
 
@@ -595,8 +595,12 @@ export function getSuggestedArrangements(cards: Card[]): ArrangementOption[] {
 
   if (validCombs.length > 0) {
     for (const strat of strategies) {
-      const chosen = strat.pick(validCombs);
-      if (chosen && !addedCardSigs.has(chosen.cardSig)) {
+      const sorted = [...validCombs].sort(strat.sortFn);
+      let chosen = sorted.find(c => !addedCardSigs.has(c.cardSig));
+      if (!chosen && sorted.length > 0) {
+        chosen = sorted[0];
+      }
+      if (chosen) {
         addedCardSigs.add(chosen.cardSig);
         results.push({
           title: `前:${HAND_TYPE_CN[chosen.fEval.type]} | 中:${HAND_TYPE_CN[chosen.mEval.type]} | 后:${HAND_TYPE_CN[chosen.bEval.type]}`,
@@ -608,40 +612,6 @@ export function getSuggestedArrangements(cards: Card[]): ArrangementOption[] {
           midEval: chosen.mEval,
           backEval: chosen.bEval,
           totalEstScore: chosen.estScore
-        });
-      }
-    }
-
-    // 5. 按估值和牌型多样性补充更多备选方案 (提供多达 25 种不同战术组合)
-    validCombs.sort((a, b) => b.estScore - a.estScore);
-    const typeIcons: Record<string, string> = {
-      'Straight Flush': '💎',
-      'Four of a Kind': '💣',
-      'Full House': '🏰',
-      'Flush': '🌸',
-      'Straight': '🌊',
-      'Three of a Kind': '⚡',
-      'Two Pair': '🎯',
-      'Pair': '🎲',
-      'High Card': '🃏',
-      'Five of a Kind': '👑'
-    };
-
-    for (const comb of validCombs) {
-      if (results.length >= 25) break;
-      if (!addedCardSigs.has(comb.cardSig)) {
-        addedCardSigs.add(comb.cardSig);
-        const icon = typeIcons[comb.bEval.type] || '🎯';
-        results.push({
-          title: `前:${HAND_TYPE_CN[comb.fEval.type]} | 中:${HAND_TYPE_CN[comb.mEval.type]} | 后:${HAND_TYPE_CN[comb.bEval.type]}`,
-          tag: `${icon} 战术方案 ${results.length + 1}`,
-          front: comb.front,
-          middle: comb.middle,
-          back: comb.back,
-          frontEval: comb.fEval,
-          midEval: comb.mEval,
-          backEval: comb.bEval,
-          totalEstScore: comb.estScore
         });
       }
     }
@@ -1018,6 +988,20 @@ export function findAvailablePatterns(cards: Card[]): DetectedPattern[] {
   const suitGroups: Record<Suit, Card[]> = { S: [], H: [], C: [], D: [] };
   sorted.forEach(c => suitGroups[c.suit].push(c));
 
+  // 0. 五条 / 五同 (Five of a Kind - 双副牌8人场，大过同花顺)
+  Object.entries(rankGroups).forEach(([rankStr, grp]) => {
+    if (grp.length >= 5) {
+      const r = parseInt(rankStr);
+      results.push({
+        id: `five_${r}`,
+        type: 'Five of a Kind',
+        name: `五条 ${getRankStr(r)}`,
+        cards: grp.slice(0, 5),
+        description: `5张 ${getRankStr(r)} (大过同花顺)`
+      });
+    }
+  });
+
   // 1. 同花顺 (Straight Flush)
   Object.values(suitGroups).forEach(sCards => {
     if (sCards.length >= 5) {
@@ -1194,13 +1178,6 @@ export function generateSpecialHand(type: SpecialHandType): Card[] {
     const aces: Card[] = doubleDeck.filter(c => c.rank === 14).slice(0, 6);
     const others = doubleDeck.filter(c => c.rank !== 14);
     return [...aces, ...shuffle(others).slice(0, 7)];
-  }
-
-  // 五福临门 (5张A)
-  if (type === 'Five of a Kind Special') {
-    const aces: Card[] = doubleDeck.filter(c => c.rank === 14).slice(0, 5);
-    const others = doubleDeck.filter(c => c.rank !== 14);
-    return [...aces, ...shuffle(others).slice(0, 8)];
   }
 
   if (type === 'Supreme Dragon') {

@@ -14,28 +14,30 @@ export function SpecialHandBanner({ specialHand, onUseSpecial, isUsed }: Special
   if (!info) return null;
 
   return (
-    <div className="w-full bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500 text-white p-3.5 rounded-2xl shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3 animate-pulse">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center shrink-0">
-          <Sparkles className="w-6 h-6 text-yellow-200" />
+    <div className="w-full bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-3 py-1.5 rounded-xl shadow-md flex items-center justify-between gap-2 shrink-0">
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="w-6 h-6 rounded-lg bg-black/20 backdrop-blur flex items-center justify-center shrink-0">
+          <Sparkles className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
         </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h4 className="text-base font-black tracking-wide">{info.name}</h4>
-            <span className="bg-black/30 backdrop-blur text-yellow-300 text-xs px-2 py-0.5 rounded-full font-bold">
-              +{info.points} 分
-            </span>
-          </div>
-          <p className="text-xs text-white/90">{info.desc} • 特殊牌型免比直接全胜</p>
+        <div className="flex items-center gap-1.5 truncate">
+          <span className="text-xs sm:text-sm font-black tracking-wide truncate">{info.name}</span>
+          <span className="bg-black/40 text-yellow-300 text-[10px] px-1.5 py-0.2 rounded font-black shrink-0">
+            +{info.points}分
+          </span>
+          <span className="hidden sm:inline text-[11px] text-amber-100/90 truncate">• {info.desc}</span>
         </div>
       </div>
 
       {onUseSpecial && (
         <button
           onClick={onUseSpecial}
-          className="w-full sm:w-auto px-5 py-2 rounded-xl bg-white text-orange-600 font-extrabold hover:bg-yellow-50 shadow transition-all active:scale-95 text-xs sm:text-sm whitespace-nowrap"
+          className={`px-2.5 py-1 rounded-lg font-black text-xs transition-all active:scale-95 shrink-0 whitespace-nowrap shadow ${
+            isUsed
+              ? 'bg-amber-300 text-slate-950 ring-2 ring-white'
+              : 'bg-white text-orange-700 hover:bg-amber-50'
+          }`}
         >
-          {isUsed ? '已选特殊牌提交' : '一键选用特殊牌'}
+          {isUsed ? '✓ 已选用' : '一键选用'}
         </button>
       )}
     </div>

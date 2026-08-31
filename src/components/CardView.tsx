@@ -48,16 +48,23 @@ export function CardView({
   }, []);
 
   const sizeClasses = {
-    sm: 'w-12 h-18 sm:w-14 sm:h-20 text-xs rounded-lg',
-    md: 'w-[18vw] max-w-[76px] min-w-[56px] h-[26vw] max-h-[108px] min-h-[80px] sm:w-20 sm:h-28 text-sm sm:text-base rounded-lg sm:rounded-xl',
-    lg: 'w-20 h-28 sm:w-24 sm:h-34 text-base sm:text-lg rounded-lg sm:rounded-xl'
+    sm: 'w-11 h-16 sm:w-13 sm:h-19 text-xs rounded-lg shrink-0',
+    md: 'w-[82px] h-[116px] min-[375px]:w-[88px] min-[375px]:h-[124px] min-[414px]:w-[96px] min-[414px]:h-[136px] sm:w-[110px] sm:h-[154px] md:w-[122px] md:h-[170px] text-sm sm:text-base rounded-lg sm:rounded-xl shrink-0',
+    lg: 'w-22 h-31 sm:w-28 sm:h-39 text-base rounded-lg sm:rounded-xl shrink-0'
   }[size];
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!disabled && onClick) {
+      onClick();
+    }
+  };
 
   // Empty placeholder slot
   if (!card && !isFaceDown) {
     return (
       <div
-        onClick={disabled ? undefined : onClick}
+        onClick={handleClick}
         className={cn(
           sizeClasses,
           'border border-slate-700/50 bg-slate-800/40 flex items-center justify-center transition-all duration-150 rounded-lg sm:rounded-xl',
@@ -111,7 +118,7 @@ export function CardView({
     if (asset?.isSvgText) {
       return (
         <div
-          onClick={disabled ? undefined : onClick}
+          onClick={handleClick}
           className={cn(
             sizeClasses,
             'flex items-center justify-center select-none overflow-hidden relative border border-slate-700/60 p-0 rounded-lg sm:rounded-xl shadow-sm',
@@ -125,7 +132,7 @@ export function CardView({
     if (!hasFallbackToDefault && currentImgUrl) {
       return (
         <div
-          onClick={disabled ? undefined : onClick}
+          onClick={handleClick}
           className={cn(
             sizeClasses,
             'flex items-center justify-center select-none overflow-hidden relative border border-slate-700/60 p-0 rounded-lg sm:rounded-xl bg-slate-900 shadow-sm',
@@ -147,7 +154,7 @@ export function CardView({
     // Built-in Default Blue Face-down back with rounded corners
     return (
       <div
-        onClick={disabled ? undefined : onClick}
+        onClick={handleClick}
         className={cn(
           sizeClasses,
           'bg-gradient-to-br from-blue-700 via-indigo-800 to-slate-900 border border-slate-700/60 flex items-center justify-center select-none overflow-hidden relative rounded-lg sm:rounded-xl shadow-sm',
@@ -167,21 +174,21 @@ export function CardView({
   if (asset?.isSvgText) {
     return (
       <div
-        onClick={disabled ? undefined : onClick}
+        onClick={handleClick}
         className={cn(
           sizeClasses,
-          'transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-lg sm:rounded-xl border border-slate-200/80 shadow-sm',
+          'transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-lg sm:rounded-xl shadow-sm',
           selected
-            ? 'ring-4 ring-amber-400 shadow-xl -translate-y-2.5 z-20 scale-105'
+            ? 'ring-4 ring-rose-500 border-2 border-rose-500 shadow-md'
             : highlight
-            ? 'ring-3 ring-amber-400 shadow-lg scale-102'
-            : 'hover:-translate-y-1',
-          disabled && 'cursor-default opacity-90 hover:translate-y-0',
+            ? 'ring-3 ring-amber-400 border border-slate-200/80 shadow-md'
+            : 'border border-slate-200/80',
+          disabled && 'cursor-default opacity-90',
           className
         )}
       >
         {badge && (
-          <span className="absolute -top-1 -right-1 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
+          <span className="absolute -top-1 -right-1 z-10 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
             {badge}
           </span>
         )}
@@ -197,21 +204,21 @@ export function CardView({
   if (!hasFallbackToDefault && currentImgUrl) {
     return (
       <div
-        onClick={disabled ? undefined : onClick}
+        onClick={handleClick}
         className={cn(
           sizeClasses,
-          'transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-lg sm:rounded-xl bg-white border border-slate-200/80 shadow-sm',
+          'transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-lg sm:rounded-xl bg-white shadow-sm',
           selected
-            ? 'ring-4 ring-amber-400 shadow-xl -translate-y-2.5 z-20 scale-105'
+            ? 'ring-4 ring-rose-500 border-2 border-rose-500 shadow-md'
             : highlight
-            ? 'ring-3 ring-amber-400 shadow-lg scale-102'
-            : 'hover:-translate-y-1',
-          disabled && 'cursor-default opacity-90 hover:translate-y-0',
+            ? 'ring-3 ring-amber-400 border border-slate-200/80 shadow-md'
+            : 'border border-slate-200/80',
+          disabled && 'cursor-default opacity-90',
           className
         )}
       >
         {badge && (
-          <span className="absolute -top-1 -right-1 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
+          <span className="absolute -top-1 -right-1 z-10 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
             {badge}
           </span>
         )}
@@ -248,41 +255,41 @@ export function CardView({
 
   return (
     <div
-      onClick={disabled ? undefined : onClick}
+      onClick={handleClick}
       className={cn(
         sizeClasses,
-        'bg-white border border-slate-200/90 dark:border-slate-300 p-1.5 flex flex-col justify-between select-none shadow-sm transition-all duration-150 relative cursor-pointer rounded-lg sm:rounded-xl',
+        'bg-white p-1.5 flex flex-col justify-between select-none shadow-sm transition-all duration-150 relative cursor-pointer rounded-lg sm:rounded-xl',
         isRed ? 'text-rose-600' : 'text-slate-900',
         selected
-          ? 'ring-4 ring-amber-400 shadow-xl -translate-y-2.5 z-20 bg-amber-50/30'
+          ? 'ring-4 ring-rose-500 border-2 border-rose-500 shadow-md'
           : highlight
-          ? 'ring-3 ring-amber-400'
-          : 'hover:-translate-y-1',
-        disabled && 'cursor-default opacity-90 hover:translate-y-0',
+          ? 'ring-3 ring-amber-400 border border-slate-300'
+          : 'border border-slate-200/90 dark:border-slate-300',
+        disabled && 'cursor-default opacity-90',
         className
       )}
     >
       {badge && (
-        <span className="absolute -top-2 -right-2 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
+        <span className="absolute -top-2 -right-2 z-10 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
           {badge}
         </span>
       )}
 
       {/* Top Left */}
       <div className="flex items-center gap-0.5 leading-none">
-        <span className="font-black text-xs sm:text-sm tracking-tighter">{rankStr}</span>
-        <span className="text-xs sm:text-sm leading-none">{suitSymbol}</span>
+        <span className="font-black text-sm sm:text-base tracking-tighter">{rankStr}</span>
+        <span className="text-sm sm:text-base leading-none">{suitSymbol}</span>
       </div>
 
       {/* Center Suit */}
-      <div className="text-2xl sm:text-3xl font-normal leading-none self-center opacity-90 my-auto">
+      <div className="text-3xl sm:text-4xl font-normal leading-none self-center opacity-90 my-auto">
         {suitSymbol}
       </div>
 
       {/* Bottom Right */}
       <div className="flex items-center gap-0.5 leading-none self-end rotate-180">
-        <span className="font-black text-xs sm:text-sm tracking-tighter">{rankStr}</span>
-        <span className="text-xs sm:text-sm leading-none">{suitSymbol}</span>
+        <span className="font-black text-sm sm:text-base tracking-tighter">{rankStr}</span>
+        <span className="text-sm sm:text-base leading-none">{suitSymbol}</span>
       </div>
     </div>
   );

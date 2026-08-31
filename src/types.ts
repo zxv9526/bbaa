@@ -23,7 +23,6 @@ export type SpecialHandType =
   | 'Eight of a Kind'      // 八仙过海 (8张A/8条)
   | 'Seven of a Kind'      // 七星高照 (7张A/7条)
   | 'Six of a Kind'        // 六六大顺 (6张A/6条)
-  | 'Five of a Kind Special'// 五福临门 (5张A/5条)
   | 'Supreme Dragon'       // 至尊青龙 (同花一条龙)
   | 'Dragon'               // 一条龙 (13张各一张)
   | 'Twelve Royals'        // 十二皇族 (全J Q K A)
