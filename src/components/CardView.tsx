@@ -48,9 +48,9 @@ export function CardView({
   }, []);
 
   const sizeClasses = {
-    sm: 'w-11 h-16 sm:w-12 sm:h-18 text-xs rounded-none',
-    md: 'w-14 h-20 sm:w-16 sm:h-24 text-sm rounded-none',
-    lg: 'w-16 h-24 sm:w-20 sm:h-28 text-base rounded-none'
+    sm: 'w-12 h-18 sm:w-14 sm:h-20 text-xs rounded-lg',
+    md: 'w-[18vw] max-w-[76px] min-w-[56px] h-[26vw] max-h-[108px] min-h-[80px] sm:w-20 sm:h-28 text-sm sm:text-base rounded-lg sm:rounded-xl',
+    lg: 'w-20 h-28 sm:w-24 sm:h-34 text-base sm:text-lg rounded-lg sm:rounded-xl'
   }[size];
 
   // Empty placeholder slot
@@ -60,13 +60,13 @@ export function CardView({
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'border-0 bg-slate-800/40 flex items-center justify-center transition-all duration-150 rounded-none',
+          'border border-slate-700/50 bg-slate-800/40 flex items-center justify-center transition-all duration-150 rounded-lg sm:rounded-xl',
           !disabled &&
             'cursor-pointer hover:bg-blue-900/30 active:scale-95',
           className
         )}
       >
-        <div className="w-4 h-4 rounded-none bg-slate-700/40" />
+        <div className="w-4 h-4 rounded-md bg-slate-700/40" />
       </div>
     );
   }
@@ -114,7 +114,7 @@ export function CardView({
           onClick={disabled ? undefined : onClick}
           className={cn(
             sizeClasses,
-            'flex items-center justify-center select-none overflow-hidden relative border-0 p-0 rounded-none shadow-none',
+            'flex items-center justify-center select-none overflow-hidden relative border border-slate-700/60 p-0 rounded-lg sm:rounded-xl shadow-sm',
             className
           )}
           dangerouslySetInnerHTML={{ __html: asset.isSvgText }}
@@ -128,7 +128,7 @@ export function CardView({
           onClick={disabled ? undefined : onClick}
           className={cn(
             sizeClasses,
-            'flex items-center justify-center select-none overflow-hidden relative border-0 p-0 rounded-none bg-slate-900 shadow-none',
+            'flex items-center justify-center select-none overflow-hidden relative border border-slate-700/60 p-0 rounded-lg sm:rounded-xl bg-slate-900 shadow-sm',
             className
           )}
         >
@@ -137,24 +137,24 @@ export function CardView({
             alt="Card Back"
             onError={handleImageError}
             onLoad={handleImageLoad}
-            className="w-full h-full object-fill rounded-none select-none pointer-events-none block border-0"
+            className="w-full h-full object-fill rounded-lg sm:rounded-xl select-none pointer-events-none block border-0"
             loading="eager"
           />
         </div>
       );
     }
 
-    // Built-in Default Blue Face-down back (no rounded corners, no borders)
+    // Built-in Default Blue Face-down back with rounded corners
     return (
       <div
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'bg-gradient-to-br from-blue-700 via-indigo-800 to-slate-900 border-0 flex items-center justify-center select-none overflow-hidden relative rounded-none shadow-none',
+          'bg-gradient-to-br from-blue-700 via-indigo-800 to-slate-900 border border-slate-700/60 flex items-center justify-center select-none overflow-hidden relative rounded-lg sm:rounded-xl shadow-sm',
           className
         )}
       >
-        <div className="w-6 h-6 rounded-none flex items-center justify-center text-blue-200/40 text-[10px] font-black">
+        <div className="w-6 h-6 rounded-md flex items-center justify-center text-blue-200/40 text-[10px] font-black border border-blue-400/20">
           13
         </div>
       </div>
@@ -170,9 +170,9 @@ export function CardView({
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-none border-0 shadow-none',
+          'transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-lg sm:rounded-xl border border-slate-200/80 shadow-sm',
           selected
-            ? 'ring-4 ring-blue-500 shadow-xl -translate-y-2.5 z-20 scale-105'
+            ? 'ring-4 ring-amber-400 shadow-xl -translate-y-2.5 z-20 scale-105'
             : highlight
             ? 'ring-3 ring-amber-400 shadow-lg scale-102'
             : 'hover:-translate-y-1',
@@ -181,28 +181,28 @@ export function CardView({
         )}
       >
         {badge && (
-          <span className="absolute -top-1 -right-1 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-none shadow">
+          <span className="absolute -top-1 -right-1 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
             {badge}
           </span>
         )}
         <div
-          className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>svg]:rounded-none [&>svg]:border-0 [&>svg]:block"
+          className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>svg]:rounded-lg sm:[&>svg]:rounded-xl [&>svg]:border-0 [&>svg]:block"
           dangerouslySetInnerHTML={{ __html: asset.isSvgText }}
         />
       </div>
     );
   }
 
-  // Custom Image URL (e.g. 10_of_clubs.svg, 10_of_clubs.png, ace_of_spades.png, uploaded PNG / SVG / WebP)
+  // Custom Image URL
   if (!hasFallbackToDefault && currentImgUrl) {
     return (
       <div
         onClick={disabled ? undefined : onClick}
         className={cn(
           sizeClasses,
-          'transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-none bg-white border-0 shadow-none',
+          'transition-all duration-150 relative cursor-pointer select-none overflow-hidden p-0 flex items-center justify-center rounded-lg sm:rounded-xl bg-white border border-slate-200/80 shadow-sm',
           selected
-            ? 'ring-4 ring-blue-500 shadow-xl -translate-y-2.5 z-20 scale-105'
+            ? 'ring-4 ring-amber-400 shadow-xl -translate-y-2.5 z-20 scale-105'
             : highlight
             ? 'ring-3 ring-amber-400 shadow-lg scale-102'
             : 'hover:-translate-y-1',
@@ -211,7 +211,7 @@ export function CardView({
         )}
       >
         {badge && (
-          <span className="absolute -top-1 -right-1 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-none shadow">
+          <span className="absolute -top-1 -right-1 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
             {badge}
           </span>
         )}
@@ -220,14 +220,14 @@ export function CardView({
           alt={`${card.rank}-${card.suit}`}
           onError={handleImageError}
           onLoad={handleImageLoad}
-          className="w-full h-full object-fill rounded-none select-none pointer-events-none block border-0"
+          className="w-full h-full object-fill rounded-lg sm:rounded-xl select-none pointer-events-none block border-0"
           loading="eager"
         />
       </div>
     );
   }
 
-  // Built-in Crisp Vector Card Fallback (no rounded corners, no borders)
+  // Built-in Crisp Vector Card Fallback with rounded corners
   const isRed = card.suit === 'H' || card.suit === 'D';
   const suitSymbol = {
     S: '♠',
@@ -251,10 +251,10 @@ export function CardView({
       onClick={disabled ? undefined : onClick}
       className={cn(
         sizeClasses,
-        'bg-white border-0 p-1.5 flex flex-col justify-between select-none shadow-none transition-all duration-150 relative cursor-pointer rounded-none',
+        'bg-white border border-slate-200/90 dark:border-slate-300 p-1.5 flex flex-col justify-between select-none shadow-sm transition-all duration-150 relative cursor-pointer rounded-lg sm:rounded-xl',
         isRed ? 'text-rose-600' : 'text-slate-900',
         selected
-          ? 'ring-4 ring-blue-500 -translate-y-2.5 z-20 bg-blue-50/20'
+          ? 'ring-4 ring-amber-400 shadow-xl -translate-y-2.5 z-20 bg-amber-50/30'
           : highlight
           ? 'ring-3 ring-amber-400'
           : 'hover:-translate-y-1',
@@ -263,26 +263,26 @@ export function CardView({
       )}
     >
       {badge && (
-        <span className="absolute -top-2.5 -right-2.5 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-none shadow">
+        <span className="absolute -top-2 -right-2 z-30 bg-indigo-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded-full shadow">
           {badge}
         </span>
       )}
 
       {/* Top Left */}
       <div className="flex items-center gap-0.5 leading-none">
-        <span className="font-extrabold tracking-tighter">{rankStr}</span>
-        <span className="text-[11px] sm:text-xs leading-none">{suitSymbol}</span>
+        <span className="font-black text-xs sm:text-sm tracking-tighter">{rankStr}</span>
+        <span className="text-xs sm:text-sm leading-none">{suitSymbol}</span>
       </div>
 
       {/* Center Suit */}
-      <div className="text-xl sm:text-2xl font-normal leading-none self-center opacity-90 my-auto">
+      <div className="text-2xl sm:text-3xl font-normal leading-none self-center opacity-90 my-auto">
         {suitSymbol}
       </div>
 
       {/* Bottom Right */}
       <div className="flex items-center gap-0.5 leading-none self-end rotate-180">
-        <span className="font-extrabold tracking-tighter">{rankStr}</span>
-        <span className="text-[11px] sm:text-xs leading-none">{suitSymbol}</span>
+        <span className="font-black text-xs sm:text-sm tracking-tighter">{rankStr}</span>
+        <span className="text-xs sm:text-sm leading-none">{suitSymbol}</span>
       </div>
     </div>
   );

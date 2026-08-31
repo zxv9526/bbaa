@@ -34,96 +34,84 @@ export function CarriageHeaderBar({
   const isFull = remainingSeats === 0;
 
   return (
-    <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xl flex flex-col lg:flex-row items-center justify-between gap-3 animate-in fade-in duration-300">
+    <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl px-2.5 sm:px-3 py-1.5 shadow-md flex items-center justify-between gap-2 animate-in fade-in duration-200">
       
-      {/* Left: Round & Mode Info */}
-      <div className="flex items-center gap-3 w-full lg:w-auto">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-md shrink-0 font-black text-xl ${
+      {/* Left: Mode & Round & Seat Info */}
+      <div className="flex items-center gap-2 shrink-0">
+        <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0 font-black text-xs sm:text-sm ${
           is8P 
-            ? 'bg-gradient-to-tr from-amber-500 to-red-600 shadow-red-500/20' 
-            : 'bg-gradient-to-tr from-blue-500 to-indigo-600 shadow-blue-500/20'
+            ? 'bg-gradient-to-tr from-amber-500 to-red-600' 
+            : 'bg-gradient-to-tr from-blue-500 to-indigo-600'
         }`}>
           {totalSeats}
         </div>
 
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-base font-black text-white tracking-wide flex items-center gap-1.5">
-              {is8P ? '八人场' : '四人场'} • 第 <span className="text-amber-400 font-mono text-lg">{currentCarriageIndex}</span> 局
-            </h2>
-            
-            {/* 🪑 席位显示：精准展示 8/1 (总桌容/已入座) 以及剩余空位 */}
-            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
-              isFull
-                ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-            }`}>
-              <span>🪑</span>
-              <span>席位: {totalSeats}/{seatedCount}</span>
-              <span className="text-emerald-200/80 font-normal">({seatedCount === 1 ? '我已就座' : `已入座${seatedCount}人`}{remainingSeats > 0 ? `·余${remainingSeats}位` : '·满座'})</span>
-            </span>
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap">
+            {is8P ? '八人场' : '四人场'} · 第<span className="text-amber-400 font-mono px-0.5">{currentCarriageIndex}</span>局
+          </span>
+          
+          {/* 🪑 席位小徽章 */}
+          <span className={`text-[10px] sm:text-[11px] font-bold px-1.5 py-0.5 rounded-md border whitespace-nowrap hidden xs:inline-flex ${
+            isFull
+              ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+              : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+          }`}>
+            🪑{totalSeats}/{seatedCount}
+          </span>
 
-            {/* 👤 当前玩家座位标牌 */}
-            <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[11px] font-bold">
-              <span>👤</span>
-              <span>当前: {seatIndex + 1}号位 (我)</span>
-            </div>
+          {/* 👤 当前玩家座位 */}
+          <span className="text-[10px] sm:text-[11px] font-bold px-1.5 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/30 text-blue-300 whitespace-nowrap">
+            👤{seatIndex + 1}号位
+          </span>
 
-            {/* 🪙 积分显示 */}
-            <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[11px] font-black shadow-inner">
-              <span>🪙</span>
-              <span>积分: {points.toLocaleString()}</span>
-            </div>
-          </div>
-          <div className="text-xs text-slate-400 mt-0.5">
-            提交理牌后可选择继续进入下一局或结束返回大厅
-          </div>
+          {/* 🪙 积分 */}
+          <span className="text-[10px] sm:text-[11px] font-black px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 whitespace-nowrap hidden sm:inline-flex">
+            🪙 {points.toLocaleString()}
+          </span>
         </div>
       </div>
 
-      {/* Center: Seat Position Picker */}
-      <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1 lg:pb-0">
-        <span className="text-xs font-bold text-slate-400 shrink-0 mr-1 flex items-center gap-1">
-          手牌位置:
-        </span>
-        {seatsList.map(seat => {
-          const isSelected = seat === seatIndex;
-          const isOccupied = !!submissions[seat] && !isSelected;
-          const occupantName = submissions[seat]?.playerName;
+      {/* Center/Right: Seat Picker & Hub Button */}
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1">
+          {seatsList.map(seat => {
+            const isSelected = seat === seatIndex;
+            const isOccupied = !!submissions[seat] && !isSelected;
+            const occupantName = submissions[seat]?.playerName;
 
-          return (
-            <button
-              key={seat}
-              disabled={isOccupied}
-              onClick={() => onSeatChange(seat)}
-              title={isOccupied ? `该位置已被玩家 [${occupantName}] 占领` : isSelected ? '当前选择的位置' : '点击切换此位置'}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition shrink-0 flex items-center gap-1 ${
-                isSelected
-                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 scale-105'
-                  : isOccupied
-                  ? 'bg-slate-800/40 text-slate-500 cursor-not-allowed border border-slate-750 opacity-60'
-                  : 'bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700'
-              }`}
-            >
-              {isOccupied ? (
-                <Lock className="w-3 h-3 text-slate-500" />
-              ) : isSelected ? (
-                <UserCheck className="w-3 h-3 text-slate-950" />
-              ) : null}
-              <span>{seat + 1}号{isOccupied ? ' (已占)' : isSelected ? ' (我)' : ' (空位)'}</span>
-            </button>
-          );
-        })}
-      </div>
+            return (
+              <button
+                key={seat}
+                disabled={isOccupied}
+                onClick={() => onSeatChange(seat)}
+                title={isOccupied ? `玩家 [${occupantName}] 已占` : isSelected ? '当前选择的位置' : '切换此位置'}
+                className={`px-1.5 sm:px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-bold transition shrink-0 flex items-center gap-0.5 ${
+                  isSelected
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-sm scale-105'
+                    : isOccupied
+                    ? 'bg-slate-800/40 text-slate-500 cursor-not-allowed border border-slate-750 opacity-60'
+                    : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                {isOccupied ? (
+                  <Lock className="w-2.5 h-2.5 text-slate-500" />
+                ) : isSelected ? (
+                  <UserCheck className="w-2.5 h-2.5 text-slate-950" />
+                ) : null}
+                <span>{seat + 1}号</span>
+              </button>
+            );
+          })}
+        </div>
 
-      {/* Right: History Hub Button */}
-      <div className="flex items-center gap-2.5 w-full lg:w-auto justify-end shrink-0">
         <button
           onClick={onOpenHub}
-          className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow"
+          className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] sm:text-xs font-bold transition flex items-center gap-0.5 shrink-0 active:scale-95 shadow"
         >
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          战绩记录 <ChevronRight className="w-3.5 h-3.5" />
+          <Sparkles className="w-3 h-3 text-amber-400" />
+          <span className="hidden xs:inline">记录</span>
+          <ChevronRight className="w-3 h-3 text-slate-400" />
         </button>
       </div>
 

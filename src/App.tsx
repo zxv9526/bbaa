@@ -519,13 +519,67 @@ export default function App() {
     setGameState('arranging');
   };
 
-  // Multi-card selection toggle
-  const handleToggleCardSelect = (cardId: string) => {
+  // Card click handler: supports 1-to-1 direct swap across rows (e.g. tap Middle then tap Back to swap)
+  const handleCardClick = (cardId: string) => {
+    // Case 1: Exactly 1 card already selected and user taps a different card -> DIRECT SWAP!
+    if (selectedCardIds.length === 1 && selectedCardIds[0] !== cardId) {
+      const firstId = selectedCardIds[0];
+      const secondId = cardId;
+
+      let firstRow: 'front' | 'mid' | 'back' | null = null;
+      let firstIdx = -1;
+      let secondRow: 'front' | 'mid' | 'back' | null = null;
+      let secondIdx = -1;
+
+      // Find first card
+      if ((firstIdx = front.findIndex(c => c.id === firstId)) !== -1) firstRow = 'front';
+      else if ((firstIdx = mid.findIndex(c => c.id === firstId)) !== -1) firstRow = 'mid';
+      else if ((firstIdx = back.findIndex(c => c.id === firstId)) !== -1) firstRow = 'back';
+
+      // Find second card
+      if ((secondIdx = front.findIndex(c => c.id === secondId)) !== -1) secondRow = 'front';
+      else if ((secondIdx = mid.findIndex(c => c.id === secondId)) !== -1) secondRow = 'mid';
+      else if ((secondIdx = back.findIndex(c => c.id === secondId)) !== -1) secondRow = 'back';
+
+      if (firstRow && secondRow && firstIdx !== -1 && secondIdx !== -1) {
+        sounds.playSwap();
+        triggerHaptic('medium');
+
+        const newFront = [...front];
+        const newMid = [...mid];
+        const newBack = [...back];
+
+        const getRowArray = (row: 'front' | 'mid' | 'back') =>
+          row === 'front' ? newFront : row === 'mid' ? newMid : newBack;
+
+        const row1 = getRowArray(firstRow);
+        const row2 = getRowArray(secondRow);
+
+        const card1 = row1[firstIdx];
+        const card2 = row2[secondIdx];
+
+        row1[firstIdx] = card2;
+        row2[secondIdx] = card1;
+
+        setFront(newFront);
+        setMid(newMid);
+        setBack(newBack);
+        setSelectedCardIds([]);
+        setErrorMsg('');
+        return;
+      }
+    }
+
+    // Case 2: Standard single or multi selection toggle
     sounds.playCardPick();
+    triggerHaptic('light');
     setSelectedCardIds(prev =>
       prev.includes(cardId) ? prev.filter(id => id !== cardId) : [...prev, cardId]
     );
   };
+
+  // Multi-card selection toggle
+  const handleToggleCardSelect = handleCardClick;
 
   // Move all selected cards to target row ('front' | 'mid' | 'back')
   const handleMoveSelectedTo = (target: 'front' | 'mid' | 'back') => {
@@ -1313,8 +1367,8 @@ export default function App() {
           </div>
         )}
         {gameState === 'arranging' && (
-          <div className="w-full max-w-5xl flex flex-col items-center gap-3 py-1">
-            {/* 🚆 Carriage Header Bar for 8-Player and 4-Player Async Mode */}
+          <div className="w-full max-w-5xl h-full flex flex-col items-center justify-between gap-1.5 py-0.5 px-0">
+            {/* 🚆 Compact Carriage Header Bar */}
             {(mode === 'vs_ai_8p' || mode === 'vs_ai_4p') && (
               <CarriageHeaderBar
                 mode={mode}
@@ -1331,23 +1385,7 @@ export default function App() {
               />
             )}
 
-            {/* 🚆 Carriage Transition Toast Notification */}
-            {carriageToast && carriageToast.show && (
-              <div className="w-full bg-gradient-to-r from-emerald-950/90 via-slate-900 to-indigo-950/90 border border-emerald-500/40 rounded-2xl px-4 py-3 shadow-xl flex items-center justify-between text-xs font-bold text-emerald-300 animate-in slide-in-from-top duration-300">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-lg">🚆</span>
-                  <span>{carriageToast.msg}</span>
-                </div>
-                <button
-                  onClick={() => setCarriageToast(null)}
-                  className="text-slate-400 hover:text-white px-2 py-1 transition"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-
-            {/* Special Hand Alert Banner */}
+            {/* Special Hand Alert Banner (Compact) */}
             {specialHand && (
               <SpecialHandBanner
                 specialHand={specialHand}
@@ -1358,36 +1396,36 @@ export default function App() {
 
             {/* Error Message Banner */}
             {errorMsg && (
-              <div className="w-full p-2.5 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center justify-center gap-2">
+              <div className="w-full p-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center justify-center gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 {errorMsg}
               </div>
             )}
 
-            {/* Arrangement Card Containers */}
-            <div className="w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-3.5 sm:p-4 shadow-xl flex flex-col gap-3">
+            {/* Arrangement Card Containers - Expanded for Mobile Card Size */}
+            <div className="w-full flex-1 flex flex-col justify-between gap-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl p-2 sm:p-3 shadow-xl min-h-0">
               
               {/* 1. FRONT DUN (前墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('front')}
-                className={`flex flex-col gap-1 p-2.5 rounded-2xl border transition-all ${
+                className={`flex-1 flex flex-col justify-between p-1.5 sm:p-2 rounded-xl border transition-all min-h-[96px] sm:min-h-[115px] ${
                   selectedCardIds.length > 0
                     ? 'border-blue-500/60 bg-blue-950/30 cursor-pointer hover:bg-blue-900/40 hover:border-blue-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
                 }`}
               >
-                <div className="flex items-center justify-between w-full text-xs font-bold">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                    <span className="text-slate-300">前墩</span>
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                <div className="flex items-center justify-between w-full text-xs font-bold px-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500" />
+                    <span className="text-slate-300 text-xs">前墩</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded ${
                       front.length === 3 ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30 font-bold' : 'bg-slate-800 text-slate-400'
                     }`}>
-                      {front.length}/3 张
+                      {front.length}/3
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     {fEval && (
                       <span className="text-blue-400 font-black text-xs">
                         [{HAND_TYPE_CN[fEval.type]}] {fEval.description}
@@ -1399,7 +1437,7 @@ export default function App() {
                           e.stopPropagation();
                           handleMoveSelectedTo('front');
                         }}
-                        className="px-2.5 py-0.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow transition active:scale-95"
+                        className="px-2 py-0.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow transition active:scale-95"
                       >
                         移入前墩 ({selectedCardIds.length})
                       </button>
@@ -1407,10 +1445,10 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 min-h-[82px] p-1 rounded-xl bg-slate-900/50">
+                <div className="flex flex-nowrap sm:flex-wrap items-center justify-start sm:justify-center gap-1.5 sm:gap-2.5 p-1 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar">
                   {front.length === 0 ? (
-                    <div className="w-full py-3 text-center text-xs text-slate-500 font-medium">
-                      {selectedCardIds.length > 0 ? '👉 点击此处放入前墩' : '前墩暂无扑克牌'}
+                    <div className="w-full py-2 text-center text-xs text-slate-500 font-medium">
+                      {selectedCardIds.length > 0 ? '👉 点击此处放入前墩' : '前墩 (3张)'}
                     </div>
                   ) : (
                     front.map(c => (
@@ -1429,24 +1467,24 @@ export default function App() {
               {/* 2. MIDDLE DUN (中墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('mid')}
-                className={`flex flex-col gap-1 p-2.5 rounded-2xl border transition-all ${
+                className={`flex-1 flex flex-col justify-between p-1.5 sm:p-2 rounded-xl border transition-all min-h-[96px] sm:min-h-[115px] ${
                   selectedCardIds.length > 0
                     ? 'border-indigo-500/60 bg-indigo-950/30 cursor-pointer hover:bg-indigo-900/40 hover:border-indigo-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
                 }`}
               >
-                <div className="flex items-center justify-between w-full text-xs font-bold">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
-                    <span className="text-slate-300">中墩</span>
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                <div className="flex items-center justify-between w-full text-xs font-bold px-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                    <span className="text-slate-300 text-xs">中墩</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded ${
                       mid.length === 5 ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold' : 'bg-slate-800 text-slate-400'
                     }`}>
-                      {mid.length}/5 张
+                      {mid.length}/5
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     {mEval && (
                       <span className="text-indigo-400 font-black text-xs">
                         [{HAND_TYPE_CN[mEval.type]}] {mEval.description}
@@ -1458,7 +1496,7 @@ export default function App() {
                           e.stopPropagation();
                           handleMoveSelectedTo('mid');
                         }}
-                        className="px-2.5 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition active:scale-95"
+                        className="px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition active:scale-95"
                       >
                         移入中墩 ({selectedCardIds.length})
                       </button>
@@ -1466,10 +1504,10 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 min-h-[82px] p-1 rounded-xl bg-slate-900/50">
+                <div className="flex flex-nowrap sm:flex-wrap items-center justify-start sm:justify-center gap-1.5 sm:gap-2.5 p-1 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar">
                   {mid.length === 0 ? (
-                    <div className="w-full py-3 text-center text-xs text-slate-500 font-medium">
-                      {selectedCardIds.length > 0 ? '👉 点击此处放入中墩' : '中墩暂无扑克牌'}
+                    <div className="w-full py-2 text-center text-xs text-slate-500 font-medium">
+                      {selectedCardIds.length > 0 ? '👉 点击此处放入中墩' : '中墩 (5张)'}
                     </div>
                   ) : (
                     mid.map(c => (
@@ -1485,49 +1523,27 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Quick Swap Mid & Back Duns Button */}
-              {mid.length === 5 && back.length === 5 && (
-                <div className="flex items-center justify-center -my-1 z-10">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      triggerHaptic('medium');
-                      handleSwapMidBack();
-                    }}
-                    className={`px-3.5 py-1 rounded-full text-xs font-black flex items-center gap-1.5 shadow-md transition active:scale-95 cursor-pointer ${
-                      mEval && bEval && mEval.score > bEval.score
-                        ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-300 animate-bounce'
-                        : 'bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 hover:border-amber-500/40'
-                    }`}
-                    title="点击一键对调中墩与后墩的全部扑克牌"
-                  >
-                    <ArrowLeftRight className="w-3.5 h-3.5" />
-                    <span>{mEval && bEval && mEval.score > bEval.score ? '⚠️ 中大后小(倒水)！点击一键对调中后墩' : '🔄 对调中后墩'}</span>
-                  </button>
-                </div>
-              )}
-
               {/* 3. BACK DUN (后墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('back')}
-                className={`flex flex-col gap-1 p-2.5 rounded-2xl border transition-all ${
+                className={`flex-1 flex flex-col justify-between p-1.5 sm:p-2 rounded-xl border transition-all min-h-[96px] sm:min-h-[115px] ${
                   selectedCardIds.length > 0
                     ? 'border-purple-500/60 bg-purple-950/30 cursor-pointer hover:bg-purple-900/40 hover:border-purple-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
                 }`}
               >
-                <div className="flex items-center justify-between w-full text-xs font-bold">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
-                    <span className="text-slate-300">后墩</span>
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                <div className="flex items-center justify-between w-full text-xs font-bold px-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-purple-500" />
+                    <span className="text-slate-300 text-xs">后墩</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded ${
                       back.length === 5 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold' : 'bg-slate-800 text-slate-400'
                     }`}>
-                      {back.length}/5 张
+                      {back.length}/5
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     {bEval && (
                       <span className="text-purple-400 font-black text-xs">
                         [{HAND_TYPE_CN[bEval.type]}] {bEval.description}
@@ -1539,7 +1555,7 @@ export default function App() {
                           e.stopPropagation();
                           handleMoveSelectedTo('back');
                         }}
-                        className="px-2.5 py-0.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow transition active:scale-95"
+                        className="px-2 py-0.5 rounded-md bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow transition active:scale-95"
                       >
                         移入后墩 ({selectedCardIds.length})
                       </button>
@@ -1547,10 +1563,10 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 min-h-[82px] p-1 rounded-xl bg-slate-900/50">
+                <div className="flex flex-nowrap sm:flex-wrap items-center justify-start sm:justify-center gap-1.5 sm:gap-2.5 p-1 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar">
                   {back.length === 0 ? (
-                    <div className="w-full py-3 text-center text-xs text-slate-500 font-medium">
-                      {selectedCardIds.length > 0 ? '👉 点击此处放入后墩' : '后墩暂无扑克牌'}
+                    <div className="w-full py-2 text-center text-xs text-slate-500 font-medium">
+                      {selectedCardIds.length > 0 ? '👉 点击此处放入后墩' : '后墩 (5张)'}
                     </div>
                   ) : (
                     back.map(c => (
@@ -1568,58 +1584,34 @@ export default function App() {
 
             </div>
 
-            {/* Real-time Dao Shui Alert (Only shown on actual violation) */}
-            {front.length === 3 && mid.length === 5 && back.length === 5 && isCurrentDaoShui && (
-              <div className="w-full max-w-2xl bg-gradient-to-r from-rose-950/90 via-slate-900 to-rose-950/90 border-2 border-rose-500/80 rounded-2xl p-2.5 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-rose-200 animate-in fade-in duration-200">
-                <div className="flex items-center gap-2 font-bold">
-                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                  <span>⚠️ 倒水违规！(后墩牌力必须 ≥ 中墩 ≥ 前墩)</span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={handleSwapMidBack}
-                    className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold hover:text-white transition cursor-pointer"
-                  >
-                    🔄 对调中后墩
-                  </button>
-                  <button
-                    onClick={handleChangePattern}
-                    className="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black transition cursor-pointer shadow"
-                  >
-                    ✨ 变换合法牌型
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Bottom Actions: Exactly Two Buttons (变换牌型 & 提交牌型) */}
-            <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1.5 pt-1">
+            {/* Bottom Actions: Exactly Two High-Priority Buttons (变换牌型 & 提交牌型) */}
+            <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1 shrink-0 pt-0.5">
               {patternInfo && (
-                <div className="text-xs font-bold text-amber-300 bg-amber-950/40 border border-amber-500/30 px-3 py-0.5 rounded-full animate-in fade-in flex items-center gap-1.5">
-                  <span>✨ 当前方案:</span>
+                <div className="text-[11px] font-bold text-amber-300 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full animate-in fade-in flex items-center gap-1">
+                  <span>✨ 方案:</span>
                   <span className="text-amber-200">{patternInfo.tag}</span>
                   <span className="text-slate-400 font-medium">({patternInfo.index}/{patternInfo.total})</span>
                 </div>
               )}
-              <div className="w-full flex items-center justify-center gap-3 sm:gap-4">
+              <div className="w-full flex items-center justify-center gap-2.5 sm:gap-4">
                 <button
                   id="btn-change-pattern"
                   onClick={handleChangePattern}
-                  className="flex-1 py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-amber-950/30 transition active:scale-95 cursor-pointer"
-                  title="点击切换下一组牌型"
+                  className="flex-1 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs sm:text-base font-black flex items-center justify-center gap-1.5 shadow-lg shadow-amber-950/30 transition active:scale-95 cursor-pointer"
+                  title="点击切换下一组合法牌型"
                 >
-                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+                  <Sparkles className="w-4 h-4 text-amber-400" />
                   <span>变换牌型</span>
                 </button>
 
                 <button
                   id="btn-submit-arrangement"
                   onClick={handleSubmitArrangement}
-                  className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
+                  className="flex-1 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs sm:text-base font-black flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
                   title="提交牌型"
                 >
-                  <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                  <span>提交牌型 ({front.length + mid.length + back.length}/13张)</span>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>提交牌型 ({front.length + mid.length + back.length}/13)</span>
                 </button>
               </div>
             </div>
