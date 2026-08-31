@@ -88,11 +88,16 @@ import {
 import { CarriageHeaderBar } from './components/CarriageHeaderBar';
 import { CarriageHubModal } from './components/CarriageHubModal';
 import { SubmitChoiceModal } from './components/SubmitChoiceModal';
+import { MatchReplayModal } from './components/MatchReplayModal';
 import {
   saveActiveMatchSession,
   loadActiveMatchSession,
-  clearActiveMatchSession
+  clearActiveMatchSession,
+  ActiveMatchSession
 } from './lib/matchPersistence';
+import { saveMatchReplay } from './lib/matchReplay';
+import { triggerHaptic } from './lib/haptics';
+import { ArrowLeftRight, History, GraduationCap } from 'lucide-react';
 
 type GameMode = 'vs_ai_8p' | 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer';
 
@@ -126,6 +131,7 @@ export default function App() {
   const [showPracticeModal, setShowPracticeModal] = useState(false);
   const [showSkinModal, setShowSkinModal] = useState(false);
   const [showSubmitChoiceModal, setShowSubmitChoiceModal] = useState(false);
+  const [showReplayModal, setShowReplayModal] = useState(false);
   const [pendingArrangement, setPendingArrangement] = useState<PlayerArrangement | null>(null);
 
   // Player Hand State
@@ -161,6 +167,37 @@ export default function App() {
   // Current Player Stats for Lobby
   const [myStats, setMyStats] = useState<PlayerStats | null>(null);
 
+  // 🔄 牌局恢复函数：严格落实契约精神，恢复未完成牌局
+  const restoreFromSavedSession = (saved: ActiveMatchSession, reason: string = '自动恢复') => {
+    setMode(saved.mode);
+    setCarriageId(saved.carriageId);
+    setCarriageIndex(saved.carriageIndex);
+    setCarriageSeatIndex(saved.carriageSeatIndex);
+    setCarriageSubmissions(saved.carriageSubmissions || {});
+    if (saved.carriageStats) {
+      setCarriageStats(saved.carriageStats);
+    }
+    setOriginalHand(saved.originalHand);
+    setFront(saved.front || []);
+    setMid(saved.mid || []);
+    setBack(saved.back || []);
+    setPool(saved.pool || []);
+    setSelectedCardIds(saved.selectedCardIds || []);
+    setPlayersInMatch(saved.playersInMatch || []);
+    setSpecialHand(saved.specialHand);
+    setUseSpecialHand(saved.useSpecialHand);
+    const smartSuggestions = getSuggestedArrangements(saved.originalHand);
+    setSuggestions(smartSuggestions);
+    patternChangerRef.current = new PatternChanger(saved.originalHand);
+    setGameState('arranging');
+    setCarriageToast({
+      show: true,
+      msg: `🔄 契约精神：${reason}，已为您恢复第 ${saved.carriageIndex} 局进行中牌局。`,
+      pts: 0
+    });
+    setTimeout(() => setCarriageToast(null), 4000);
+  };
+
   // 1. On Mount: Auto-check and initialize D1 database & load player stats & card skins & restore unfinished match
   useEffect(() => {
     ApiClient.initializeDatabase();
@@ -170,33 +207,7 @@ export default function App() {
     // 🔄 检查是否存在因掉线或关闭网页未结束的对局
     const saved = loadActiveMatchSession(currentAccount?.phone);
     if (saved && saved.originalHand && saved.originalHand.length === 13) {
-      setMode(saved.mode);
-      setCarriageId(saved.carriageId);
-      setCarriageIndex(saved.carriageIndex);
-      setCarriageSeatIndex(saved.carriageSeatIndex);
-      setCarriageSubmissions(saved.carriageSubmissions || {});
-      if (saved.carriageStats) {
-        setCarriageStats(saved.carriageStats);
-      }
-      setOriginalHand(saved.originalHand);
-      setFront(saved.front || []);
-      setMid(saved.mid || []);
-      setBack(saved.back || []);
-      setPool(saved.pool || []);
-      setSelectedCardIds(saved.selectedCardIds || []);
-      setPlayersInMatch(saved.playersInMatch || []);
-      setSpecialHand(saved.specialHand);
-      setUseSpecialHand(saved.useSpecialHand);
-      const smartSuggestions = getSuggestedArrangements(saved.originalHand);
-      setSuggestions(smartSuggestions);
-      patternChangerRef.current = new PatternChanger(saved.originalHand);
-      setGameState('arranging');
-      setCarriageToast({
-        show: true,
-        msg: `🔄 欢迎回来！已自动为您恢复第 ${saved.carriageIndex} 局未结束牌局。`,
-        pts: 0
-      });
-      setTimeout(() => setCarriageToast(null), 4000);
+      restoreFromSavedSession(saved, '欢迎回来');
     }
   }, []);
 
@@ -248,6 +259,12 @@ export default function App() {
     return subscribeAccount(acc => {
       setCurrentAccount(acc);
       setPlayerName(acc.nickname);
+
+      // 切换账号后自动检查该账号名下是否有未完成的牌局
+      const saved = loadActiveMatchSession(acc.phone);
+      if (saved && saved.originalHand && saved.originalHand.length === 13) {
+        restoreFromSavedSession(saved, `检测到账号【${acc.nickname}】有未完成牌局`);
+      }
     });
   }, []);
 
@@ -288,6 +305,13 @@ export default function App() {
 
   // Start a new local match (8P, 4P, or 2P)
   const startNewMatch = (selectedMode: GameMode = mode, seatOverride?: number) => {
+    // 🛡️ 契约精神核心防线：检查是否存在该账号未提交的牌局，不允许玩家因牌烂而中途放弃
+    const saved = loadActiveMatchSession(currentAccount.phone);
+    if (saved && saved.originalHand && saved.originalHand.length === 13) {
+      restoreFromSavedSession(saved, '根据游戏契约精神');
+      return;
+    }
+
     sounds.playDeal();
     setMode(selectedMode);
     setErrorMsg('');
@@ -711,6 +735,49 @@ export default function App() {
 
         const deltaStr = res.playerResult.finalPoints >= 0 ? `+${res.playerResult.finalPoints}` : `${res.playerResult.finalPoints}`;
 
+        // 📝 保存对局复盘记录
+        try {
+          const replayPlayers = (res.allMatchResults && res.allMatchResults.length > 0 ? res.allMatchResults : [res.playerResult]).map(r => ({
+            id: r.playerId,
+            name: r.name,
+            avatar: r.avatar,
+            isAi: r.isAi,
+            isMe: r.playerId === 'player_user',
+            specialHand: r.specialHand,
+            front: r.arrangement?.front || [],
+            mid: r.arrangement?.middle || [],
+            back: r.arrangement?.back || [],
+            frontEval: r.frontScore ? {
+              typeName: HAND_TYPE_CN[r.frontScore.type],
+              desc: r.frontScore.description,
+              bonus: r.frontScore.bonusPoints || 0
+            } : undefined,
+            midEval: r.midScore ? {
+              typeName: HAND_TYPE_CN[r.midScore.type],
+              desc: r.midScore.description,
+              bonus: r.midScore.bonusPoints || 0
+            } : undefined,
+            backEval: r.backScore ? {
+              typeName: HAND_TYPE_CN[r.backScore.type],
+              desc: r.backScore.description,
+              bonus: r.backScore.bonusPoints || 0
+            } : undefined,
+            finalScore: r.finalPoints,
+            isHomeRun: r.isHomeRun
+          }));
+
+          saveMatchReplay(currentAccount.phone, {
+            phone: currentAccount.phone,
+            mode,
+            carriageIndex,
+            myScore: res.playerResult.finalPoints,
+            players: replayPlayers,
+            summaryText: `第 ${carriageIndex} 局 • 本局总得失: ${deltaStr} 水`
+          });
+        } catch (e) {
+          console.error('Failed to record replay:', e);
+        }
+
         if (advanceToNext) {
           // 🚀 提交并进入下一局
           setCarriageToast({
@@ -875,6 +942,49 @@ export default function App() {
       });
 
       refreshPlayerStats(currentAccount.nickname || playerName);
+
+      // 📝 保存双人单挑复盘记录
+      try {
+        const replayPlayers = results.map(r => ({
+          id: r.playerId,
+          name: r.name,
+          avatar: r.avatar,
+          isAi: r.isAi,
+          isMe: r.playerId === 'player_user',
+          specialHand: r.specialHand,
+          front: r.arrangement.front || [],
+          mid: r.arrangement.middle || [],
+          back: r.arrangement.back || [],
+          frontEval: r.frontScore ? {
+            typeName: HAND_TYPE_CN[r.frontScore.type],
+            desc: r.frontScore.description,
+            bonus: r.frontScore.bonusPoints || 0
+          } : undefined,
+          midEval: r.midScore ? {
+            typeName: HAND_TYPE_CN[r.midScore.type],
+            desc: r.midScore.description,
+            bonus: r.midScore.bonusPoints || 0
+          } : undefined,
+          backEval: r.backScore ? {
+            typeName: HAND_TYPE_CN[r.backScore.type],
+            desc: r.backScore.description,
+            bonus: r.backScore.bonusPoints || 0
+          } : undefined,
+          finalScore: r.finalPoints,
+          isHomeRun: r.isHomeRun
+        }));
+
+        saveMatchReplay(currentAccount.phone, {
+          phone: currentAccount.phone,
+          mode: 'vs_ai_2p',
+          carriageIndex: 1,
+          myScore: userResult.finalPoints,
+          players: replayPlayers,
+          summaryText: `双人单挑 • 本局得分: ${userResult.finalPoints >= 0 ? '+' : ''}${userResult.finalPoints} 水`
+        });
+      } catch (e) {
+        console.error('Failed to record 2p replay:', e);
+      }
     }
 
     if (advanceToNext) {
@@ -1088,6 +1198,49 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Lobby Quick Tool Shelf */}
+              <div className="col-span-1 md:col-span-2 flex flex-wrap items-center justify-center gap-3 pt-2">
+                <button
+                  onClick={() => setShowReplayModal(true)}
+                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
+                >
+                  <History className="w-4 h-4 text-amber-400" />
+                  <span>战绩复盘</span>
+                </button>
+
+                <button
+                  onClick={() => setShowRankModal(true)}
+                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
+                >
+                  <Trophy className="w-4 h-4 text-blue-400" />
+                  <span>排行榜</span>
+                </button>
+
+                <button
+                  onClick={() => setShowRuleModal(true)}
+                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
+                >
+                  <BookOpen className="w-4 h-4 text-indigo-400" />
+                  <span>规则说明</span>
+                </button>
+
+                <button
+                  onClick={() => setShowSkinModal(true)}
+                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-purple-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
+                >
+                  <Palette className="w-4 h-4 text-purple-400" />
+                  <span>扑克装扮</span>
+                </button>
+
+                <button
+                  onClick={() => setShowPracticeModal(true)}
+                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
+                >
+                  <GraduationCap className="w-4 h-4 text-emerald-400" />
+                  <span>摆牌练习</span>
+                </button>
+              </div>
             </div>
           );
         })()}
@@ -1287,6 +1440,28 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Quick Swap Mid & Back Duns Button */}
+              {mid.length === 5 && back.length === 5 && (
+                <div className="flex items-center justify-center -my-1 z-10">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('medium');
+                      handleSwapMidBack();
+                    }}
+                    className={`px-3.5 py-1 rounded-full text-xs font-black flex items-center gap-1.5 shadow-md transition active:scale-95 cursor-pointer ${
+                      mEval && bEval && mEval.score > bEval.score
+                        ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-300 animate-bounce'
+                        : 'bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 hover:border-amber-500/40'
+                    }`}
+                    title="点击一键对调中墩与后墩的全部扑克牌"
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5" />
+                    <span>{mEval && bEval && mEval.score > bEval.score ? '⚠️ 中大后小(倒水)！点击一键对调中后墩' : '🔄 对调中后墩'}</span>
+                  </button>
+                </div>
+              )}
+
               {/* 3. BACK DUN (后墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('back')}
@@ -1449,6 +1624,7 @@ export default function App() {
         isOpen={showSubmitChoiceModal}
         onClose={() => setShowSubmitChoiceModal(false)}
         onConfirm={handleConfirmSubmit}
+        onToggleSpecialHand={() => setUseSpecialHand(!useSpecialHand)}
         carriageIndex={carriageIndex}
         mode={mode === 'vs_ai_8p' || mode === 'vs_ai_4p' ? mode : 'vs_ai_4p'}
         front={front}
@@ -1456,6 +1632,12 @@ export default function App() {
         back={back}
         specialHand={specialHand}
         useSpecialHand={useSpecialHand}
+      />
+
+      <MatchReplayModal
+        isOpen={showReplayModal}
+        onClose={() => setShowReplayModal(false)}
+        phone={currentAccount.phone}
       />
     </div>
   );
