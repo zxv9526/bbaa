@@ -1130,7 +1130,7 @@ export default function App() {
   const availablePatterns = findAvailablePatterns(originalHand);
 
   return (
-    <div className="h-screen w-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
+    <div className="h-screen h-[100dvh] max-h-[100dvh] w-screen w-full bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
       {/* 1. Header Bar: ONLY shown on main menu/lobby; completely hidden during game match */}
       {gameState === 'menu' && (
         <header className="shrink-0 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-8 py-3 flex items-center justify-between shadow-sm">
@@ -1367,7 +1367,7 @@ export default function App() {
           </div>
         )}
         {gameState === 'arranging' && (
-          <div className="w-full max-w-5xl flex-1 flex flex-col items-center justify-between gap-1.5 py-0.5 px-0 min-h-0">
+          <div className="w-full max-w-5xl flex-1 flex flex-col items-center justify-between gap-1 py-0.5 px-0 min-h-0 h-full overflow-hidden">
             {/* 🚆 Compact Carriage Header Bar */}
             {(mode === 'vs_ai_8p' || mode === 'vs_ai_4p') && (
               <CarriageHeaderBar
@@ -1396,28 +1396,28 @@ export default function App() {
 
             {/* Error Message Banner */}
             {errorMsg && (
-              <div className="w-full p-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center justify-center gap-2 shrink-0">
+              <div className="w-full p-1.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center justify-center gap-2 shrink-0">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 {errorMsg}
               </div>
             )}
 
-            {/* Arrangement Card Containers - Expanded for Mobile Card Size */}
-            <div className="w-full flex-1 flex flex-col justify-between gap-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl p-1.5 sm:p-2.5 shadow-xl min-h-0">
+            {/* Arrangement Card Containers - Adaptive Height */}
+            <div className="w-full flex-1 flex flex-col justify-between gap-1 bg-slate-900/90 border border-slate-800 rounded-2xl p-1 sm:p-2 shadow-xl min-h-0 overflow-hidden">
               
               {/* 1. FRONT DUN (前墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('front')}
-                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[125px] sm:min-h-[150px] ${
+                className={`flex-1 flex flex-col justify-between p-1 rounded-xl border transition-all min-h-0 overflow-hidden ${
                   selectedCardIds.length > 0
                     ? 'border-blue-500/60 bg-blue-950/30 cursor-pointer hover:bg-blue-900/40 hover:border-blue-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
                 }`}
               >
-                <div className="flex items-center justify-between w-full text-xs font-bold px-1 pb-1">
+                <div className="flex items-center justify-between w-full text-[11px] sm:text-xs font-bold px-1 pb-0.5 shrink-0">
                   <div className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-blue-500" />
-                    <span className="text-slate-300 text-xs">前墩</span>
+                    <span className="text-slate-300 text-[11px] sm:text-xs">前墩</span>
                     <span className={`text-[10px] px-1.5 py-0.2 rounded ${
                       front.length === 3 ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30 font-bold' : 'bg-slate-800 text-slate-400'
                     }`}>
@@ -1427,7 +1427,7 @@ export default function App() {
 
                   <div className="flex items-center gap-1.5">
                     {fEval && (
-                      <span className="text-blue-400 font-black text-xs">
+                      <span className="text-blue-400 font-black text-[11px] sm:text-xs">
                         [{HAND_TYPE_CN[fEval.type]}] {fEval.description}
                       </span>
                     )}
@@ -1437,7 +1437,7 @@ export default function App() {
                           e.stopPropagation();
                           handleMoveSelectedTo('front');
                         }}
-                        className="px-2 py-0.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow transition active:scale-95"
+                        className="px-2 py-0.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] sm:text-xs shadow transition active:scale-95"
                       >
                         移入前墩 ({selectedCardIds.length})
                       </button>
@@ -1445,9 +1445,9 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex flex-nowrap items-center justify-start p-1 sm:p-1.5 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar pl-2 sm:pl-3">
+                <div className="flex flex-nowrap items-center justify-start p-0.5 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar pl-2 sm:pl-3 min-h-0">
                   {front.length === 0 ? (
-                    <div className="w-full py-4 text-left pl-3 text-xs text-slate-500 font-medium">
+                    <div className="w-full py-2 text-left pl-3 text-xs text-slate-500 font-medium">
                       {selectedCardIds.length > 0 ? '👉 点击此处放入前墩' : '前墩 (3张)'}
                     </div>
                   ) : (
@@ -1468,16 +1468,16 @@ export default function App() {
               {/* 2. MIDDLE DUN (中墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('mid')}
-                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[125px] sm:min-h-[150px] ${
+                className={`flex-1 flex flex-col justify-between p-1 rounded-xl border transition-all min-h-0 overflow-hidden ${
                   selectedCardIds.length > 0
                     ? 'border-indigo-500/60 bg-indigo-950/30 cursor-pointer hover:bg-indigo-900/40 hover:border-indigo-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
                 }`}
               >
-                <div className="flex items-center justify-between w-full text-xs font-bold px-1 pb-1">
+                <div className="flex items-center justify-between w-full text-[11px] sm:text-xs font-bold px-1 pb-0.5 shrink-0">
                   <div className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                    <span className="text-slate-300 text-xs">中墩</span>
+                    <span className="text-slate-300 text-[11px] sm:text-xs">中墩</span>
                     <span className={`text-[10px] px-1.5 py-0.2 rounded ${
                       mid.length === 5 ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold' : 'bg-slate-800 text-slate-400'
                     }`}>
@@ -1487,7 +1487,7 @@ export default function App() {
 
                   <div className="flex items-center gap-1.5">
                     {mEval && (
-                      <span className="text-indigo-400 font-black text-xs">
+                      <span className="text-indigo-400 font-black text-[11px] sm:text-xs">
                         [{HAND_TYPE_CN[mEval.type]}] {mEval.description}
                       </span>
                     )}
@@ -1497,7 +1497,7 @@ export default function App() {
                           e.stopPropagation();
                           handleMoveSelectedTo('mid');
                         }}
-                        className="px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition active:scale-95"
+                        className="px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] sm:text-xs shadow transition active:scale-95"
                       >
                         移入中墩 ({selectedCardIds.length})
                       </button>
@@ -1505,9 +1505,9 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex flex-nowrap items-center justify-start p-1 sm:p-1.5 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar pl-2 sm:pl-3">
+                <div className="flex flex-nowrap items-center justify-start p-0.5 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar pl-2 sm:pl-3 min-h-0">
                   {mid.length === 0 ? (
-                    <div className="w-full py-4 text-left pl-3 text-xs text-slate-500 font-medium">
+                    <div className="w-full py-2 text-left pl-3 text-xs text-slate-500 font-medium">
                       {selectedCardIds.length > 0 ? '👉 点击此处放入中墩' : '中墩 (5张)'}
                     </div>
                   ) : (
@@ -1528,16 +1528,16 @@ export default function App() {
               {/* 3. BACK DUN (后墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('back')}
-                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[125px] sm:min-h-[150px] ${
+                className={`flex-1 flex flex-col justify-between p-1 rounded-xl border transition-all min-h-0 overflow-hidden ${
                   selectedCardIds.length > 0
                     ? 'border-purple-500/60 bg-purple-950/30 cursor-pointer hover:bg-purple-900/40 hover:border-purple-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
                 }`}
               >
-                <div className="flex items-center justify-between w-full text-xs font-bold px-1 pb-1">
+                <div className="flex items-center justify-between w-full text-[11px] sm:text-xs font-bold px-1 pb-0.5 shrink-0">
                   <div className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-purple-500" />
-                    <span className="text-slate-300 text-xs">后墩</span>
+                    <span className="text-slate-300 text-[11px] sm:text-xs">后墩</span>
                     <span className={`text-[10px] px-1.5 py-0.2 rounded ${
                       back.length === 5 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold' : 'bg-slate-800 text-slate-400'
                     }`}>
@@ -1547,7 +1547,7 @@ export default function App() {
 
                   <div className="flex items-center gap-1.5">
                     {bEval && (
-                      <span className="text-purple-400 font-black text-xs">
+                      <span className="text-purple-400 font-black text-[11px] sm:text-xs">
                         [{HAND_TYPE_CN[bEval.type]}] {bEval.description}
                       </span>
                     )}
@@ -1557,7 +1557,7 @@ export default function App() {
                           e.stopPropagation();
                           handleMoveSelectedTo('back');
                         }}
-                        className="px-2 py-0.5 rounded-md bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow transition active:scale-95"
+                        className="px-2 py-0.5 rounded-md bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] sm:text-xs shadow transition active:scale-95"
                       >
                         移入后墩 ({selectedCardIds.length})
                       </button>
@@ -1565,9 +1565,9 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex flex-nowrap items-center justify-start p-1 sm:p-1.5 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar pl-2 sm:pl-3">
+                <div className="flex flex-nowrap items-center justify-start p-0.5 rounded-lg bg-slate-900/40 flex-1 overflow-x-auto no-scrollbar pl-2 sm:pl-3 min-h-0">
                   {back.length === 0 ? (
-                    <div className="w-full py-4 text-left pl-3 text-xs text-slate-500 font-medium">
+                    <div className="w-full py-2 text-left pl-3 text-xs text-slate-500 font-medium">
                       {selectedCardIds.length > 0 ? '👉 点击此处放入后墩' : '后墩 (5张)'}
                     </div>
                   ) : (
@@ -1588,20 +1588,20 @@ export default function App() {
             </div>
 
             {/* Bottom Actions: Clean Two Primary Action Buttons (变换牌型 & 提交牌型) */}
-            <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1.5 shrink-0 pt-1 pb-1">
+            <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1 shrink-0 pt-0.5 pb-2 sm:pb-3">
               {patternInfo && (
-                <div className="text-[11px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/40 px-3 py-0.5 rounded-full animate-in fade-in flex items-center gap-1.5 shadow-sm">
+                <div className="text-[10px] sm:text-[11px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/40 px-3 py-0.2 rounded-full animate-in fade-in flex items-center gap-1.5 shadow-sm">
                   <span>✨ 方案:</span>
                   <span className="text-amber-200">{patternInfo.tag}</span>
                   <span className="text-slate-400 font-medium">({patternInfo.index}/{patternInfo.total})</span>
                 </div>
               )}
 
-              <div className="w-full flex items-center justify-center gap-2.5 sm:gap-4">
+              <div className="w-full flex items-center justify-center gap-2 sm:gap-4">
                 <button
                   id="btn-change-pattern"
                   onClick={handleChangePattern}
-                  className="flex-1 py-3 sm:py-3.5 px-4 rounded-2xl bg-slate-850 hover:bg-slate-800 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-amber-950/40 transition active:scale-95 cursor-pointer"
+                  className="flex-1 py-2.5 sm:py-3.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl bg-slate-850 hover:bg-slate-800 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs sm:text-base font-black flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-amber-950/40 transition active:scale-95 cursor-pointer"
                   title="点击切换下一组不倒水合法方案"
                 >
                   <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
@@ -1612,7 +1612,7 @@ export default function App() {
                   id="btn-submit-arrangement"
                   onClick={handleSubmitArrangement}
                   disabled={isCurrentDaoShui || (front.length + mid.length + back.length !== 13)}
-                  className={`flex-1 py-3 sm:py-3.5 px-4 rounded-2xl text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer ${
+                  className={`flex-1 py-2.5 sm:py-3.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl text-xs sm:text-base font-black flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg transition active:scale-95 cursor-pointer ${
                     isCurrentDaoShui || (front.length + mid.length + back.length !== 13)
                       ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
                       : 'bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-600/30'
