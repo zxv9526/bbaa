@@ -1568,35 +1568,28 @@ export default function App() {
 
             </div>
 
-            {/* Real-time Hand Legality & Dao Shui Alert */}
-            {front.length === 3 && mid.length === 5 && back.length === 5 && (
-              isCurrentDaoShui ? (
-                <div className="w-full max-w-2xl bg-gradient-to-r from-rose-950/90 via-slate-900 to-rose-950/90 border-2 border-rose-500/80 rounded-2xl p-3 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-rose-200 animate-in fade-in duration-200">
-                  <div className="flex items-center gap-2 font-bold">
-                    <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
-                    <span>⚠️ 倒水违规！(后墩牌力必须 ≥ 中墩 ≥ 前墩)</span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={handleSwapMidBack}
-                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold hover:text-white transition cursor-pointer"
-                    >
-                      🔄 对调中后墩
-                    </button>
-                    <button
-                      onClick={handleChangePattern}
-                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black transition cursor-pointer shadow"
-                    >
-                      ✨ 变换合法牌型
-                    </button>
-                  </div>
+            {/* Real-time Dao Shui Alert (Only shown on actual violation) */}
+            {front.length === 3 && mid.length === 5 && back.length === 5 && isCurrentDaoShui && (
+              <div className="w-full max-w-2xl bg-gradient-to-r from-rose-950/90 via-slate-900 to-rose-950/90 border-2 border-rose-500/80 rounded-2xl p-2.5 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-rose-200 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2 font-bold">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>⚠️ 倒水违规！(后墩牌力必须 ≥ 中墩 ≥ 前墩)</span>
                 </div>
-              ) : (
-                <div className="w-full max-w-2xl bg-emerald-950/40 border border-emerald-500/30 rounded-2xl px-4 py-1.5 text-[11px] font-bold text-emerald-300 flex items-center justify-center gap-2 animate-in fade-in duration-200">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>✅ 牌型合规（后墩 ≥ 中墩 ≥ 前墩，绝无倒水）</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleSwapMidBack}
+                    className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold hover:text-white transition cursor-pointer"
+                  >
+                    🔄 对调中后墩
+                  </button>
+                  <button
+                    onClick={handleChangePattern}
+                    className="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black transition cursor-pointer shadow"
+                  >
+                    ✨ 变换合法牌型
+                  </button>
                 </div>
-              )
+              </div>
             )}
 
             {/* Bottom Actions: Exactly Two Buttons (变换牌型 & 提交牌型) */}
@@ -1633,10 +1626,6 @@ export default function App() {
           </div>
         )}
       </main>
-      {/* 5. Clean Footer */}
-      <footer className="shrink-0 border-t border-slate-800/80 bg-slate-900/40 px-6 py-2.5 text-center text-xs text-slate-500">
-        <div>十三水 (Chinese Poker) · 纯粹经典牌局</div>
-      </footer>
 
       {/* Modals */}
       <AuthModal
