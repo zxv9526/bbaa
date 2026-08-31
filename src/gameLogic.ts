@@ -96,7 +96,7 @@ export function detectSpecialHand(cards: Card[]): SpecialHandType | null {
     return 'Eight of a Kind'; // 八仙过海 (8张A/8同)
   }
 
-  // 1. 至尊青龙 (同花一条龙)
+  // 1. 至尊青龙 (同花一条龙 A-K)
   const isOneSuit = suits.every(s => s === suits[0]);
   const uniqueRanks = new Set(ranks);
   if (uniqueRanks.size === 13) {
@@ -118,48 +118,50 @@ export function detectSpecialHand(cards: Card[]): SpecialHandType | null {
   const royalsCount = ranks.filter(r => r >= 11).length;
   if (royalsCount >= 12) return 'Twelve Royals';
 
-  // 3. 三分天下 (3套铁支 / 4条) -> countValues: [4, 4, 4, 1]
+  // 3. 三同花顺 (前中后三墩皆为同花顺)
+  if (canFormThreeStraightFlushes(cards)) {
+    return 'Three Straight Flushes';
+  }
+
+  // 4. 三分天下 (3套铁支 / 4条) -> countValues: [4, 4, 4, 1]
   if (countValues[0] === 4 && countValues[1] === 4 && countValues[2] === 4) {
     return 'Three Quads';
   }
 
-  // 4. 全大 (全部 >= 8)
+  // 5. 全大 (全部 >= 8)
   if (ranks.every(r => r >= 8)) return 'All High';
 
-  // 5. 全小 (全部 <= 8)
+  // 6. 全小 (全部 <= 8)
   if (ranks.every(r => r <= 8)) return 'All Low';
 
-  // 6. 凑一色 (全红牌 H/D 或 全黑牌 S/C)
+  // 7. 凑一色 (全红牌 H/D 或 全黑牌 S/C)
   const isAllRed = suits.every(s => s === 'H' || s === 'D');
   const isAllBlack = suits.every(s => s === 'S' || s === 'C');
   if (isAllRed || isAllBlack) return 'Same Color';
 
-  // 7. 四套三条 -> countValues: [3, 3, 3, 3, 1]
+  // 8. 四套三条 -> countValues: [3, 3, 3, 3, 1]
   if (countValues[0] === 3 && countValues[1] === 3 && countValues[2] === 3 && countValues[3] === 3) {
     return 'Four Triples';
   }
 
-  // 8. 五对三条 -> [3, 2, 2, 2, 2, 2]
-  if (countValues[0] === 3 && countValues[1] === 2 && countValues[2] === 2 && countValues[3] === 2 && countValues[4] === 2 && countValues[5] === 2) {
+  // 9. 五对三条 -> [3, 2, 2, 2, 2, 2] 或 [4, 3, 2, 2, 2] 等
+  const tripsCount = countValues.filter(c => c >= 3).length;
+  const pairsEquivalent = countValues.reduce((sum, c) => sum + Math.floor(c / 2), 0);
+  if (tripsCount >= 1 && pairsEquivalent >= 6) {
     return 'Five Pairs One Triple';
   }
 
-  // 9. 六对半 -> 6个对子 + 1单张 -> [2, 2, 2, 2, 2, 2, 1]
-  const pairCount = countValues.filter(c => c === 2).length;
-  if (pairCount === 6 || (countValues[0] === 4 && pairCount === 4)) {
+  // 10. 六对半 -> 6个对子 + 1单张 (总对子当量 >= 6)
+  if (pairsEquivalent >= 6) {
     return 'Six Pairs';
   }
 
-  // 检查是否可能为 三同花 或 三顺子
-  // 检查三同花 (前3同花，中5同花，后5同花)
-  const suitGroups: Record<Suit, Card[]> = { S: [], H: [], C: [], D: [] };
-  cards.forEach(c => suitGroups[c.suit].push(c));
-  const suitLengths = Object.values(suitGroups).map(g => g.length).filter(l => l > 0).sort((a, b) => b - a);
-  // 可能的花色分布: 5+5+3 或 8+5 或 10+3 等
+  // 11. 三同花 (前3同花，中5同花，后5同花)
   if (canFormThreeFlushes(cards)) {
     return 'Three Flushes';
   }
 
+  // 12. 三顺子 (前3顺子，中5顺子，后5顺子)
   if (canFormThreeStraights(cards)) {
     return 'Three Straights';
   }
@@ -167,12 +169,59 @@ export function detectSpecialHand(cards: Card[]): SpecialHandType | null {
   return null;
 }
 
+// 辅助检测三同花顺 (Three Straight Flushes)
+function canFormThreeStraightFlushes(cards: Card[]): boolean {
+  const suits: Record<Suit, Card[]> = { S: [], H: [], C: [], D: [] };
+  cards.forEach(c => suits[c.suit].push(c));
+
+  // 3墩同花顺必须每墩都是同花，故手牌花色分布只可能是 [5, 5, 3] 等同花组合
+  for (const s of Object.keys(suits) as Suit[]) {
+    const sCards = suits[s];
+    if (sCards.length < 3) continue;
+  }
+
+  const all3 = getKCombinations(cards, 3);
+  for (const f3 of all3) {
+    // 前墩是否为同花且3连张
+    if (f3[0].suit === f3[1].suit && f3[1].suit === f3[2].suit && is3CardStraight(f3)) {
+      const fIds = new Set(f3.map(c => c.id));
+      const rem10 = cards.filter(c => !fIds.has(c.id));
+      const all5 = getKCombinations(rem10, 5);
+      for (const m5 of all5) {
+        if (m5.every(c => c.suit === m5[0].suit) && is5CardStraight(m5)) {
+          const mIds = new Set(m5.map(c => c.id));
+          const b5 = rem10.filter(c => !mIds.has(c.id));
+          if (b5.every(c => c.suit === b5[0].suit) && is5CardStraight(b5)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function is3CardStraight(cards: Card[]): boolean {
+  const r = cards.map(c => c.rank).sort((a, b) => b - a);
+  if (r[0] === r[1] + 1 && r[1] === r[2] + 1) return true;
+  if (r[0] === 14 && r[1] === 3 && r[2] === 2) return true; // A-2-3
+  return false;
+}
+
+function is5CardStraight(cards: Card[]): boolean {
+  const r = cards.map(c => c.rank).sort((a, b) => b - a);
+  const isNormal = r.every((val, i) => i === 0 || val === r[i - 1] - 1);
+  if (isNormal) return true;
+  if (r.join(',') === '14,5,4,3,2') return true; // A-2-3-4-5
+  return false;
+}
+
 // 辅助检测三同花
 function canFormThreeFlushes(cards: Card[]): boolean {
   const suits: Record<Suit, Card[]> = { S: [], H: [], C: [], D: [] };
   cards.forEach(c => suits[c.suit].push(c));
   const counts = Object.values(suits).map(arr => arr.length);
-  // 要组成 5, 5, 3 或 5, 8 (分解为5+3) 或 13 等
+  
   // 必须满足能凑出 5, 5, 3
   const partitions = [
     [5, 5, 3],
@@ -181,7 +230,6 @@ function canFormThreeFlushes(cards: Card[]): boolean {
     [13]
   ];
   for (const part of partitions) {
-    // 检查counts是否能覆盖该partition
     const cCopy = [...counts].sort((a, b) => b - a);
     let matched = true;
     for (const req of part) {
@@ -198,13 +246,26 @@ function canFormThreeFlushes(cards: Card[]): boolean {
   return false;
 }
 
-// 辅助检测三顺子 (简化检测)
+// 辅助检测三顺子 (Three Straights)
 function canFormThreeStraights(cards: Card[]): boolean {
-  // 3顺子：前3顺子，中5顺子，后5顺子
-  // 尝试启发式快速搜索
-  const sorted = sortCards(cards);
-  // 若包含三顺子通常有较广的点数分布
-  return false; // 严谨判断由自动理牌搜索提供
+  const all3 = getKCombinations(cards, 3);
+  for (const f3 of all3) {
+    if (is3CardStraight(f3)) {
+      const fIds = new Set(f3.map(c => c.id));
+      const rem10 = cards.filter(c => !fIds.has(c.id));
+      const all5 = getKCombinations(rem10, 5);
+      for (const m5 of all5) {
+        if (is5CardStraight(m5)) {
+          const mIds = new Set(m5.map(c => c.id));
+          const b5 = rem10.filter(c => !mIds.has(c.id));
+          if (is5CardStraight(b5)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
 }
 
 // 评估单墩牌力 (3张或5张)

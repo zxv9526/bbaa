@@ -107,6 +107,17 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
     }
   };
 
+  // Swap Front and Middle
+  const handleSwapFrontMid = () => {
+    sounds.playSwap();
+    const currentFront = [...front];
+    const currentMid = [...mid];
+    const newFront = currentMid.slice(0, 3);
+    const newMid = [...currentFront, ...currentMid.slice(3, 5)];
+    setFront(newFront);
+    setMid(newMid);
+  };
+
   // Swap Middle and Back
   const handleSwapMidBack = () => {
     sounds.playSwap();
@@ -315,23 +326,30 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
           <div className="bg-slate-950/80 border border-slate-800 rounded-3xl p-5 flex flex-col items-center gap-4">
             <div className="w-full flex items-center justify-between text-xs">
               <span className="font-bold text-white">当前牌位布局</span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <button
+                  onClick={handleSwapFrontMid}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1 transition active:scale-95"
+                  title="交换前墩与中墩"
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5 text-blue-400" /> 前中互换
+                </button>
                 <button
                   onClick={handleSwapMidBack}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1 transition"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1 transition active:scale-95"
                   title="交换中墩与后墩"
                 >
-                  <ArrowUpDown className="w-3.5 h-3.5" /> 中后墩互换
+                  <ArrowUpDown className="w-3.5 h-3.5 text-indigo-400" /> 中后互换
                 </button>
                 <button
                   onClick={() => handleApplySuggestion(0)}
-                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 text-xs font-bold flex items-center gap-1 transition"
+                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 text-xs font-bold flex items-center gap-1 transition active:scale-95"
                 >
-                  <Sparkles className="w-3.5 h-3.5" /> 一键智能理牌
+                  <Sparkles className="w-3.5 h-3.5" /> 智能理牌
                 </button>
                 <button
                   onClick={handleClearSlots}
-                  className="px-3 py-1.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-400 text-xs font-bold transition"
+                  className="px-2.5 py-1.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-400 text-xs font-bold transition active:scale-95"
                 >
                   清空
                 </button>
@@ -362,7 +380,7 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
                     </span>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-1.5 sm:gap-2 overflow-x-auto max-w-full justify-center p-1">
                   {front.map((c, i) => (
                     <CardView
                       key={`pf_${i}`}
@@ -375,7 +393,7 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
               </div>
 
               {/* Mid */}
-              <div className="flex flex-col items-center gap-1">
+              <div className="flex flex-col items-center gap-1 w-full">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
                   <span>中墩 (5张)</span>
                   {mEval && (
@@ -384,7 +402,7 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
                     </span>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-1.5 sm:gap-2 overflow-x-auto max-w-full justify-center p-1">
                   {mid.map((c, i) => (
                     <CardView
                       key={`pm_${i}`}
@@ -397,7 +415,7 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
               </div>
 
               {/* Back */}
-              <div className="flex flex-col items-center gap-1">
+              <div className="flex flex-col items-center gap-1 w-full">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
                   <span>后墩 (5张)</span>
                   {bEval && (
@@ -406,7 +424,7 @@ export function PracticeModal({ isOpen, onClose }: PracticeModalProps) {
                     </span>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-1.5 sm:gap-2 overflow-x-auto max-w-full justify-center p-1">
                   {back.map((c, i) => (
                     <CardView
                       key={`pb_${i}`}

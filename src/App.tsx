@@ -617,6 +617,59 @@ export default function App() {
     setErrorMsg('');
   };
 
+  // Swap Front and Middle Duns (Takes top 3 cards from middle)
+  const handleSwapFrontMid = () => {
+    sounds.playSwap();
+    triggerHaptic('medium');
+    if (front.length === 3 && mid.length === 5) {
+      const newFront = mid.slice(0, 3);
+      const newMid = [...front, ...mid.slice(3, 5)];
+      setFront(newFront);
+      setMid(newMid);
+      setErrorMsg('');
+    } else {
+      const tempF = [...front];
+      setFront([...mid.slice(0, 3)]);
+      setMid([...tempF, ...mid.slice(3)]);
+      setErrorMsg('');
+    }
+  };
+
+  // Clear all placed cards back to hand pool for manual placement
+  const handleClearAllToPool = () => {
+    sounds.playCardPick();
+    triggerHaptic('light');
+    const all = [...front, ...mid, ...back, ...pool];
+    setFront([]);
+    setMid([]);
+    setBack([]);
+    setPool(sortCards(all));
+    setSelectedCardIds([]);
+    setErrorMsg('');
+  };
+
+  // Direct strategy selector ('tail' | 'mid' | 'head')
+  const handleSelectStrategy = (strategy: 'tail' | 'mid' | 'head') => {
+    sounds.playSwap();
+    triggerHaptic('light');
+    if (patternChangerRef.current) {
+      const res = patternChangerRef.current.getPatternByStrategy(strategy);
+      if (res && res.pattern) {
+        setFront([...res.pattern.front]);
+        setMid([...res.pattern.middle]);
+        setBack([...res.pattern.back]);
+        setPool([]);
+        setSelectedCardIds([]);
+        setErrorMsg('');
+        setPatternInfo({
+          tag: res.pattern.tag,
+          index: res.index,
+          total: res.total
+        });
+      }
+    }
+  };
+
   // Smart Pattern Changer (严格保证绝不倒水)
   const handleChangePattern = () => {
     sounds.playSwap();
@@ -1355,7 +1408,7 @@ export default function App() {
               {/* 1. FRONT DUN (前墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('front')}
-                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[110px] sm:min-h-[135px] ${
+                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[125px] sm:min-h-[150px] ${
                   selectedCardIds.length > 0
                     ? 'border-blue-500/60 bg-blue-950/30 cursor-pointer hover:bg-blue-900/40 hover:border-blue-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
@@ -1403,7 +1456,7 @@ export default function App() {
                         key={c.id}
                         card={c}
                         size="md"
-                        className={idx > 0 ? '-ml-11 min-[375px]:-ml-12 min-[414px]:-ml-13 sm:-ml-17 md:-ml-19' : ''}
+                        className={idx > 0 ? '-ml-12 min-[375px]:-ml-14 min-[414px]:-ml-16 sm:-ml-20 md:-ml-23' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
                       />
@@ -1415,7 +1468,7 @@ export default function App() {
               {/* 2. MIDDLE DUN (中墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('mid')}
-                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[110px] sm:min-h-[135px] ${
+                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[125px] sm:min-h-[150px] ${
                   selectedCardIds.length > 0
                     ? 'border-indigo-500/60 bg-indigo-950/30 cursor-pointer hover:bg-indigo-900/40 hover:border-indigo-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
@@ -1463,7 +1516,7 @@ export default function App() {
                         key={c.id}
                         card={c}
                         size="md"
-                        className={idx > 0 ? '-ml-11 min-[375px]:-ml-12 min-[414px]:-ml-13 sm:-ml-17 md:-ml-19' : ''}
+                        className={idx > 0 ? '-ml-12 min-[375px]:-ml-14 min-[414px]:-ml-16 sm:-ml-20 md:-ml-23' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
                       />
@@ -1475,7 +1528,7 @@ export default function App() {
               {/* 3. BACK DUN (后墩) */}
               <div
                 onClick={() => selectedCardIds.length > 0 && handleMoveSelectedTo('back')}
-                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[110px] sm:min-h-[135px] ${
+                className={`flex-1 flex flex-col justify-between p-1 sm:p-1.5 rounded-xl border transition-all min-h-[125px] sm:min-h-[150px] ${
                   selectedCardIds.length > 0
                     ? 'border-purple-500/60 bg-purple-950/30 cursor-pointer hover:bg-purple-900/40 hover:border-purple-400 shadow-md'
                     : 'border-slate-800/80 bg-slate-950/50'
@@ -1523,7 +1576,7 @@ export default function App() {
                         key={c.id}
                         card={c}
                         size="md"
-                        className={idx > 0 ? '-ml-11 min-[375px]:-ml-12 min-[414px]:-ml-13 sm:-ml-17 md:-ml-19' : ''}
+                        className={idx > 0 ? '-ml-12 min-[375px]:-ml-14 min-[414px]:-ml-16 sm:-ml-20 md:-ml-23' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
                       />
@@ -1534,33 +1587,39 @@ export default function App() {
 
             </div>
 
-            {/* Bottom Actions: Exactly Two High-Priority Buttons (变换牌型 & 提交牌型) */}
-            <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1 shrink-0 pt-0.5">
+            {/* Bottom Actions: Clean Two Primary Action Buttons (变换牌型 & 提交牌型) */}
+            <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1.5 shrink-0 pt-1 pb-1">
               {patternInfo && (
-                <div className="text-[11px] font-bold text-amber-300 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full animate-in fade-in flex items-center gap-1">
+                <div className="text-[11px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/40 px-3 py-0.5 rounded-full animate-in fade-in flex items-center gap-1.5 shadow-sm">
                   <span>✨ 方案:</span>
                   <span className="text-amber-200">{patternInfo.tag}</span>
                   <span className="text-slate-400 font-medium">({patternInfo.index}/{patternInfo.total})</span>
                 </div>
               )}
+
               <div className="w-full flex items-center justify-center gap-2.5 sm:gap-4">
                 <button
                   id="btn-change-pattern"
                   onClick={handleChangePattern}
-                  className="flex-1 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs sm:text-base font-black flex items-center justify-center gap-1.5 shadow-lg shadow-amber-950/30 transition active:scale-95 cursor-pointer"
-                  title="点击切换下一组合法牌型"
+                  className="flex-1 py-3 sm:py-3.5 px-4 rounded-2xl bg-slate-850 hover:bg-slate-800 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg shadow-amber-950/40 transition active:scale-95 cursor-pointer"
+                  title="点击切换下一组不倒水合法方案"
                 >
-                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
                   <span>变换牌型</span>
                 </button>
 
                 <button
                   id="btn-submit-arrangement"
                   onClick={handleSubmitArrangement}
-                  className="flex-1 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs sm:text-base font-black flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer"
+                  disabled={isCurrentDaoShui || (front.length + mid.length + back.length !== 13)}
+                  className={`flex-1 py-3 sm:py-3.5 px-4 rounded-2xl text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer ${
+                    isCurrentDaoShui || (front.length + mid.length + back.length !== 13)
+                      ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
+                      : 'bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-600/30'
+                  }`}
                   title="提交牌型"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
+                  <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
                   <span>提交牌型 ({front.length + mid.length + back.length}/13)</span>
                 </button>
               </div>

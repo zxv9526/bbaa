@@ -110,6 +110,26 @@ export class PatternChanger {
     return `${fIds}|${mIds}|${bIds}`;
   }
   
+  public getPatternAt(index: number): { pattern: ArrangementOption; index: number; total: number } | null {
+    if (this.patterns.length === 0) return null;
+    const boundedIndex = Math.max(0, Math.min(index, this.patterns.length - 1));
+    const pattern = this.patterns[boundedIndex];
+    this.currentIndex = (boundedIndex + 1) % this.patterns.length;
+    return { pattern, index: boundedIndex + 1, total: this.patterns.length };
+  }
+
+  public getPatternByStrategy(strategy: 'tail' | 'mid' | 'head'): { pattern: ArrangementOption; index: number; total: number } | null {
+    if (this.patterns.length === 0) return null;
+    const tagKeyword = strategy === 'tail' ? '尾墩' : strategy === 'mid' ? '中墩' : '头墩';
+    const foundIdx = this.patterns.findIndex(p => p.tag.includes(tagKeyword));
+    if (foundIdx !== -1) {
+      return this.getPatternAt(foundIdx);
+    }
+    // Default fallback by index
+    const fallbackIdx = strategy === 'tail' ? 0 : strategy === 'mid' ? 1 : 2;
+    return this.getPatternAt(fallbackIdx % this.patterns.length);
+  }
+
   public getCount(): number {
     return this.patterns.length;
   }

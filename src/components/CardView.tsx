@@ -48,9 +48,9 @@ export function CardView({
   }, []);
 
   const sizeClasses = {
-    sm: 'w-11 h-16 sm:w-13 sm:h-19 text-xs rounded-lg shrink-0',
-    md: 'w-[82px] h-[116px] min-[375px]:w-[88px] min-[375px]:h-[124px] min-[414px]:w-[96px] min-[414px]:h-[136px] sm:w-[110px] sm:h-[154px] md:w-[122px] md:h-[170px] text-sm sm:text-base rounded-lg sm:rounded-xl shrink-0',
-    lg: 'w-22 h-31 sm:w-28 sm:h-39 text-base rounded-lg sm:rounded-xl shrink-0'
+    sm: 'w-12 h-17 sm:w-14 sm:h-20 text-xs rounded-lg shrink-0',
+    md: 'w-[94px] h-[132px] min-[375px]:w-[102px] min-[375px]:h-[144px] min-[414px]:w-[112px] min-[414px]:h-[158px] sm:w-[130px] sm:h-[182px] md:w-[145px] md:h-[202px] text-base sm:text-lg rounded-xl shrink-0',
+    lg: 'w-26 h-37 sm:w-34 sm:h-48 text-lg rounded-xl shrink-0'
   }[size];
 
   const handleClick = (e: React.MouseEvent) => {
@@ -277,19 +277,19 @@ export function CardView({
 
       {/* Top Left */}
       <div className="flex items-center gap-0.5 leading-none">
-        <span className="font-black text-sm sm:text-base tracking-tighter">{rankStr}</span>
-        <span className="text-sm sm:text-base leading-none">{suitSymbol}</span>
+        <span className="font-black text-base sm:text-lg tracking-tighter">{rankStr}</span>
+        <span className="text-base sm:text-lg leading-none">{suitSymbol}</span>
       </div>
 
       {/* Center Suit */}
-      <div className="text-3xl sm:text-4xl font-normal leading-none self-center opacity-90 my-auto">
+      <div className="text-4xl sm:text-5xl font-normal leading-none self-center opacity-90 my-auto">
         {suitSymbol}
       </div>
 
       {/* Bottom Right */}
       <div className="flex items-center gap-0.5 leading-none self-end rotate-180">
-        <span className="font-black text-sm sm:text-base tracking-tighter">{rankStr}</span>
-        <span className="text-sm sm:text-base leading-none">{suitSymbol}</span>
+        <span className="font-black text-base sm:text-lg tracking-tighter">{rankStr}</span>
+        <span className="text-base sm:text-lg leading-none">{suitSymbol}</span>
       </div>
     </div>
   );
