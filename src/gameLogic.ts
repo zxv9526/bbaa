@@ -1214,10 +1214,25 @@ export function autoFixDaoShui(cards: Card[]): { front: Card[]; middle: Card[]; 
   return null;
 }
 
-// 演练模式：生成指定特殊牌型
+// 试玩练习场固定特殊牌型轮换序列 (涵盖全部13种经典十三水特殊牌型)
+export const PRACTICE_SPECIAL_HANDS_SEQUENCE: SpecialHandType[] = [
+  'Supreme Dragon',        // 1. 至尊青龙 (108水)
+  'Dragon',                // 2. 一条龙 (52水)
+  'Twelve Royals',         // 3. 十二皇族 (36水)
+  'Three Straight Flushes',// 4. 三同花顺 (26水)
+  'Three Quads',           // 5. 三分天下 (24水)
+  'All High',              // 6. 全大 (20水)
+  'All Low',               // 7. 全小 (20水)
+  'Same Color',            // 8. 凑一色 (16水)
+  'Four Triples',          // 9. 四套三条 (12水)
+  'Five Pairs One Triple', // 10. 五对三条 (10水)
+  'Six Pairs',             // 11. 六对半 (8水)
+  'Three Flushes',         // 12. 三同花 (6水)
+  'Three Straights'        // 13. 三顺子 (6水)
+];
+
+// 演练模式：生成指定特殊牌型 (固定牌型，确保100%命中特殊牌型规则)
 export function generateSpecialHand(type: SpecialHandType): Card[] {
-  const suits: Suit[] = ['S', 'H', 'C', 'D'];
-  const allCards = createDeck();
   const doubleDeck = createDoubleDeck();
 
   // 八仙过海 (8张A)
@@ -1241,8 +1256,8 @@ export function generateSpecialHand(type: SpecialHandType): Card[] {
     return [...aces, ...shuffle(others).slice(0, 7)];
   }
 
+  // 1. 至尊青龙 (同花黑桃 A-K 一条龙)
   if (type === 'Supreme Dragon') {
-    // 黑桃 A-K 一条龙
     return [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2].map(r => ({
       id: `${r}-S`,
       suit: 'S' as Suit,
@@ -1250,8 +1265,8 @@ export function generateSpecialHand(type: SpecialHandType): Card[] {
     }));
   }
 
+  // 2. 一条龙 (杂色 A-K 一条龙)
   if (type === 'Dragon') {
-    // 杂色一条龙
     const patternSuits: Suit[] = ['S', 'H', 'C', 'D', 'S', 'H', 'C', 'D', 'S', 'H', 'C', 'D', 'S'];
     return [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2].map((r, i) => ({
       id: `${r}-${patternSuits[i]}`,
@@ -1260,70 +1275,121 @@ export function generateSpecialHand(type: SpecialHandType): Card[] {
     }));
   }
 
+  // 3. 十二皇族 (12张 JQK A + 1张2)
   if (type === 'Twelve Royals') {
-    // 12张 JQK A
-    const royals: Card[] = [];
-    for (const r of [14, 13, 12, 11]) {
-      for (const s of ['S', 'H', 'C', 'D']) {
-        if (royals.length < 12) {
-          royals.push({ id: `${r}-${s}`, suit: s as Suit, rank: r as Rank });
-        }
-      }
-    }
-    royals.push({ id: '2-S', suit: 'S', rank: 2 });
-    return royals;
+    return [
+      { id: '14-S', suit: 'S', rank: 14 }, { id: '14-H', suit: 'H', rank: 14 }, { id: '14-C', suit: 'C', rank: 14 }, { id: '14-D', suit: 'D', rank: 14 },
+      { id: '13-S', suit: 'S', rank: 13 }, { id: '13-H', suit: 'H', rank: 13 }, { id: '13-C', suit: 'C', rank: 13 }, { id: '13-D', suit: 'D', rank: 13 },
+      { id: '12-S', suit: 'S', rank: 12 }, { id: '12-H', suit: 'H', rank: 12 }, { id: '12-C', suit: 'C', rank: 12 }, { id: '12-D', suit: 'D', rank: 12 },
+      { id: '2-S', suit: 'S', rank: 2 }
+    ];
   }
 
+  // 4. 三同花顺 (前墩梅花3-4-5，中墩红桃5-6-7-8-9，后墩黑桃9-10-J-Q-K)
+  if (type === 'Three Straight Flushes') {
+    return [
+      { id: '3-C', suit: 'C', rank: 3 }, { id: '4-C', suit: 'C', rank: 4 }, { id: '5-C', suit: 'C', rank: 5 },
+      { id: '5-H', suit: 'H', rank: 5 }, { id: '6-H', suit: 'H', rank: 6 }, { id: '7-H', suit: 'H', rank: 7 }, { id: '8-H', suit: 'H', rank: 8 }, { id: '9-H', suit: 'H', rank: 9 },
+      { id: '9-S', suit: 'S', rank: 9 }, { id: '10-S', suit: 'S', rank: 10 }, { id: '11-S', suit: 'S', rank: 11 }, { id: '12-S', suit: 'S', rank: 12 }, { id: '13-S', suit: 'S', rank: 13 }
+    ];
+  }
+
+  // 5. 三分天下 (3套铁支: 4张10 + 4张9 + 4张8 + 1张2)
   if (type === 'Three Quads') {
-    // 3套铁支 (AAA, KKKK, QQQQ + 1)
-    const cards: Card[] = [];
-    for (const r of [14, 13, 12]) {
-      for (const s of suits) {
-        cards.push({ id: `${r}-${s}`, suit: s, rank: r as Rank });
-      }
-    }
-    cards.push({ id: '2-S', suit: 'S', rank: 2 });
-    return cards;
+    return [
+      { id: '10-S', suit: 'S', rank: 10 }, { id: '10-H', suit: 'H', rank: 10 }, { id: '10-C', suit: 'C', rank: 10 }, { id: '10-D', suit: 'D', rank: 10 },
+      { id: '9-S', suit: 'S', rank: 9 }, { id: '9-H', suit: 'H', rank: 9 }, { id: '9-C', suit: 'C', rank: 9 }, { id: '9-D', suit: 'D', rank: 9 },
+      { id: '8-S', suit: 'S', rank: 8 }, { id: '8-H', suit: 'H', rank: 8 }, { id: '8-C', suit: 'C', rank: 8 }, { id: '8-D', suit: 'D', rank: 8 },
+      { id: '2-S', suit: 'S', rank: 2 }
+    ];
   }
 
+  // 6. 全大 (13张牌全部为 8 至 A)
   if (type === 'All High') {
-    // 全部 >= 8
-    const highCards = allCards.filter(c => c.rank >= 8);
-    return shuffle(highCards).slice(0, 13);
+    return [
+      { id: '8-S', suit: 'S', rank: 8 }, { id: '8-H', suit: 'H', rank: 8 }, { id: '8-C', suit: 'C', rank: 8 },
+      { id: '9-S', suit: 'S', rank: 9 }, { id: '9-H', suit: 'H', rank: 9 }, { id: '9-C', suit: 'C', rank: 9 },
+      { id: '10-S', suit: 'S', rank: 10 }, { id: '10-H', suit: 'H', rank: 10 }, { id: '10-D', suit: 'D', rank: 10 },
+      { id: '11-S', suit: 'S', rank: 11 }, { id: '12-H', suit: 'H', rank: 12 }, { id: '13-C', suit: 'C', rank: 13 }, { id: '14-D', suit: 'D', rank: 14 }
+    ];
   }
 
+  // 7. 全小 (13张牌全部为 2 至 8)
   if (type === 'All Low') {
-    // 全部 <= 8
-    const lowCards = allCards.filter(c => c.rank <= 8);
-    return shuffle(lowCards).slice(0, 13);
+    return [
+      { id: '2-S', suit: 'S', rank: 2 }, { id: '2-H', suit: 'H', rank: 2 },
+      { id: '3-S', suit: 'S', rank: 3 }, { id: '3-C', suit: 'C', rank: 3 },
+      { id: '4-H', suit: 'H', rank: 4 }, { id: '4-D', suit: 'D', rank: 4 },
+      { id: '5-S', suit: 'S', rank: 5 }, { id: '5-C', suit: 'C', rank: 5 },
+      { id: '6-H', suit: 'H', rank: 6 }, { id: '6-D', suit: 'D', rank: 6 },
+      { id: '7-S', suit: 'S', rank: 7 }, { id: '7-H', suit: 'H', rank: 7 },
+      { id: '8-C', suit: 'C', rank: 8 }
+    ];
   }
 
+  // 8. 凑一色 (13张全为红牌: 红桃与方块)
   if (type === 'Same Color') {
-    // 全红牌
-    const redCards = allCards.filter(c => c.suit === 'H' || c.suit === 'D');
-    return shuffle(redCards).slice(0, 13);
+    return [
+      { id: '2-H', suit: 'H', rank: 2 }, { id: '3-H', suit: 'H', rank: 3 }, { id: '5-H', suit: 'H', rank: 5 }, { id: '7-H', suit: 'H', rank: 7 }, { id: '8-H', suit: 'H', rank: 8 }, { id: '10-H', suit: 'H', rank: 10 }, { id: '12-H', suit: 'H', rank: 12 },
+      { id: '2-D', suit: 'D', rank: 2 }, { id: '3-D', suit: 'D', rank: 3 }, { id: '5-D', suit: 'D', rank: 5 }, { id: '7-D', suit: 'D', rank: 7 }, { id: '9-D', suit: 'D', rank: 9 }, { id: '11-D', suit: 'D', rank: 11 }
+    ];
   }
 
+  // 9. 四套三条 (4套3条 + 1张散牌)
+  if (type === 'Four Triples') {
+    return [
+      { id: '10-S', suit: 'S', rank: 10 }, { id: '10-H', suit: 'H', rank: 10 }, { id: '10-C', suit: 'C', rank: 10 },
+      { id: '9-S', suit: 'S', rank: 9 }, { id: '9-H', suit: 'H', rank: 9 }, { id: '9-C', suit: 'C', rank: 9 },
+      { id: '8-S', suit: 'S', rank: 8 }, { id: '8-H', suit: 'H', rank: 8 }, { id: '8-C', suit: 'C', rank: 8 },
+      { id: '7-S', suit: 'S', rank: 7 }, { id: '7-H', suit: 'H', rank: 7 }, { id: '7-C', suit: 'C', rank: 7 },
+      { id: '2-D', suit: 'D', rank: 2 }
+    ];
+  }
+
+  // 10. 五对三条 (5个对子 + 1个三条)
+  if (type === 'Five Pairs One Triple') {
+    return [
+      { id: '10-S', suit: 'S', rank: 10 }, { id: '10-H', suit: 'H', rank: 10 }, { id: '10-C', suit: 'C', rank: 10 },
+      { id: '9-S', suit: 'S', rank: 9 }, { id: '9-H', suit: 'H', rank: 9 },
+      { id: '8-S', suit: 'S', rank: 8 }, { id: '8-H', suit: 'H', rank: 8 },
+      { id: '7-S', suit: 'S', rank: 7 }, { id: '7-H', suit: 'H', rank: 7 },
+      { id: '6-S', suit: 'S', rank: 6 }, { id: '6-H', suit: 'H', rank: 6 },
+      { id: '5-S', suit: 'S', rank: 5 }, { id: '5-H', suit: 'H', rank: 5 }
+    ];
+  }
+
+  // 11. 六对半 (6个对子 + 1张单张)
   if (type === 'Six Pairs') {
-    // 六对半
-    const ranks: Rank[] = [14, 13, 12, 11, 10, 9];
-    const cards: Card[] = [];
-    ranks.forEach(r => {
-      cards.push({ id: `${r}-S`, suit: 'S', rank: r });
-      cards.push({ id: `${r}-H`, suit: 'H', rank: r });
-    });
-    cards.push({ id: '2-C', suit: 'C', rank: 2 });
-    return cards;
+    return [
+      { id: '10-S', suit: 'S', rank: 10 }, { id: '10-H', suit: 'H', rank: 10 },
+      { id: '9-S', suit: 'S', rank: 9 }, { id: '9-H', suit: 'H', rank: 9 },
+      { id: '8-S', suit: 'S', rank: 8 }, { id: '8-H', suit: 'H', rank: 8 },
+      { id: '7-S', suit: 'S', rank: 7 }, { id: '7-H', suit: 'H', rank: 7 },
+      { id: '6-S', suit: 'S', rank: 6 }, { id: '6-H', suit: 'H', rank: 6 },
+      { id: '5-S', suit: 'S', rank: 5 }, { id: '5-H', suit: 'H', rank: 5 },
+      { id: '2-C', suit: 'C', rank: 2 }
+    ];
   }
 
+  // 12. 三同花 (前墩、中墩、尾墩三墩各为同花)
   if (type === 'Three Flushes') {
-    // 三同花
-    const spades = allCards.filter(c => c.suit === 'S').slice(0, 5);
-    const hearts = allCards.filter(c => c.suit === 'H').slice(0, 5);
-    const clubs = allCards.filter(c => c.suit === 'C').slice(0, 3);
-    return [...spades, ...hearts, ...clubs];
+    return [
+      { id: '2-C', suit: 'C', rank: 2 }, { id: '5-C', suit: 'C', rank: 5 }, { id: '9-C', suit: 'C', rank: 9 },
+      { id: '2-H', suit: 'H', rank: 2 }, { id: '4-H', suit: 'H', rank: 4 }, { id: '7-H', suit: 'H', rank: 7 }, { id: '10-H', suit: 'H', rank: 10 }, { id: '13-H', suit: 'H', rank: 13 },
+      { id: '3-S', suit: 'S', rank: 3 }, { id: '6-S', suit: 'S', rank: 6 }, { id: '8-S', suit: 'S', rank: 8 }, { id: '11-S', suit: 'S', rank: 11 }, { id: '14-S', suit: 'S', rank: 14 }
+    ];
+  }
+
+  // 13. 三顺子 (前墩、中墩、尾墩三墩各为顺子)
+  if (type === 'Three Straights') {
+    return [
+      { id: '2-S', suit: 'S', rank: 2 }, { id: '3-H', suit: 'H', rank: 3 }, { id: '4-C', suit: 'C', rank: 4 },
+      { id: '3-D', suit: 'D', rank: 3 }, { id: '4-S', suit: 'S', rank: 4 }, { id: '5-H', suit: 'H', rank: 5 }, { id: '6-C', suit: 'C', rank: 6 }, { id: '7-D', suit: 'D', rank: 7 },
+      { id: '8-S', suit: 'S', rank: 8 }, { id: '9-H', suit: 'H', rank: 9 }, { id: '10-C', suit: 'C', rank: 10 }, { id: '11-D', suit: 'D', rank: 11 }, { id: '12-S', suit: 'S', rank: 12 }
+    ];
   }
 
   // 兜底返回随机13张
+  const allCards = createDeck();
   return shuffle(allCards).slice(0, 13);
 }

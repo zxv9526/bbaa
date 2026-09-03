@@ -28,31 +28,31 @@ const SPECIAL_HAND_OPTIONS: {
   {
     type: 'Dragon',
     name: '一条龙',
-    water: 36,
-    desc: '2 到 A 各一张牌，不限花色',
+    water: 52,
+    desc: '2 到 A 各一张牌，不限花色（A到K顺畅贯通）',
     category: 'super',
     badgeColor: 'from-purple-500 to-indigo-600 text-white'
   },
   {
     type: 'Twelve Royals',
     name: '十二皇族',
-    water: 24,
-    desc: '13 张牌全由 J、Q、K、A 组成（全大牌族）',
+    water: 36,
+    desc: '13 张牌全由 J、Q、K、A 皇族大牌组成',
     category: 'super',
     badgeColor: 'from-rose-500 to-pink-600 text-white'
   },
   {
     type: 'Three Straight Flushes',
     name: '三同花顺',
-    water: 20,
-    desc: '前墩、中墩、后墩均为同花顺',
+    water: 26,
+    desc: '前墩、中墩、后墩三墩均为同花顺',
     category: 'high',
     badgeColor: 'from-blue-500 to-cyan-600 text-white'
   },
   {
     type: 'Three Quads',
     name: '三分天下 (三铁支)',
-    water: 20,
+    water: 24,
     desc: '牌中有三组铁支（四条炸弹）',
     category: 'high',
     badgeColor: 'from-emerald-500 to-teal-600 text-white'
@@ -60,7 +60,7 @@ const SPECIAL_HAND_OPTIONS: {
   {
     type: 'All High',
     name: '全大 (8-A)',
-    water: 10,
+    water: 20,
     desc: '13 张牌的点数均在 8、9、10、J、Q、K、A 之间',
     category: 'standard',
     badgeColor: 'from-amber-500/30 to-amber-500/50 text-amber-200'
@@ -68,15 +68,23 @@ const SPECIAL_HAND_OPTIONS: {
   {
     type: 'All Low',
     name: '全小 (2-8)',
-    water: 10,
+    water: 20,
     desc: '13 张牌的点数均在 2、3、4、5、6、7、8 之间',
     category: 'standard',
     badgeColor: 'from-sky-500/30 to-sky-500/50 text-sky-200'
   },
   {
+    type: 'Same Color',
+    name: '凑一色',
+    water: 16,
+    desc: '13 张牌全为红牌（红桃/方块）或全为黑牌（黑桃/梅花）',
+    category: 'standard',
+    badgeColor: 'from-rose-500/30 to-red-500/50 text-rose-200'
+  },
+  {
     type: 'Four Triples',
     name: '四套三条',
-    water: 6,
+    water: 12,
     desc: '包含 4 组三条外加 1 张单张',
     category: 'standard',
     badgeColor: 'from-violet-500/30 to-violet-500/50 text-violet-200'
@@ -84,7 +92,7 @@ const SPECIAL_HAND_OPTIONS: {
   {
     type: 'Five Pairs One Triple',
     name: '五对三条',
-    water: 5,
+    water: 10,
     desc: '5 组对子外加 1 组三条',
     category: 'standard',
     badgeColor: 'from-indigo-500/30 to-indigo-500/50 text-indigo-200'
@@ -92,7 +100,7 @@ const SPECIAL_HAND_OPTIONS: {
   {
     type: 'Six Pairs',
     name: '六对半',
-    water: 4,
+    water: 8,
     desc: '包含 6 组对子外加 1 张单张',
     category: 'standard',
     badgeColor: 'from-emerald-500/30 to-emerald-500/50 text-emerald-200'
@@ -100,7 +108,7 @@ const SPECIAL_HAND_OPTIONS: {
   {
     type: 'Three Flushes',
     name: '三同花',
-    water: 3,
+    water: 6,
     desc: '前墩、中墩、尾墩三墩全为同花',
     category: 'standard',
     badgeColor: 'from-teal-500/30 to-teal-500/50 text-teal-200'
@@ -108,7 +116,7 @@ const SPECIAL_HAND_OPTIONS: {
   {
     type: 'Three Straights',
     name: '三顺子',
-    water: 3,
+    water: 6,
     desc: '前墩、中墩、尾墩三墩全为顺子',
     category: 'standard',
     badgeColor: 'from-slate-700 to-slate-800 text-slate-200'
