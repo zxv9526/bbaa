@@ -17,7 +17,9 @@ import {
   evaluateHand,
   findAvailablePatterns,
   DetectedPattern,
-  autoFixDaoShui
+  autoFixDaoShui,
+  generateSpecialHand,
+  SPECIAL_HAND_CN
 } from './gameLogic';
 import { CardView } from './components/CardView';
 import { HandSummary } from './components/HandSummary';
@@ -31,6 +33,8 @@ import { CardSkinModal } from './components/CardSkinModal';
 import { AuthModal } from './components/AuthModal';
 import { PointsManagementModal } from './components/PointsManagementModal';
 import { NoPointsModal } from './components/NoPointsModal';
+import { PracticeHeaderBar } from './components/PracticeHeaderBar';
+import { SpecialHandLabModal } from './components/SpecialHandLabModal';
 import { initCardSkins } from './lib/cardSkin';
 import {
   getCurrentAccount,
@@ -101,7 +105,7 @@ import { saveMatchReplay } from './lib/matchReplay';
 import { triggerHaptic } from './lib/haptics';
 import { ArrowLeftRight, History, GraduationCap } from 'lucide-react';
 
-type GameMode = 'vs_ai_8p' | 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer';
+type GameMode = 'vs_ai_8p' | 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer' | 'practice';
 
 export default function App() {
   const [currentAccount, setCurrentAccount] = useState<UserAccount>(() => getCurrentAccount());
@@ -132,6 +136,7 @@ export default function App() {
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [showRankModal, setShowRankModal] = useState(false);
   const [showPracticeModal, setShowPracticeModal] = useState(false);
+  const [showSpecialTesterModal, setShowSpecialTesterModal] = useState(false);
   const [showSkinModal, setShowSkinModal] = useState(false);
   const [showSubmitChoiceModal, setShowSubmitChoiceModal] = useState(false);
   const [showReplayModal, setShowReplayModal] = useState(false);
@@ -214,9 +219,9 @@ export default function App() {
     }
   }, []);
 
-  // 🔄 牌局进行中实时自动持久化 (防止掉线/刷新丢失)
+  // 🔄 牌局进行中实时自动持久化 (防止掉线/刷新丢失，真实场次强制保存)
   useEffect(() => {
-    if (gameState === 'arranging' && originalHand.length === 13) {
+    if (gameState === 'arranging' && originalHand.length === 13 && mode !== 'practice') {
       saveActiveMatchSession({
         phone: currentAccount.phone,
         mode,
@@ -306,19 +311,21 @@ export default function App() {
     refreshPlayerStats(newName);
   };
 
-  // Start a new local match (8P, 4P, or 2P)
+  // Start a new local match (8P, 4P, 2P, or practice)
   const startNewMatch = (selectedMode: GameMode = mode, seatOverride?: number) => {
-    // 🛡️ 积分门槛限制：没有积分不允许进入真实牌局
-    if (currentAccount.points <= 0) {
+    // 🛡️ 积分门槛限制：没有积分不允许进入真实牌局（试玩练习场免积分自由体验）
+    if (selectedMode !== 'practice' && currentAccount.points <= 0) {
       setShowNoPointsModal(true);
       return;
     }
 
-    // 🛡️ 契约精神核心防线：检查是否存在该账号未提交的牌局，不允许玩家因牌烂而中途放弃
-    const saved = loadActiveMatchSession(currentAccount.phone);
-    if (saved && saved.originalHand && saved.originalHand.length === 13) {
-      restoreFromSavedSession(saved, '根据游戏契约精神');
-      return;
+    // 🛡️ 契约精神核心防线：检查是否存在该账号未提交的真实牌局，不允许玩家因牌烂而中途放弃
+    if (selectedMode !== 'practice') {
+      const saved = loadActiveMatchSession(currentAccount.phone);
+      if (saved && saved.originalHand && saved.originalHand.length === 13) {
+        restoreFromSavedSession(saved, '根据游戏契约精神');
+        return;
+      }
     }
 
     sounds.playDeal();
@@ -326,6 +333,84 @@ export default function App() {
     setErrorMsg('');
     setMatchResults(null);
     setUseSpecialHand(false);
+
+    // 🎮 试玩练习场：采用与真实场次完全一致的发牌、理牌、倒水检测及比牌计分流程
+    if (selectedMode === 'practice') {
+      const deck = shuffle(createDeck());
+      const playerDealt = deck.slice(0, 13);
+      const sortedPlayerHand = sortCards(playerDealt);
+
+      setOriginalHand(sortedPlayerHand);
+      setPool([]);
+      setSelectedCardIds([]);
+
+      // 检测特殊牌型
+      const special = detectSpecialHand(sortedPlayerHand);
+      setSpecialHand(special);
+      if (special) {
+        sounds.playVictory();
+        triggerHaptic('heavy');
+        confetti({ particleCount: 120, spread: 90, origin: { y: 0.35 } });
+      }
+
+      // 计算智能非倒水推荐牌型
+      const smartSuggestions = getSuggestedArrangements(sortedPlayerHand);
+      setSuggestions(smartSuggestions);
+      patternChangerRef.current = new PatternChanger(sortedPlayerHand);
+
+      if (smartSuggestions.length > 0) {
+        setFront(smartSuggestions[0].front);
+        setMid(smartSuggestions[0].middle);
+        setBack(smartSuggestions[0].back);
+        setPatternInfo({
+          tag: smartSuggestions[0].tag,
+          index: 1,
+          total: smartSuggestions.length
+        });
+      } else {
+        setFront(sortedPlayerHand.slice(0, 3));
+        setMid(sortedPlayerHand.slice(3, 8));
+        setBack(sortedPlayerHand.slice(8, 13));
+      }
+
+      // 生成 3 位高拟真电脑对手，同台比牌
+      const aiAvatars = ['🤖', '🦊', '🧔'];
+      const aiNames = ['智多星 (AI)', '十三妹 (AI)', '雀圣阿旺 (AI)'];
+      const playersList: typeof playersInMatch = [
+        {
+          id: 'player_user',
+          name: currentAccount.nickname || playerName,
+          isAi: false,
+          avatar: currentAccount.avatar || '😎',
+          cards: sortedPlayerHand,
+          arrangement: {
+            front: [],
+            middle: [],
+            back: [],
+            specialHand: null,
+            isValid: false,
+            isDaoShui: false
+          }
+        }
+      ];
+
+      for (let i = 1; i <= 3; i++) {
+        const aiCards = deck.slice(i * 13, (i + 1) * 13);
+        const aiArrange = aiArrangeCards(aiCards);
+        playersList.push({
+          id: `ai_${i}`,
+          name: aiNames[i - 1] || `电脑对手 ${i}`,
+          isAi: true,
+          avatar: aiAvatars[i - 1] || '🤖',
+          cards: aiCards,
+          arrangement: aiArrange
+        });
+      }
+
+      setPlayersInMatch(playersList);
+      setGameState('arranging');
+      return;
+    }
 
     // 🚆 8人模式与4人模式：使用预发牌存储与无缝连战逻辑
     if (selectedMode === 'vs_ai_8p' || selectedMode === 'vs_ai_4p') {
@@ -793,6 +878,53 @@ export default function App() {
     setErrorMsg('');
   };
 
+  // 🧪 试玩模式专属：载入特殊牌型测试
+  const handleLoadSpecialHandInPractice = (type: SpecialHandType) => {
+    sounds.playVictory();
+    triggerHaptic('heavy');
+    confetti({ particleCount: 120, spread: 90, origin: { y: 0.35 } });
+
+    const newHand = sortCards(generateSpecialHand(type));
+    setOriginalHand(newHand);
+    setSpecialHand(type);
+    setUseSpecialHand(true);
+
+    const smartSuggestions = getSuggestedArrangements(newHand);
+    setSuggestions(smartSuggestions);
+    patternChangerRef.current = new PatternChanger(newHand);
+
+    if (smartSuggestions.length > 0) {
+      setFront(smartSuggestions[0].front);
+      setMid(smartSuggestions[0].middle);
+      setBack(smartSuggestions[0].back);
+      setPatternInfo({
+        tag: smartSuggestions[0].tag,
+        index: 1,
+        total: smartSuggestions.length
+      });
+    } else {
+      setFront(newHand.slice(0, 3));
+      setMid(newHand.slice(3, 8));
+      setBack(newHand.slice(8, 13));
+    }
+    setPool([]);
+    setSelectedCardIds([]);
+
+    setPlayersInMatch(prev => prev.map(p => {
+      if (p.id === 'player_user') {
+        return { ...p, cards: newHand };
+      }
+      return p;
+    }));
+
+    setCarriageToast({
+      show: true,
+      msg: `🧪 已成功载入【${SPECIAL_HAND_CN[type]}】测试手牌！`,
+      pts: 0
+    });
+    setTimeout(() => setCarriageToast(null), 3000);
+  };
+
   // Submit Player Arrangement & Reveal (Opens Choice Modal)
   const handleSubmitArrangement = async () => {
     if (useSpecialHand && specialHand) {
@@ -804,6 +936,10 @@ export default function App() {
         isValid: true,
         isDaoShui: false
       };
+      if (mode === 'practice') {
+        settleMatch(userArrangement, true);
+        return;
+      }
       setPendingArrangement(userArrangement);
       setShowSubmitChoiceModal(true);
       return;
@@ -848,6 +984,11 @@ export default function App() {
       isDaoShui: false
     };
 
+    if (mode === 'practice') {
+      settleMatch(userArrangement, true);
+      return;
+    }
+
     setPendingArrangement(userArrangement);
     setShowSubmitChoiceModal(true);
   };
@@ -860,6 +1001,29 @@ export default function App() {
   };
 
   const settleMatch = async (userArrangement: PlayerArrangement, advanceToNext: boolean = true) => {
+    // 🎮 试玩练习场模式：不扣减/增加真实积分，直接进行 4 人模拟比牌与全流程战报呈现
+    if (mode === 'practice') {
+      const updatedPlayers = playersInMatch.map(p => {
+        if (!p.isAi) {
+          return { ...p, arrangement: userArrangement };
+        }
+        return p;
+      });
+
+      const results = calculateMatchScores(updatedPlayers);
+      setMatchResults(results);
+
+      const userResult = results.find(r => r.playerId === 'player_user');
+      if (userResult && userResult.finalPoints > 0) {
+        sounds.playVictory();
+        confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 } });
+      } else {
+        sounds.playDunWin();
+      }
+
+      setGameState('revealing');
+      return;
+    }
     // 🚆 8人模式与4人模式：预发牌异步结算
     if (mode === 'vs_ai_8p' || mode === 'vs_ai_4p') {
       try {
@@ -1364,7 +1528,7 @@ export default function App() {
               {/* 🎮 大厅底部：试玩模式 (自由演练 · 模拟比牌计分 · 操作规则教学) */}
               <div
                 id="lobby-practice-hero-card"
-                onClick={() => setShowPracticeModal(true)}
+                onClick={() => startNewMatch('practice')}
                 className="col-span-1 md:col-span-2 bg-gradient-to-r from-emerald-950/60 via-slate-900 to-teal-950/60 hover:from-emerald-950/80 hover:to-teal-950/80 border-2 border-emerald-500/40 hover:border-emerald-400 p-5 sm:p-6 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-4 cursor-pointer transition-all duration-300 group shadow-xl hover:shadow-2xl hover:shadow-emerald-950/50"
               >
                 <div className="flex items-center gap-4">
@@ -1374,14 +1538,14 @@ export default function App() {
                   <div className="space-y-1 text-left">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-base sm:text-lg font-black text-white group-hover:text-emerald-300 transition">
-                        免费试玩模式 (演练练习场)
+                        免费试玩模式 (全真演练练习场)
                       </h3>
                       <span className="text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                        零门槛 · 无需积分
+                        零门槛 · 真实对局样式 · 无需积分
                       </span>
                     </div>
                     <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
-                      提供发牌自由理牌、点选双牌互换、一键修复倒水，并模拟电脑 4 人同台比拼与详细算分公式推导，帮助您快速熟悉十三水玩法规则！
+                      采用与真实牌局 100% 完全相同的牌桌界面布局！自由理牌、点选双牌互换、一键修复倒水，模拟 4 人同台比拼与详细算分推导，帮您零成本精通十三水！
                     </p>
                   </div>
                 </div>
@@ -1396,11 +1560,11 @@ export default function App() {
               <div className="col-span-1 md:col-span-2 flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 pt-2">
                 <button
                   id="btn-open-practice-modal"
-                  onClick={() => setShowPracticeModal(true)}
+                  onClick={() => startNewMatch('practice')}
                   className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/40 text-emerald-300 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
                 >
                   <GraduationCap className="w-4 h-4 text-emerald-400" />
-                  <span>试玩模式与教学</span>
+                  <span>试玩模式 (全真演练)</span>
                 </button>
 
                 <button
@@ -1454,6 +1618,28 @@ export default function App() {
         {/* 4. Active Game Table (Arranging / Revealing) */}
         {gameState === 'revealing' && matchResults && (
           <div className="w-full max-w-6xl flex flex-col items-center gap-6 overflow-y-auto pb-safe p-2 sm:p-4">
+            {mode === 'practice' && (
+              <div className="w-full bg-emerald-950/80 border border-emerald-500/40 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-emerald-200 text-xs sm:text-sm font-bold shadow-lg animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <span className="text-base sm:text-lg">🎮</span>
+                  <span>试玩练习场 · 全真4人比牌演练（纯模拟推导，不扣减或增加真实账户积分）</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => startNewMatch('practice')}
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs transition shadow shrink-0 cursor-pointer"
+                  >
+                    再发一手牌
+                  </button>
+                  <button
+                    onClick={() => setGameState('menu')}
+                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition border border-slate-700 shrink-0 cursor-pointer"
+                  >
+                    返回大厅
+                  </button>
+                </div>
+              </div>
+            )}
             <ShowdownStage
               results={matchResults}
               onPlayAgain={() => startNewMatch(mode)}
@@ -1476,6 +1662,16 @@ export default function App() {
                 }}
                 stats={carriageStats}
                 onOpenHub={() => setShowCarriageHubModal(true)}
+                points={currentAccount.points}
+              />
+            )}
+
+            {/* 🎮 Compact Practice Header Bar for Practice Mode */}
+            {mode === 'practice' && (
+              <PracticeHeaderBar
+                onDealNewHand={() => startNewMatch('practice')}
+                onOpenSpecialLab={() => setShowSpecialTesterModal(true)}
+                onExit={() => setGameState('menu')}
                 points={currentAccount.points}
               />
             )}
@@ -1766,12 +1962,17 @@ export default function App() {
       <NoPointsModal
         isOpen={showNoPointsModal}
         onClose={() => setShowNoPointsModal(false)}
-        onOpenPractice={() => setShowPracticeModal(true)}
+        onOpenPractice={() => startNewMatch('practice')}
         onOpenPoints={() => setShowPointsModal(true)}
         currentPoints={currentAccount.points}
       />
 
-      
+      <SpecialHandLabModal
+        isOpen={showSpecialTesterModal}
+        onClose={() => setShowSpecialTesterModal(false)}
+        onSelectSpecial={handleLoadSpecialHandInPractice}
+      />
+
       <RuleModal isOpen={showRuleModal} onClose={() => setShowRuleModal(false)} />
 
       <PracticeModal
