@@ -156,6 +156,7 @@ export default function App() {
   const [specialHand, setSpecialHand] = useState<SpecialHandType | null>(null);
   const [useSpecialHand, setUseSpecialHand] = useState<boolean>(false);
   const [practiceSpecialIndex, setPracticeSpecialIndex] = useState<number>(0);
+  const practiceSpecialIndexRef = useRef<number>(0);
 
   // AI Suggestions & Pattern Changer
   const [suggestions, setSuggestions] = useState<ArrangementOption[]>([]);
@@ -342,9 +343,29 @@ export default function App() {
 
     // 🎮 试玩练习场：固定特殊牌型轮换发牌，让玩家每局都能体验各种震撼特殊牌型，快速熟悉规则与算分！
     if (selectedMode === 'practice') {
-      const targetSpecialType =
-        practiceSpecialType ||
-        PRACTICE_SPECIAL_HANDS_SEQUENCE[practiceSpecialIndex % PRACTICE_SPECIAL_HANDS_SEQUENCE.length];
+      let targetSpecialType = practiceSpecialType;
+
+      if (targetSpecialType) {
+        // 如果外部显式指定了特殊牌型（如特殊牌型库自选），同步当前序列索引
+        const foundIdx = PRACTICE_SPECIAL_HANDS_SEQUENCE.indexOf(targetSpecialType);
+        if (foundIdx !== -1) {
+          practiceSpecialIndexRef.current = foundIdx;
+          setPracticeSpecialIndex(foundIdx);
+        }
+      } else {
+        // 关键逻辑：若未指定牌型（例如在结算比牌页点击"再来一局"，或重新开局），每局自动递增轮换到下一个不同的特殊牌型！
+        if (gameState === 'revealing') {
+          const nextIdx = (practiceSpecialIndexRef.current + 1) % PRACTICE_SPECIAL_HANDS_SEQUENCE.length;
+          practiceSpecialIndexRef.current = nextIdx;
+          setPracticeSpecialIndex(nextIdx);
+          targetSpecialType = PRACTICE_SPECIAL_HANDS_SEQUENCE[nextIdx];
+        } else {
+          targetSpecialType =
+            PRACTICE_SPECIAL_HANDS_SEQUENCE[
+              practiceSpecialIndexRef.current % PRACTICE_SPECIAL_HANDS_SEQUENCE.length
+            ];
+        }
+      }
 
       const playerDealt = generateSpecialHand(targetSpecialType);
       const sortedPlayerHand = sortCards(playerDealt);
@@ -423,12 +444,13 @@ export default function App() {
       setGameState('arranging');
 
       const specInfo = SPECIAL_HAND_CN[targetSpecialType];
+      const seqDisplayIndex = (practiceSpecialIndexRef.current % PRACTICE_SPECIAL_HANDS_SEQUENCE.length) + 1;
       setCarriageToast({
         show: true,
-        msg: `🎯 试玩固定特殊牌型：【${specInfo ? specInfo.name : targetSpecialType}】(+${specInfo ? specInfo.points : 0}水)`,
+        msg: `🎯 试玩特训第${seqDisplayIndex}/13局：【${specInfo ? specInfo.name : targetSpecialType}】(+${specInfo ? specInfo.points : 0}水)`,
         pts: 0
       });
-      setTimeout(() => setCarriageToast(null), 3000);
+      setTimeout(() => setCarriageToast(null), 3200);
       return;
     }
 
@@ -898,10 +920,22 @@ export default function App() {
     setErrorMsg('');
   };
 
+  // 🎮 试玩模式专属：自动前进或后退轮换特殊牌型特训
+  const handleAdvancePracticeMatch = (step: number = 1) => {
+    const currentIdx = practiceSpecialIndexRef.current;
+    const nextIdx =
+      (currentIdx + step + PRACTICE_SPECIAL_HANDS_SEQUENCE.length) %
+      PRACTICE_SPECIAL_HANDS_SEQUENCE.length;
+    practiceSpecialIndexRef.current = nextIdx;
+    setPracticeSpecialIndex(nextIdx);
+    startNewMatch('practice', undefined, PRACTICE_SPECIAL_HANDS_SEQUENCE[nextIdx]);
+  };
+
   // 🧪 试玩模式专属：载入指定固定特殊牌型测试
   const handleLoadSpecialHandInPractice = (type: SpecialHandType) => {
     const idx = PRACTICE_SPECIAL_HANDS_SEQUENCE.indexOf(type);
     if (idx !== -1) {
+      practiceSpecialIndexRef.current = idx;
       setPracticeSpecialIndex(idx);
     }
     startNewMatch('practice', undefined, type);
@@ -1615,11 +1649,7 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
-                    onClick={() => {
-                      const nextIdx = (practiceSpecialIndex + 1) % PRACTICE_SPECIAL_HANDS_SEQUENCE.length;
-                      setPracticeSpecialIndex(nextIdx);
-                      startNewMatch('practice', undefined, PRACTICE_SPECIAL_HANDS_SEQUENCE[nextIdx]);
-                    }}
+                    onClick={() => handleAdvancePracticeMatch(1)}
                     className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs transition shadow shrink-0 cursor-pointer flex items-center gap-1 active:scale-95"
                   >
                     <span>体验下一特殊牌型 ➔</span>
@@ -1627,22 +1657,24 @@ export default function App() {
                   <button
                     onClick={() => {
                       const currType =
-                        PRACTICE_SPECIAL_HANDS_SEQUENCE[practiceSpecialIndex % PRACTICE_SPECIAL_HANDS_SEQUENCE.length];
+                        PRACTICE_SPECIAL_HANDS_SEQUENCE[
+                          practiceSpecialIndexRef.current % PRACTICE_SPECIAL_HANDS_SEQUENCE.length
+                        ];
                       startNewMatch('practice', undefined, currType);
                     }}
-                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs transition border border-amber-500/30 shrink-0 cursor-pointer active:scale-95"
+                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-amber-300 font-bold text-xs transition border border-amber-500/30 shrink-0 cursor-pointer active:scale-95"
                   >
                     重练本牌型
                   </button>
                   <button
                     onClick={() => setShowSpecialTesterModal(true)}
-                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition border border-slate-700 shrink-0 cursor-pointer active:scale-95"
+                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold text-xs transition border border-slate-700 shrink-0 cursor-pointer active:scale-95"
                   >
                     选特殊牌型
                   </button>
                   <button
                     onClick={() => setGameState('menu')}
-                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition border border-slate-700 shrink-0 cursor-pointer active:scale-95"
+                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold text-xs transition border border-slate-700 shrink-0 cursor-pointer active:scale-95"
                   >
                     返回大厅
                   </button>
@@ -1651,8 +1683,23 @@ export default function App() {
             )}
             <ShowdownStage
               results={matchResults}
-              onPlayAgain={() => startNewMatch(mode)}
+              onPlayAgain={() => {
+                if (mode === 'practice') {
+                  handleAdvancePracticeMatch(1);
+                } else {
+                  startNewMatch(mode);
+                }
+              }}
               onBackToMenu={() => setGameState('menu')}
+              isPractice={mode === 'practice'}
+              nextSpecialName={
+                SPECIAL_HAND_CN[
+                  PRACTICE_SPECIAL_HANDS_SEQUENCE[
+                    (practiceSpecialIndexRef.current + 1) % PRACTICE_SPECIAL_HANDS_SEQUENCE.length
+                  ]
+                ]?.name
+              }
+              onSelectSpecialHand={() => setShowSpecialTesterModal(true)}
             />
           </div>
         )}
@@ -1680,27 +1727,15 @@ export default function App() {
               <PracticeHeaderBar
                 currentSpecialType={
                   specialHand ||
-                  PRACTICE_SPECIAL_HANDS_SEQUENCE[practiceSpecialIndex % PRACTICE_SPECIAL_HANDS_SEQUENCE.length]
+                  PRACTICE_SPECIAL_HANDS_SEQUENCE[
+                    practiceSpecialIndex % PRACTICE_SPECIAL_HANDS_SEQUENCE.length
+                  ]
                 }
                 currentIndex={practiceSpecialIndex % PRACTICE_SPECIAL_HANDS_SEQUENCE.length}
                 totalSpecials={PRACTICE_SPECIAL_HANDS_SEQUENCE.length}
-                onPrevSpecial={() => {
-                  const nextIdx =
-                    (practiceSpecialIndex - 1 + PRACTICE_SPECIAL_HANDS_SEQUENCE.length) %
-                    PRACTICE_SPECIAL_HANDS_SEQUENCE.length;
-                  setPracticeSpecialIndex(nextIdx);
-                  startNewMatch('practice', undefined, PRACTICE_SPECIAL_HANDS_SEQUENCE[nextIdx]);
-                }}
-                onNextSpecial={() => {
-                  const nextIdx = (practiceSpecialIndex + 1) % PRACTICE_SPECIAL_HANDS_SEQUENCE.length;
-                  setPracticeSpecialIndex(nextIdx);
-                  startNewMatch('practice', undefined, PRACTICE_SPECIAL_HANDS_SEQUENCE[nextIdx]);
-                }}
-                onDealNewHand={() => {
-                  const currType =
-                    PRACTICE_SPECIAL_HANDS_SEQUENCE[practiceSpecialIndex % PRACTICE_SPECIAL_HANDS_SEQUENCE.length];
-                  startNewMatch('practice', undefined, currType);
-                }}
+                onPrevSpecial={() => handleAdvancePracticeMatch(-1)}
+                onNextSpecial={() => handleAdvancePracticeMatch(1)}
+                onDealNewHand={() => handleAdvancePracticeMatch(1)}
                 onOpenSpecialLab={() => setShowSpecialTesterModal(true)}
                 onExit={() => setGameState('menu')}
                 points={currentAccount.points}

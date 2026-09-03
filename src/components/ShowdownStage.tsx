@@ -24,11 +24,21 @@ interface ShowdownStageProps {
   results: PlayerScoreDetail[];
   onPlayAgain: () => void;
   onBackToMenu: () => void;
+  isPractice?: boolean;
+  nextSpecialName?: string;
+  onSelectSpecialHand?: () => void;
 }
 
 type Step = 'front' | 'middle' | 'back' | 'guns' | 'summary';
 
-export function ShowdownStage({ results, onPlayAgain, onBackToMenu }: ShowdownStageProps) {
+export function ShowdownStage({
+  results,
+  onPlayAgain,
+  onBackToMenu,
+  isPractice = false,
+  nextSpecialName,
+  onSelectSpecialHand
+}: ShowdownStageProps) {
   const [currentStep, setCurrentStep] = useState<Step>('front');
   const [autoPlay, setAutoPlay] = useState<boolean>(true);
   const [expandedOppId, setExpandedOppId] = useState<string | null>(null);
@@ -621,13 +631,23 @@ export function ShowdownStage({ results, onPlayAgain, onBackToMenu }: ShowdownSt
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-4 mt-2">
+          <div className="flex items-center gap-3 sm:gap-4 mt-2 flex-wrap justify-center">
             <button
               onClick={onPlayAgain}
-              className="px-7 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
+              className="px-7 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
             >
-              <RotateCcw className="w-4 h-4" /> 再来一局
+              <RotateCcw className="w-4 h-4" />
+              {isPractice && nextSpecialName ? `再来一局 (换新牌型: ${nextSpecialName})` : '再来一局'}
             </button>
+            {isPractice && onSelectSpecialHand && (
+              <button
+                onClick={onSelectSpecialHand}
+                className="px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-750 text-amber-300 border border-amber-500/30 font-bold text-sm transition cursor-pointer active:scale-95 flex items-center gap-1.5 shadow"
+              >
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                自选特殊牌型
+              </button>
+            )}
             <button
               onClick={onBackToMenu}
               className="px-6 py-3.5 rounded-2xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold text-sm transition cursor-pointer"
