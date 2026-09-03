@@ -283,7 +283,7 @@ export function getCurrentAccount(): UserAccount {
       username: defaultPhone,
       nickname: '十三水雀神',
       avatar: '👑',
-      points: 10000,
+      points: 0,
       createdAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString()
     };
@@ -365,7 +365,7 @@ export async function registerAccount(
     username: cleanPhone,
     nickname: cleanNickname,
     avatar: avatar || '👑',
-    points: 10000, // 注册初始赠送 10,000 积分
+    points: 0, // 注册初始为 0 积分 (无赠送)
     createdAt: new Date().toISOString(),
     lastLoginAt: new Date().toISOString()
   };
@@ -379,8 +379,6 @@ export async function registerAccount(
   localStorage.setItem(CURRENT_USER_KEY, newAccount.phone);
   localStorage.setItem('thirteen_player_name', newAccount.nickname);
   notifyListeners(newAccount);
-
-  addPointsTransaction(cleanPhone, 'REGISTER_BONUS', '新手初始积分', 10000, 10000);
 
   return { success: true, message: '注册成功！', account: newAccount };
 }
@@ -626,32 +624,6 @@ export function addPoints(amount: number, type: PointsTransaction['type'], title
   saveAccount(account);
   addPointsTransaction(account.phone, type, title, amount, account.points);
   return account.points;
-}
-
-// 领取破产补助 / 每日救济金 (每次发放 2,000 积分)
-export function claimBankruptcyRelief(): { success: boolean; message: string; pointsAdded: number; account?: UserAccount } {
-  const account = getCurrentAccount();
-  const RELIEF_AMOUNT = 2000;
-
-  account.points += RELIEF_AMOUNT;
-  saveAccount(account);
-
-  addPointsTransaction(
-    account.phone,
-    'RELIEF_BONUS',
-    '领取救济金/破产补助',
-    RELIEF_AMOUNT,
-    account.points
-  );
-
-  notifyListeners(account);
-
-  return {
-    success: true,
-    message: `成功领取救济金 +${RELIEF_AMOUNT.toLocaleString()} 积分！当前积分: ${account.points.toLocaleString()}`,
-    pointsAdded: RELIEF_AMOUNT,
-    account
-  };
 }
 
 // 积分流水明细

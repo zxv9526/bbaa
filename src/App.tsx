@@ -30,12 +30,12 @@ import { ShowdownStage } from './components/ShowdownStage';
 import { CardSkinModal } from './components/CardSkinModal';
 import { AuthModal } from './components/AuthModal';
 import { PointsManagementModal } from './components/PointsManagementModal';
+import { NoPointsModal } from './components/NoPointsModal';
 import { initCardSkins } from './lib/cardSkin';
 import {
   getCurrentAccount,
   subscribeAccount,
-  addPoints,
-  claimBankruptcyRelief
+  addPoints
 } from './lib/accountManager';
 import { ApiClient } from './api';
 import { sounds } from './sound';
@@ -128,6 +128,7 @@ export default function App() {
   // Modals
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showPointsModal, setShowPointsModal] = useState(false);
+  const [showNoPointsModal, setShowNoPointsModal] = useState(false);
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [showRankModal, setShowRankModal] = useState(false);
   const [showPracticeModal, setShowPracticeModal] = useState(false);
@@ -307,6 +308,12 @@ export default function App() {
 
   // Start a new local match (8P, 4P, or 2P)
   const startNewMatch = (selectedMode: GameMode = mode, seatOverride?: number) => {
+    // 🛡️ 积分门槛限制：没有积分不允许进入真实牌局
+    if (currentAccount.points <= 0) {
+      setShowNoPointsModal(true);
+      return;
+    }
+
     // 🛡️ 契约精神核心防线：检查是否存在该账号未提交的牌局，不允许玩家因牌烂而中途放弃
     const saved = loadActiveMatchSession(currentAccount.phone);
     if (saved && saved.originalHand && saved.originalHand.length === 13) {
@@ -754,22 +761,6 @@ export default function App() {
     }
   };
 
-  // 🪙 领取破产补助 / 每日救济金
-  const handleClaimRelief = () => {
-    sounds.playVictory();
-    triggerHaptic('heavy');
-    const res = claimBankruptcyRelief();
-    confetti({ particleCount: 90, spread: 70, origin: { y: 0.55 } });
-    setCarriageToast({
-      show: true,
-      msg: res.message,
-      pts: res.pointsAdded
-    });
-    setTimeout(() => {
-      setCarriageToast(null);
-    }, 3500);
-  };
-
   // Apply suggestion
   const applySuggestion = (option: ArrangementOption) => {
     sounds.playAutoArrange();
@@ -1152,6 +1143,10 @@ export default function App() {
 
   // Join Multiplayer Room (8P or 4P)
   const handleJoinRoom = async (codeToJoin: string) => {
+    if (currentAccount.points <= 0) {
+      setShowNoPointsModal(true);
+      return;
+    }
     if (!codeToJoin.trim()) return;
     const res = await ApiClient.joinRoom(codeToJoin.trim(), currentAccount.nickname || playerName, currentAccount.avatar);
     if (res.ok) {
@@ -1164,6 +1159,10 @@ export default function App() {
 
   // Create Multiplayer Room
   const handleCreateRoom = async (maxPlayers: 4 | 8 = 4) => {
+    if (currentAccount.points <= 0) {
+      setShowNoPointsModal(true);
+      return;
+    }
     const res = await ApiClient.createRoom(currentAccount.nickname || playerName, maxPlayers);
     if (res.ok && res.roomCode) {
       setRoomCode(res.roomCode);
@@ -1252,36 +1251,14 @@ export default function App() {
 
           return (
             <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 my-auto">
-              {/* 破产补助快速提示 (Bankruptcy Relief Alert) */}
-              {currentAccount.points < 500 && (
-                <div className="col-span-1 md:col-span-2 bg-gradient-to-r from-rose-950/80 via-amber-950/60 to-rose-950/80 border border-amber-500/40 rounded-2xl p-3 sm:p-4 flex items-center justify-between gap-3 shadow-xl animate-in fade-in">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center text-lg shrink-0">
-                      🪙
-                    </div>
-                    <div>
-                      <div className="text-xs sm:text-sm font-black text-amber-300">
-                        积分不足，已触发破产保护！
-                      </div>
-                      <div className="text-[11px] text-slate-300">
-                        当前积分: {currentAccount.points.toLocaleString()}。点击右侧按钮立领 2,000 救济金。
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleClaimRelief}
-                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs sm:text-sm shadow-md transition active:scale-95 whitespace-nowrap cursor-pointer"
-                  >
-                    立即领取
-                  </button>
-                </div>
-              )}
-
               {/* BLOCK 1: 八人场 (8-Player Arena) */}
               <div
                 id="arena-8p-section"
                 onClick={() => {
+                  if (currentAccount.points <= 0) {
+                    setShowNoPointsModal(true);
+                    return;
+                  }
                   if (occ8P.isFull) {
                     setErrorMsg('八人场当前房间已满座 (0/8)，无法进入！');
                     return;
@@ -1333,6 +1310,10 @@ export default function App() {
               <div
                 id="arena-4p-section"
                 onClick={() => {
+                  if (currentAccount.points <= 0) {
+                    setShowNoPointsModal(true);
+                    return;
+                  }
                   if (occ4P.isFull) {
                     setErrorMsg('四人场当前房间已满座 (0/4)，无法进入！');
                     return;
@@ -1380,16 +1361,46 @@ export default function App() {
                 </div>
               </div>
 
+              {/* 🎮 大厅底部：试玩模式 (自由演练 · 模拟比牌计分 · 操作规则教学) */}
+              <div
+                id="lobby-practice-hero-card"
+                onClick={() => setShowPracticeModal(true)}
+                className="col-span-1 md:col-span-2 bg-gradient-to-r from-emerald-950/60 via-slate-900 to-teal-950/60 hover:from-emerald-950/80 hover:to-teal-950/80 border-2 border-emerald-500/40 hover:border-emerald-400 p-5 sm:p-6 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-4 cursor-pointer transition-all duration-300 group shadow-xl hover:shadow-2xl hover:shadow-emerald-950/50"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center text-2xl sm:text-3xl font-black shadow-lg shadow-emerald-600/30 group-hover:scale-105 transition duration-300 shrink-0">
+                    🎮
+                  </div>
+                  <div className="space-y-1 text-left">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base sm:text-lg font-black text-white group-hover:text-emerald-300 transition">
+                        免费试玩模式 (演练练习场)
+                      </h3>
+                      <span className="text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                        零门槛 · 无需积分
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                      提供发牌自由理牌、点选双牌互换、一键修复倒水，并模拟电脑 4 人同台比拼与详细算分公式推导，帮助您快速熟悉十三水玩法规则！
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/50 group-hover:translate-x-1 transition shrink-0 whitespace-nowrap">
+                  <span>进入试玩模式</span>
+                  <ArrowRight className="w-4 h-4" />
+                </div>
+              </div>
+
               {/* Lobby Quick Tool Shelf */}
               <div className="col-span-1 md:col-span-2 flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 pt-2">
                 <button
-                  id="btn-claim-relief"
-                  onClick={handleClaimRelief}
-                  className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-yellow-500/25 to-amber-500/15 hover:from-amber-500/30 hover:to-yellow-500/35 border border-amber-500/50 text-amber-300 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md shadow-amber-950/40 cursor-pointer"
-                  title="积分不足或每日低保？点击立领 2,000 救济金"
+                  id="btn-open-practice-modal"
+                  onClick={() => setShowPracticeModal(true)}
+                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/40 text-emerald-300 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
                 >
-                  <Coins className="w-4 h-4 text-amber-400" />
-                  <span>领救济金 (+2000)</span>
+                  <GraduationCap className="w-4 h-4 text-emerald-400" />
+                  <span>试玩模式与教学</span>
                 </button>
 
                 <button
@@ -1422,14 +1433,6 @@ export default function App() {
                 >
                   <Palette className="w-4 h-4 text-purple-400" />
                   <span>扑克装扮</span>
-                </button>
-
-                <button
-                  onClick={() => setShowPracticeModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
-                >
-                  <GraduationCap className="w-4 h-4 text-emerald-400" />
-                  <span>摆牌练习</span>
                 </button>
               </div>
             </div>
@@ -1758,6 +1761,14 @@ export default function App() {
         onClose={() => setShowPointsModal(false)}
         currentAccount={currentAccount}
         onAccountUpdated={acc => setCurrentAccount(acc)}
+      />
+
+      <NoPointsModal
+        isOpen={showNoPointsModal}
+        onClose={() => setShowNoPointsModal(false)}
+        onOpenPractice={() => setShowPracticeModal(true)}
+        onOpenPoints={() => setShowPointsModal(true)}
+        currentPoints={currentAccount.points}
       />
 
       
