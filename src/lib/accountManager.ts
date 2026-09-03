@@ -628,6 +628,32 @@ export function addPoints(amount: number, type: PointsTransaction['type'], title
   return account.points;
 }
 
+// 领取破产补助 / 每日救济金 (每次发放 2,000 积分)
+export function claimBankruptcyRelief(): { success: boolean; message: string; pointsAdded: number; account?: UserAccount } {
+  const account = getCurrentAccount();
+  const RELIEF_AMOUNT = 2000;
+
+  account.points += RELIEF_AMOUNT;
+  saveAccount(account);
+
+  addPointsTransaction(
+    account.phone,
+    'RELIEF_BONUS',
+    '领取救济金/破产补助',
+    RELIEF_AMOUNT,
+    account.points
+  );
+
+  notifyListeners(account);
+
+  return {
+    success: true,
+    message: `成功领取救济金 +${RELIEF_AMOUNT.toLocaleString()} 积分！当前积分: ${account.points.toLocaleString()}`,
+    pointsAdded: RELIEF_AMOUNT,
+    account
+  };
+}
+
 // 积分流水明细
 export function getPointsTransactions(phone?: string): PointsTransaction[] {
   const targetPhone = phone || getCurrentAccount().phone;

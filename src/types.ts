@@ -113,7 +113,7 @@ export interface UserAccount {
 
 export interface PointsTransaction {
   id: string;
-  type: 'MATCH_WIN' | 'MATCH_LOSS' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'REGISTER_BONUS' | 'ADMIN_ADJUST' | 'BOT_ADD' | 'BOT_DEDUCT';
+  type: 'MATCH_WIN' | 'MATCH_LOSS' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'REGISTER_BONUS' | 'ADMIN_ADJUST' | 'BOT_ADD' | 'BOT_DEDUCT' | 'RELIEF_BONUS';
   title: string;
   amount: number;
   balanceAfter: number;

@@ -36,6 +36,23 @@ export function ShowdownStage({ results, onPlayAgain, onBackToMenu }: ShowdownSt
   const userResult = results.find(r => r.playerId === 'player_user') || results[0];
   const isSpecialMatch = results.some(r => r.specialHand);
 
+  // 👥 计算我与所有对手的战果统计
+  const opponents = results.filter(r => r.playerId !== userResult.playerId);
+  let wonCount = 0;
+  let lostCount = 0;
+  let tieCount = 0;
+  let gunKillCount = 0;
+
+  opponents.forEach(opp => {
+    const vsInfo = userResult.dunScores[opp.playerId];
+    if (!vsInfo) return;
+    if (vsInfo.total > 0) wonCount++;
+    else if (vsInfo.total < 0) lostCount++;
+    else tieCount++;
+
+    if (vsInfo.gunPoints > 0) gunKillCount++;
+  });
+
   // 按最终得分从高到低排序排行榜
   const rankedResults = [...results].sort((a, b) => b.finalPoints - a.finalPoints);
 
@@ -420,6 +437,55 @@ export function ShowdownStage({ results, onPlayAgain, onBackToMenu }: ShowdownSt
               </span>
             </p>
           </div>
+
+          {/* 🎖️ 我的战果速览条 (Battle Overview Banner) */}
+          {opponents.length > 0 && (
+            <div className="w-full max-w-xl bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 border border-amber-500/30 rounded-2xl p-3.5 sm:p-4 text-xs shadow-xl flex flex-col gap-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-black text-amber-300 flex items-center gap-1.5 text-xs sm:text-sm">
+                  <Target className="w-4 h-4 text-amber-400" />
+                  战绩速报 ({opponents.length + 1}人场 · 对战 {opponents.length} 家)
+                </span>
+                <span className={`font-mono font-black text-xs px-2.5 py-0.5 rounded-full border ${
+                  userResult.finalPoints >= 0 
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' 
+                    : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                }`}>
+                  净胜: {userResult.finalPoints >= 0 ? `+${userResult.finalPoints}` : userResult.finalPoints} 水
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-2 flex flex-col items-center">
+                  <span className="text-slate-400 text-[10px]">🏆 战胜对手</span>
+                  <span className="text-base sm:text-lg font-black text-emerald-400">
+                    {wonCount} <span className="text-xs font-normal text-emerald-500/80">家</span>
+                  </span>
+                </div>
+
+                <div className="bg-amber-950/40 border border-amber-500/30 rounded-xl p-2 flex flex-col items-center">
+                  <span className="text-slate-400 text-[10px]">💥 击发打枪</span>
+                  <span className="text-base sm:text-lg font-black text-amber-400">
+                    {gunKillCount} <span className="text-xs font-normal text-amber-500/80">家</span>
+                  </span>
+                </div>
+
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-2 flex flex-col items-center">
+                  <span className="text-slate-400 text-[10px]">🤝 握手平局</span>
+                  <span className="text-base sm:text-lg font-black text-slate-300">
+                    {tieCount} <span className="text-xs font-normal text-slate-400">家</span>
+                  </span>
+                </div>
+
+                <div className="bg-rose-950/40 border border-rose-500/30 rounded-xl p-2 flex flex-col items-center">
+                  <span className="text-slate-400 text-[10px]">💔 惜败对手</span>
+                  <span className="text-base sm:text-lg font-black text-rose-400">
+                    {lostCount} <span className="text-xs font-normal text-rose-500/80">家</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Leaderboard Ranking Table */}
           <div className="w-full max-w-xl bg-slate-950/70 border border-slate-800 rounded-2xl p-4 text-xs">

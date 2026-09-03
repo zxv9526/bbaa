@@ -34,7 +34,8 @@ import { initCardSkins } from './lib/cardSkin';
 import {
   getCurrentAccount,
   subscribeAccount,
-  addPoints
+  addPoints,
+  claimBankruptcyRelief
 } from './lib/accountManager';
 import { ApiClient } from './api';
 import { sounds } from './sound';
@@ -66,6 +67,7 @@ import {
   Crown,
   Coins,
   Shield,
+  ShieldAlert,
   KeyRound,
   UserCheck,
   ChevronRight,
@@ -346,6 +348,11 @@ export default function App() {
       // Detect Special Hand
       const special = detectSpecialHand(sortedPlayerHand);
       setSpecialHand(special);
+      if (special) {
+        sounds.playVictory();
+        triggerHaptic('heavy');
+        confetti({ particleCount: 120, spread: 90, origin: { y: 0.35 } });
+      }
 
       // Compute AI Suggestions for player (100% legal, non-daoshui)
       const smartSuggestions = getSuggestedArrangements(sortedPlayerHand);
@@ -519,8 +526,35 @@ export default function App() {
     setGameState('arranging');
   };
 
-  // Multi-card selection toggle (supports selecting multiple cards to move together)
+  // Multi-card selection toggle & Instant Two-Card Swap (点选两张牌直接对调)
   const handleToggleCardSelect = (cardId: string) => {
+    // If exactly 1 card is already selected and player clicks a DIFFERENT card -> Instant Swap!
+    if (selectedCardIds.length === 1 && selectedCardIds[0] !== cardId) {
+      const firstId = selectedCardIds[0];
+      const secondId = cardId;
+
+      const allCards = [...front, ...mid, ...back, ...pool];
+      const card1 = allCards.find(c => c.id === firstId);
+      const card2 = allCards.find(c => c.id === secondId);
+
+      if (card1 && card2) {
+        sounds.playSwap();
+        triggerHaptic('medium');
+
+        const swapInArray = (arr: Card[]) =>
+          arr.map(c => (c.id === firstId ? card2 : c.id === secondId ? card1 : c));
+
+        setFront(prev => swapInArray(prev));
+        setMid(prev => swapInArray(prev));
+        setBack(prev => swapInArray(prev));
+        setPool(prev => swapInArray(prev));
+
+        setSelectedCardIds([]);
+        setErrorMsg('');
+        return;
+      }
+    }
+
     sounds.playCardPick();
     triggerHaptic('light');
     setSelectedCardIds(prev =>
@@ -711,7 +745,29 @@ export default function App() {
       setPool([]);
       setSelectedCardIds([]);
       setErrorMsg('');
+      setCarriageToast({
+        show: true,
+        msg: '🛡️ 已成功自动纠正倒水，恢复合法不倒水方案！',
+        pts: 0
+      });
+      setTimeout(() => setCarriageToast(null), 2500);
     }
+  };
+
+  // 🪙 领取破产补助 / 每日救济金
+  const handleClaimRelief = () => {
+    sounds.playVictory();
+    triggerHaptic('heavy');
+    const res = claimBankruptcyRelief();
+    confetti({ particleCount: 90, spread: 70, origin: { y: 0.55 } });
+    setCarriageToast({
+      show: true,
+      msg: res.message,
+      pts: res.pointsAdded
+    });
+    setTimeout(() => {
+      setCarriageToast(null);
+    }, 3500);
   };
 
   // Apply suggestion
@@ -1196,6 +1252,32 @@ export default function App() {
 
           return (
             <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 my-auto">
+              {/* 破产补助快速提示 (Bankruptcy Relief Alert) */}
+              {currentAccount.points < 500 && (
+                <div className="col-span-1 md:col-span-2 bg-gradient-to-r from-rose-950/80 via-amber-950/60 to-rose-950/80 border border-amber-500/40 rounded-2xl p-3 sm:p-4 flex items-center justify-between gap-3 shadow-xl animate-in fade-in">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center text-lg shrink-0">
+                      🪙
+                    </div>
+                    <div>
+                      <div className="text-xs sm:text-sm font-black text-amber-300">
+                        积分不足，已触发破产保护！
+                      </div>
+                      <div className="text-[11px] text-slate-300">
+                        当前积分: {currentAccount.points.toLocaleString()}。点击右侧按钮立领 2,000 救济金。
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleClaimRelief}
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs sm:text-sm shadow-md transition active:scale-95 whitespace-nowrap cursor-pointer"
+                  >
+                    立即领取
+                  </button>
+                </div>
+              )}
+
               {/* BLOCK 1: 八人场 (8-Player Arena) */}
               <div
                 id="arena-8p-section"
@@ -1299,7 +1381,17 @@ export default function App() {
               </div>
 
               {/* Lobby Quick Tool Shelf */}
-              <div className="col-span-1 md:col-span-2 flex flex-wrap items-center justify-center gap-3 pt-2">
+              <div className="col-span-1 md:col-span-2 flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 pt-2">
+                <button
+                  id="btn-claim-relief"
+                  onClick={handleClaimRelief}
+                  className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-yellow-500/25 to-amber-500/15 hover:from-amber-500/30 hover:to-yellow-500/35 border border-amber-500/50 text-amber-300 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md shadow-amber-950/40 cursor-pointer"
+                  title="积分不足或每日低保？点击立领 2,000 救济金"
+                >
+                  <Coins className="w-4 h-4 text-amber-400" />
+                  <span>领救济金 (+2000)</span>
+                </button>
+
                 <button
                   onClick={() => setShowReplayModal(true)}
                   className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
@@ -1587,26 +1679,47 @@ export default function App() {
 
             </div>
 
-            {/* Bottom Actions: Clean Two Primary Action Buttons (变换牌型 & 提交牌型) */}
+            {/* Bottom Actions: Clean Two Primary Action Buttons (变换牌型 / 一键纠正 & 提交牌型) */}
             <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1 shrink-0 pt-0.5 pb-2 sm:pb-3">
-              {patternInfo && (
+              {/* Context hints / pattern info */}
+              {selectedCardIds.length === 1 ? (
+                <div className="text-[10px] sm:text-[11px] font-bold text-blue-300 bg-blue-950/80 border border-blue-500/50 px-3 py-0.5 rounded-full animate-in fade-in flex items-center gap-1.5 shadow-md">
+                  <span>💡 已选 1 张牌，点击任意另一张牌即可直接对调位置</span>
+                </div>
+              ) : isCurrentDaoShui ? (
+                <div className="text-[10px] sm:text-[11px] font-bold text-rose-300 bg-rose-950/80 border border-rose-500/60 px-3 py-0.5 rounded-full animate-in fade-in flex items-center gap-1.5 shadow-md">
+                  <span>⚠️ 当前牌型倒水 (头墩大过中墩 或 中墩大过尾墩)，请点击一键纠正</span>
+                </div>
+              ) : patternInfo ? (
                 <div className="text-[10px] sm:text-[11px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/40 px-3 py-0.2 rounded-full animate-in fade-in flex items-center gap-1.5 shadow-sm">
                   <span>✨ 方案:</span>
                   <span className="text-amber-200">{patternInfo.tag}</span>
                   <span className="text-slate-400 font-medium">({patternInfo.index}/{patternInfo.total})</span>
                 </div>
-              )}
+              ) : null}
 
               <div className="w-full flex items-center justify-center gap-2 sm:gap-4">
-                <button
-                  id="btn-change-pattern"
-                  onClick={handleChangePattern}
-                  className="flex-1 py-2.5 sm:py-3.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl bg-slate-850 hover:bg-slate-800 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs sm:text-base font-black flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-amber-950/40 transition active:scale-95 cursor-pointer"
-                  title="点击切换下一组不倒水合法方案"
-                >
-                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
-                  <span>变换牌型</span>
-                </button>
+                {isCurrentDaoShui ? (
+                  <button
+                    id="btn-auto-fix-daoshui"
+                    onClick={handleAutoFix}
+                    className="flex-1 py-2.5 sm:py-3.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-rose-950/90 via-amber-950/80 to-rose-950/90 border-2 border-rose-500 text-amber-200 hover:text-white text-xs sm:text-base font-black flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-rose-950/60 transition active:scale-95 cursor-pointer animate-pulse"
+                    title="当前摆法倒水！点击一键智能纠正并恢复最佳牌力"
+                  >
+                    <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5 text-rose-400" />
+                    <span>一键纠正倒水</span>
+                  </button>
+                ) : (
+                  <button
+                    id="btn-change-pattern"
+                    onClick={handleChangePattern}
+                    className="flex-1 py-2.5 sm:py-3.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl bg-slate-850 hover:bg-slate-800 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs sm:text-base font-black flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-amber-950/40 transition active:scale-95 cursor-pointer"
+                    title="点击切换下一组不倒水合法方案"
+                  >
+                    <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+                    <span>变换牌型</span>
+                  </button>
+                )}
 
                 <button
                   id="btn-submit-arrangement"
