@@ -25,7 +25,7 @@ interface CarriageHubModalProps {
   currentCarriageIndex: number;
   onSelectCarriageIndex: (index: number) => void;
   onResetPool: () => void;
-  mode?: 'vs_ai_8p';
+  mode?: 'vs_ai_8p' | 'realtime' | 'reservation';
 }
 
 export function CarriageHubModal({
@@ -34,11 +34,11 @@ export function CarriageHubModal({
   currentCarriageIndex,
   onSelectCarriageIndex,
   onResetPool,
-  mode = 'vs_ai_8p'
+  mode = 'realtime'
 }: CarriageHubModalProps) {
-  const is8P = mode === 'vs_ai_8p';
-  const modeName = is8P ? '八人场' : '四人场';
-  const totalSeats = is8P ? 8 : 4;
+  const isReservation = mode === 'reservation';
+  const modeName = isReservation ? '📅 预约场' : mode === 'realtime' ? '⚡ 实时对战场' : '八人巅峰场';
+  const totalSeats = 8;
 
   const [stats, setStats] = useState<CarriagePoolStats>(() => getCarriageStats(undefined, undefined, mode));
   const [completedList, setCompletedList] = useState<Carriage[]>([]);
@@ -80,7 +80,7 @@ export function CarriageHubModal({
         <div className="px-6 py-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg ${
-              is8P ? 'bg-gradient-to-tr from-amber-500 to-red-600 shadow-red-500/20' : 'bg-gradient-to-tr from-blue-500 to-indigo-600 shadow-blue-500/20'
+              isReservation ? 'bg-gradient-to-tr from-blue-500 to-cyan-600 shadow-blue-500/20' : 'bg-gradient-to-tr from-amber-500 to-red-600 shadow-red-500/20'
             }`}>
               {totalSeats}
             </div>
@@ -88,7 +88,7 @@ export function CarriageHubModal({
               <h2 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
                 {modeName}战绩中心
                 <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-bold">
-                  {is8P ? '8人大局比拼' : '4人经典对决'}
+                  {isReservation ? '纯净理牌局' : '8人同台角逐'}
                 </span>
               </h2>
               <p className="text-xs text-slate-400">

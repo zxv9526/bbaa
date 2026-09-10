@@ -10,7 +10,7 @@ interface SubmitChoiceModalProps {
   onConfirm: (action: 'reveal' | 'quick_next' | 'exit') => void;
   carriageIndex: number;
   roundIndex?: number;
-  mode?: 'vs_ai_8p';
+  mode?: 'vs_ai_8p' | 'realtime' | 'reservation';
   front: Card[];
   mid: Card[];
   back: Card[];
@@ -68,7 +68,7 @@ export function SubmitChoiceModal({
             <div>
               <h3 className="text-base font-black text-white">确认提交牌型</h3>
               <p className="text-xs text-slate-400">
-                八人巅峰场 • 第 <span className="text-amber-400 font-bold font-mono">{carriageIndex}</span> 局
+                {mode === 'reservation' ? '📅 预约场' : mode === 'realtime' ? '⚡ 实时对战场' : '八人巅峰场'} • 第 <span className="text-amber-400 font-bold font-mono">{carriageIndex}</span> 局
               </p>
             </div>
           </div>

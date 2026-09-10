@@ -270,33 +270,46 @@ export function getCurrentAccount(): UserAccount {
   const currentPhone = localStorage.getItem(CURRENT_USER_KEY);
   const db = getAllAccounts();
 
-  if (currentPhone && db[currentPhone]) {
-    return db[currentPhone].account;
+  let acc: UserAccount | undefined;
+
+  if (currentPhone && db[currentPhone] && db[currentPhone].account) {
+    acc = db[currentPhone].account;
   }
 
-  // 默认创建一个初始演示手机账号，便于开箱即用
-  const defaultPhone = '13800138000';
-  if (!db[defaultPhone]) {
-    const defaultAcc: UserAccount = {
-      id: `u_${Date.now()}`,
-      phone: defaultPhone,
-      username: defaultPhone,
-      nickname: '十三水雀神',
-      avatar: '👑',
-      points: 0,
-      createdAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString()
-    };
-    db[defaultPhone] = {
-      password: '123456',
-      account: defaultAcc
-    };
-    saveAllAccounts(db);
-    authorizePhone(defaultPhone);
+  if (!acc) {
+    const defaultPhone = '13800138000';
+    if (!db[defaultPhone] || !db[defaultPhone].account) {
+      const defaultAcc: UserAccount = {
+        id: `u_${Date.now()}`,
+        phone: defaultPhone,
+        username: defaultPhone,
+        nickname: '十三水雀神',
+        avatar: '👑',
+        points: 10000,
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString()
+      };
+      db[defaultPhone] = {
+        password: '123456',
+        account: defaultAcc
+      };
+      saveAllAccounts(db);
+      authorizePhone(defaultPhone);
+    }
+    localStorage.setItem(CURRENT_USER_KEY, defaultPhone);
+    acc = db[defaultPhone].account;
   }
 
-  localStorage.setItem(CURRENT_USER_KEY, defaultPhone);
-  return db[defaultPhone].account;
+  // Ensure safe fallback values on all required properties
+  if (typeof acc.points !== 'number' || isNaN(acc.points)) {
+    acc.points = 10000;
+  }
+  if (!acc.nickname) acc.nickname = '十三水雀神';
+  if (!acc.avatar) acc.avatar = '👑';
+  if (!acc.phone) acc.phone = '13800138000';
+  if (!acc.id) acc.id = `u_${Date.now()}`;
+
+  return acc;
 }
 
 export function saveAccount(account: UserAccount) {
@@ -365,7 +378,7 @@ export async function registerAccount(
     username: cleanPhone,
     nickname: cleanNickname,
     avatar: avatar || '👑',
-    points: 0, // 注册初始为 0 积分 (无赠送)
+    points: 10000, // 注册初始赠送 10,000 体验积分
     createdAt: new Date().toISOString(),
     lastLoginAt: new Date().toISOString()
   };

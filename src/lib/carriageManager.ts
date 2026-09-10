@@ -41,14 +41,16 @@ export interface CarriagePoolStats {
 const CARRIAGE_STORAGE_KEY_8P = 'thirteen_water_carriage_pool_v3';
 const PLAYER_PROGRESS_KEY_8P = 'thirteen_water_player_carriage_progress_v3';
 
-function getStorageKeys(mode: 'vs_ai_8p' = 'vs_ai_8p') {
+type PoolMode = 'vs_ai_8p' | 'realtime' | 'reservation' | string;
+
+function getStorageKeys(mode: PoolMode = 'vs_ai_8p') {
   return { CARRIAGE_STORAGE_KEY: CARRIAGE_STORAGE_KEY_8P, PLAYER_PROGRESS_KEY: PLAYER_PROGRESS_KEY_8P };
 }
 
-function generateSingleCarriage(index: number, mode: 'vs_ai_8p' = 'vs_ai_8p'): Carriage {
-  const is8P = mode === 'vs_ai_8p';
-  const totalSeats = is8P ? 8 : 4;
-  const deck = is8P ? createDoubleDeck() : createDeck();
+function generateSingleCarriage(index: number, mode: PoolMode = 'vs_ai_8p'): Carriage {
+  const is8P = true;
+  const totalSeats = 8;
+  const deck = createDoubleDeck();
   const shuffled = shuffle(deck);
   
   const hands: CarriageHand[] = [];
@@ -69,7 +71,7 @@ function generateSingleCarriage(index: number, mode: 'vs_ai_8p' = 'vs_ai_8p'): C
   };
 }
 
-function loadCarriageStorage(mode: 'vs_ai_8p' = 'vs_ai_8p'): { totalGeneratedCount: number; carriages: Carriage[] } {
+function loadCarriageStorage(mode: PoolMode = 'vs_ai_8p'): { totalGeneratedCount: number; carriages: Carriage[] } {
   const { CARRIAGE_STORAGE_KEY } = getStorageKeys(mode);
   try {
     const raw = localStorage.getItem(CARRIAGE_STORAGE_KEY);
@@ -78,14 +80,14 @@ function loadCarriageStorage(mode: 'vs_ai_8p' = 'vs_ai_8p'): { totalGeneratedCou
   return { totalGeneratedCount: 0, carriages: [] };
 }
 
-function saveCarriageStorage(data: { totalGeneratedCount: number; carriages: Carriage[] }, mode: 'vs_ai_8p' = 'vs_ai_8p') {
+function saveCarriageStorage(data: { totalGeneratedCount: number; carriages: Carriage[] }, mode: PoolMode = 'vs_ai_8p') {
   const { CARRIAGE_STORAGE_KEY } = getStorageKeys(mode);
   try {
     localStorage.setItem(CARRIAGE_STORAGE_KEY, JSON.stringify(data));
   } catch (e) {}
 }
 
-function initialize300Carriages(currentTotal: number, existingCarriages: Carriage[], mode: 'vs_ai_8p' = 'vs_ai_8p'): { totalGeneratedCount: number; carriages: Carriage[] } {
+function initialize300Carriages(currentTotal: number, existingCarriages: Carriage[], mode: PoolMode = 'vs_ai_8p'): { totalGeneratedCount: number; carriages: Carriage[] } {
   const newCarriages = [...existingCarriages];
   let totalGeneratedCount = currentTotal;
   
@@ -102,7 +104,7 @@ function initialize300Carriages(currentTotal: number, existingCarriages: Carriag
   return result;
 }
 
-export function checkAndReplenishCarriages(mode: 'vs_ai_8p' = 'vs_ai_8p'): CarriagePoolStats {
+export function checkAndReplenishCarriages(mode: PoolMode = 'vs_ai_8p'): CarriagePoolStats {
   const storage = loadCarriageStorage(mode);
   if (storage.carriages.length < 50) {
     const newStorage = initialize300Carriages(storage.totalGeneratedCount, storage.carriages, mode);
@@ -111,7 +113,7 @@ export function checkAndReplenishCarriages(mode: 'vs_ai_8p' = 'vs_ai_8p'): Carri
   return getCarriageStats(storage.carriages, storage.totalGeneratedCount, mode);
 }
 
-export function getCarriageStats(carriagesInput?: Carriage[], totalGenInput?: number, mode: 'vs_ai_8p' = 'vs_ai_8p'): CarriagePoolStats {
+export function getCarriageStats(carriagesInput?: Carriage[], totalGenInput?: number, mode: PoolMode = 'vs_ai_8p'): CarriagePoolStats {
   let carriages = carriagesInput;
   let totalGeneratedCount = totalGenInput;
   
@@ -140,7 +142,7 @@ export function getCarriageStats(carriagesInput?: Carriage[], totalGenInput?: nu
   };
 }
 
-export function getPlayerCarriageIndexProgress(mode: 'vs_ai_8p' = 'vs_ai_8p'): number {
+export function getPlayerCarriageIndexProgress(mode: PoolMode = 'vs_ai_8p'): number {
   const { PLAYER_PROGRESS_KEY } = getStorageKeys(mode);
   try {
     const raw = localStorage.getItem(PLAYER_PROGRESS_KEY);
@@ -149,14 +151,14 @@ export function getPlayerCarriageIndexProgress(mode: 'vs_ai_8p' = 'vs_ai_8p'): n
   return 1;
 }
 
-export function setPlayerCarriageIndexProgress(index: number, mode: 'vs_ai_8p' = 'vs_ai_8p') {
+export function setPlayerCarriageIndexProgress(index: number, mode: PoolMode = 'vs_ai_8p') {
   const { PLAYER_PROGRESS_KEY } = getStorageKeys(mode);
   try {
     localStorage.setItem(PLAYER_PROGRESS_KEY, index.toString());
   } catch (e) {}
 }
 
-export function getCurrentCarriageOccupancy(mode: 'vs_ai_8p' = 'vs_ai_8p'): {
+export function getCurrentCarriageOccupancy(mode: PoolMode = 'vs_ai_8p'): {
   totalSeats: number;
   occupiedCount: number;
   remainingSeats: number;
@@ -166,7 +168,7 @@ export function getCurrentCarriageOccupancy(mode: 'vs_ai_8p' = 'vs_ai_8p'): {
 } {
   const storage = loadCarriageStorage(mode);
   const playerIndex = getPlayerCarriageIndexProgress(mode);
-  const totalSeats = mode === 'vs_ai_8p' ? 8 : 4;
+  const totalSeats = 8;
   
   const carriage = storage.carriages.find(c => c.index === playerIndex);
   if (!carriage) {
@@ -194,7 +196,7 @@ export function getCurrentCarriageOccupancy(mode: 'vs_ai_8p' = 'vs_ai_8p'): {
 }
 
 // 🚂 获取玩家进入的当前/下一局 (如当前牌局不存在，自动从预发牌池分配)
-export function getOrCreateCurrentCarriage(preferredSeatIndex: number = 0, mode: 'vs_ai_8p' = 'vs_ai_8p'): {
+export function getOrCreateCurrentCarriage(preferredSeatIndex: number = 0, mode: PoolMode = 'vs_ai_8p'): {
   carriage: Carriage;
   seatIndex: number;
   handCards: Card[];
@@ -258,7 +260,7 @@ export async function submitCarriageHandAndAdvance(params: {
   playerAccount: UserAccount;
   arrangement: PlayerArrangement;
   handCards: Card[];
-  mode?: 'vs_ai_8p';
+  mode?: PoolMode;
 }): Promise<{
   completedCarriage: Carriage;
   playerResult: PlayerScoreDetail;
@@ -271,8 +273,7 @@ export async function submitCarriageHandAndAdvance(params: {
   updatedStats: CarriagePoolStats;
 }> {
   const { carriageId, seatIndex, playerAccount, arrangement, handCards, mode = 'vs_ai_8p' } = params;
-  const is8P = mode === 'vs_ai_8p';
-  const numPlayers = is8P ? 8 : 4;
+  const numPlayers = 8;
   const storage = loadCarriageStorage(mode);
   
   const carriageIndex = storage.carriages.findIndex(c => c.id === carriageId);
@@ -310,10 +311,8 @@ export async function submitCarriageHandAndAdvance(params: {
     arrangement: sub.arrangement
   }));
 
-  // 3. 调用各自独立的 4 人场或 8 人场比牌计分模块
-  const allMatchResults = is8P
-    ? calculate8PlayerMatchScores(matchPlayersInput)
-    : calculate4PlayerMatchScores(matchPlayersInput);
+  // 3. 调用 8 人场比牌计分模块
+  const allMatchResults = calculate8PlayerMatchScores(matchPlayersInput);
     
   const playerResult = allMatchResults.find(r => r.playerId === 'player_user') || allMatchResults[0];
 
@@ -376,7 +375,7 @@ export async function submitCarriageHandAndAdvance(params: {
 }
 
 // 📜 获取已结算的战绩记录列表
-export function getCompletedCarriagesList(mode: 'vs_ai_8p' = 'vs_ai_8p'): Carriage[] {
+export function getCompletedCarriagesList(mode: PoolMode = 'vs_ai_8p'): Carriage[] {
   const storage = loadCarriageStorage(mode);
   return storage.carriages
     .filter(c => c.status === 'completed')
@@ -384,7 +383,7 @@ export function getCompletedCarriagesList(mode: 'vs_ai_8p' = 'vs_ai_8p'): Carria
 }
 
 // 🧹 重置牌局库存池 (重新生成 300 局)
-export function resetCarriagePool(mode: 'vs_ai_8p' = 'vs_ai_8p'): CarriagePoolStats {
+export function resetCarriagePool(mode: PoolMode = 'vs_ai_8p'): CarriagePoolStats {
   const { CARRIAGE_STORAGE_KEY, PLAYER_PROGRESS_KEY } = getStorageKeys(mode);
   try {
     localStorage.removeItem(CARRIAGE_STORAGE_KEY);

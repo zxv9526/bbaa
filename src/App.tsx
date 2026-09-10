@@ -1108,9 +1108,9 @@ export default function App() {
             onClick={() => setShowAuthModal(true)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/60 hover:bg-slate-800 backdrop-blur-sm border border-slate-700/50 transition active:scale-95 group"
           >
-            <div className="text-xl">{currentAccount.avatar}</div>
+            <div className="text-xl">{currentAccount?.avatar || '👑'}</div>
             <span className="text-sm font-bold text-white group-hover:text-blue-300 transition max-w-[100px] truncate">
-              {currentAccount.nickname}
+              {currentAccount?.nickname || '十三水玩家'}
             </span>
           </button>
 
@@ -1120,7 +1120,7 @@ export default function App() {
             className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900/60 hover:bg-slate-800 backdrop-blur-sm border border-amber-500/30 text-amber-400 transition active:scale-95"
           >
             <span className="text-sm">🪙</span>
-            <span className="text-sm font-black">{currentAccount.points.toLocaleString()}</span>
+            <span className="text-sm font-black">{(currentAccount?.points || 0).toLocaleString()}</span>
           </button>
         </header>
       )}
@@ -1651,15 +1651,15 @@ export default function App() {
       <CarriageHubModal
         isOpen={showCarriageHubModal}
         onClose={() => setShowCarriageHubModal(false)}
-        mode="vs_ai_8p"
+        mode={mode}
         currentCarriageIndex={carriageIndex}
         onSelectCarriageIndex={idx => {
-          setPlayerCarriageIndexProgress(idx, 'vs_ai_8p');
-          startNewMatch('vs_ai_8p');
+          setPlayerCarriageIndexProgress(idx, mode);
+          startNewMatch(mode);
           setShowCarriageHubModal(false);
         }}
         onResetPool={() => {
-          startNewMatch('vs_ai_8p');
+          startNewMatch(mode);
         }}
       />
 
