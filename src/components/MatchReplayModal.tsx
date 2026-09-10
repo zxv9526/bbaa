@@ -55,7 +55,7 @@ export function MatchReplayModal({ isOpen, onClose, phone }: MatchReplayModalPro
               </h3>
               <p className="text-xs text-slate-400">
                 {selectedReplay 
-                  ? `${selectedReplay.mode === 'vs_ai_8p' ? '八人场' : selectedReplay.mode === 'vs_ai_4p' ? '四人场' : '双人场'} • ${formatDate(selectedReplay.timestamp)}`
+                  ? `${'八人场'} • ${formatDate(selectedReplay.timestamp)}`
                   : '查看最近 20 局对局手牌与比牌记录'
                 }
               </p>
@@ -197,7 +197,7 @@ export function MatchReplayModal({ isOpen, onClose, phone }: MatchReplayModalPro
                       </div>
                       <div>
                         <div className="text-xs font-bold text-white flex items-center gap-2">
-                          <span>{r.mode === 'vs_ai_8p' ? '八人场' : r.mode === 'vs_ai_4p' ? '四人场' : '双人单挑'} • 第 {r.carriageIndex} 局</span>
+                          <span>{'八人场'} • 第 {r.carriageIndex} 局</span>
                         </div>
                         <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
                           <span>{formatDate(r.timestamp)}</span>

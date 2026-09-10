@@ -108,7 +108,7 @@ import { saveMatchReplay } from './lib/matchReplay';
 import { triggerHaptic } from './lib/haptics';
 import { ArrowLeftRight, History, GraduationCap } from 'lucide-react';
 
-type GameMode = 'vs_ai_8p' | 'vs_ai_4p' | 'practice';
+type GameMode = 'vs_ai_8p';
 
 export default function App() {
   const [currentAccount, setCurrentAccount] = useState<UserAccount>(() => getCurrentAccount());
@@ -1092,7 +1092,7 @@ export default function App() {
   const availablePatterns = findAvailablePatterns(originalHand);
 
   return (
-    <div className="h-screen h-[100dvh] max-h-[100dvh] w-screen w-full bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
+    <div className="h-screen h-[100dvh] max-h-[100dvh] w-screen w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
       {/* 1. Header Bar: ONLY shown on main menu/lobby; completely hidden during game match */}
       {gameState === 'menu' && (
         <header className="shrink-0 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-8 py-3 flex items-center justify-between shadow-sm">
@@ -1156,8 +1156,15 @@ export default function App() {
           const occ8P = getCurrentCarriageOccupancy('vs_ai_8p');
 
           return (
-            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 my-auto">
-              {/* BLOCK 1: 八人巅峰场 (Flagship 8-Player Double-Deck Arena with Integrated Voice/Text Chat) */}
+            <div className="w-full flex flex-col items-center justify-center gap-6 sm:gap-8 my-auto">
+              {/* Hero Banner Area */}
+              <div className="flex flex-col items-center gap-2 mb-2 sm:mb-4 animate-fade-in-up">
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-gradient-to-br from-amber-400 to-red-600 flex items-center justify-center text-4xl sm:text-5xl font-black shadow-lg shadow-red-600/30 ring-4 ring-slate-950 ring-offset-4 ring-offset-red-500/20 transform hover:scale-105 transition-transform duration-300">🀄</div>
+                <h1 className="text-3xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-400 to-orange-500 tracking-tight mt-4 drop-shadow-sm">十三水巅峰对决</h1>
+                <p className="text-sm sm:text-base text-slate-400 font-medium tracking-wide">随时随地 · 极速匹配 · 畅快交锋</p>
+              </div>
+
+              {/* BLOCK 1: 八人巅峰场 */}
               <div
                 id="arena-8p-section"
                 onClick={() => {
@@ -1171,7 +1178,7 @@ export default function App() {
                   }
                   startNewMatch('vs_ai_8p');
                 }}
-                className={`col-span-1 md:col-span-2 relative bg-gradient-to-br from-red-950/80 via-slate-900 to-amber-950/40 border-2 border-amber-500/50 p-6 sm:p-8 rounded-3xl flex flex-col justify-between gap-6 cursor-pointer transition-all duration-300 group shadow-2xl hover:border-amber-400 hover:-translate-y-1 hover:shadow-red-950/60 ${
+                className={`w-full max-w-4xl relative bg-gradient-to-br from-red-950/80 via-slate-900 to-amber-950/40 border-2 border-amber-500/50 p-6 sm:p-8 rounded-3xl flex flex-col justify-between gap-6 cursor-pointer transition-all duration-300 group shadow-2xl hover:border-amber-400 hover:-translate-y-1 hover:shadow-red-950/60 ${
                   occ8P.isFull ? 'opacity-80' : ''
                 }`}
               >

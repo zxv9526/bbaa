@@ -4,7 +4,7 @@ import { CarriagePoolStats, CarriageSubmission } from '../lib/carriageManager';
 import { ChatMessage } from '../types';
 
 interface CarriageHeaderBarProps {
-  mode?: 'vs_ai_4p' | 'vs_ai_8p';
+  mode?: 'vs_ai_8p';
   currentCarriageIndex: number;
   seatIndex?: number;
   submissions?: { [seatIndex: number]: CarriageSubmission };

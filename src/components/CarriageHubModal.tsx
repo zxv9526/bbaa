@@ -25,7 +25,7 @@ interface CarriageHubModalProps {
   currentCarriageIndex: number;
   onSelectCarriageIndex: (index: number) => void;
   onResetPool: () => void;
-  mode?: 'vs_ai_4p' | 'vs_ai_8p';
+  mode?: 'vs_ai_8p';
 }
 
 export function CarriageHubModal({

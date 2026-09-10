@@ -1,4 +1,4 @@
-
+code = """
 import { Card, PlayerArrangement, PlayerScoreDetail, UserAccount } from '../types';
 import { createDeck, createDoubleDeck, shuffle, aiArrangeCards, calculate4PlayerMatchScores, calculate8PlayerMatchScores, detectSpecialHand } from '../gameLogic';
 import { addPoints } from './accountManager';
@@ -393,3 +393,6 @@ export function resetCarriagePool(mode: 'vs_ai_8p' = 'vs_ai_8p'): CarriagePoolSt
   const newStorage = initialize300Carriages(0, [], mode);
   return getCarriageStats(newStorage.carriages, newStorage.totalGeneratedCount, mode);
 }
+"""
+with open('src/lib/carriageManager.ts', 'w', encoding='utf-8') as f:
+    f.write(code)
