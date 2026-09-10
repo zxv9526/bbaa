@@ -1,6 +1,6 @@
 {
   "name": "十三水 · 经典扑克对决 (Chinese Poker)",
-  "description": "十三水 (Chinese Poker) 游戏大厅，全新重构左上角注册登录中心、右上角积分管理系统，包含八人巅峰争霸与四人传统经典两大专区。",
-  "requestFramePermissions": [],
+  "description": "十三水 (Chinese Poker) 游戏大厅，支持八人巅峰对决、二人对决与实时语音文字互动。",
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

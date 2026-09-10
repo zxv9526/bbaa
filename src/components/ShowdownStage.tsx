@@ -17,16 +17,15 @@ import {
   ChevronUp,
   Target,
   Trophy,
-  HelpCircle
+  HelpCircle,
+  MessageSquare
 } from 'lucide-react';
 
 interface ShowdownStageProps {
   results: PlayerScoreDetail[];
   onPlayAgain: () => void;
   onBackToMenu: () => void;
-  isPractice?: boolean;
-  nextSpecialName?: string;
-  onSelectSpecialHand?: () => void;
+  onOpenChat?: () => void;
 }
 
 type Step = 'front' | 'middle' | 'back' | 'guns' | 'summary';
@@ -35,9 +34,7 @@ export function ShowdownStage({
   results,
   onPlayAgain,
   onBackToMenu,
-  isPractice = false,
-  nextSpecialName,
-  onSelectSpecialHand
+  onOpenChat
 }: ShowdownStageProps) {
   const [currentStep, setCurrentStep] = useState<Step>('front');
   const [autoPlay, setAutoPlay] = useState<boolean>(true);
@@ -637,15 +634,15 @@ export function ShowdownStage({
               className="px-7 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
-              {isPractice && nextSpecialName ? `再来一局 (换新牌型: ${nextSpecialName})` : '再来一局'}
+              再来一局
             </button>
-            {isPractice && onSelectSpecialHand && (
+            {onOpenChat && (
               <button
-                onClick={onSelectSpecialHand}
-                className="px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-750 text-amber-300 border border-amber-500/30 font-bold text-sm transition cursor-pointer active:scale-95 flex items-center gap-1.5 shadow"
+                onClick={onOpenChat}
+                className="px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-750 text-indigo-300 border border-indigo-500/30 font-bold text-sm transition cursor-pointer active:scale-95 flex items-center gap-1.5 shadow"
               >
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                自选特殊牌型
+                <MessageSquare className="w-4 h-4 text-indigo-400" />
+                互动对讲
               </button>
             )}
             <button

@@ -19,8 +19,7 @@ import {
   DetectedPattern,
   autoFixDaoShui,
   generateSpecialHand,
-  SPECIAL_HAND_CN,
-  PRACTICE_SPECIAL_HANDS_SEQUENCE
+  SPECIAL_HAND_CN
 } from './gameLogic';
 import { CardView } from './components/CardView';
 import { HandSummary } from './components/HandSummary';
@@ -28,13 +27,15 @@ import { SpecialHandBanner } from './components/SpecialHandBanner';
 import { RuleModal } from './components/RuleModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { MultiplayerRoom } from './components/MultiplayerRoom';
-import { PracticeModal } from './components/PracticeModal';
 import { ShowdownStage } from './components/ShowdownStage';
 import { CardSkinModal } from './components/CardSkinModal';
 import { AuthModal } from './components/AuthModal';
 import { PointsManagementModal } from './components/PointsManagementModal';
 import { NoPointsModal } from './components/NoPointsModal';
-import { PracticeHeaderBar } from './components/PracticeHeaderBar';
+import { ChatDrawer } from './components/ChatDrawer';
+import { ChatFloatingWidget } from './components/ChatFloatingWidget';
+import { ChatMessage, ChatMessageType } from './types';
+import { getAiReplyForMessage, speakTextMessage } from './lib/chatManager';
 import { SpecialHandLabModal } from './components/SpecialHandLabModal';
 import { initCardSkins } from './lib/cardSkin';
 import {
@@ -49,6 +50,7 @@ import {
   Users,
   Trophy,
   BookOpen,
+  MessageSquare,
   Volume2,
   VolumeX,
   Sparkles,
@@ -106,19 +108,18 @@ import { saveMatchReplay } from './lib/matchReplay';
 import { triggerHaptic } from './lib/haptics';
 import { ArrowLeftRight, History, GraduationCap } from 'lucide-react';
 
-type GameMode = 'vs_ai_8p' | 'vs_ai_4p' | 'vs_ai_2p' | 'multiplayer' | 'practice';
+type GameMode = 'vs_ai_8p' | 'vs_ai_2p' | 'multiplayer';
 
 export default function App() {
   const [currentAccount, setCurrentAccount] = useState<UserAccount>(() => getCurrentAccount());
   const [playerName, setPlayerName] = useState<string>(() => currentAccount.nickname);
 
-  const [mode, setMode] = useState<GameMode>('vs_ai_4p');
+  const [mode, setMode] = useState<GameMode>('vs_ai_8p');
   const [gameState, setGameState] = useState<'menu' | 'room_lobby' | 'arranging' | 'revealing'>('menu');
   const [roomCode, setRoomCode] = useState<string>('');
   const [joinInputCode8P, setJoinInputCode8P] = useState<string>('');
-  const [joinInputCode4P, setJoinInputCode4P] = useState<string>('');
 
-  // Carriage Mode State (8-player & 4-player Async Carriage Flow)
+  // Carriage Mode State (8-player Async Carriage Flow)
   const [carriageSeatIndex, setCarriageSeatIndex] = useState<number>(0);
   const [carriageIndex, setCarriageIndex] = useState<number>(() => getPlayerCarriageIndexProgress());
   const [carriageId, setCarriageId] = useState<string>('');
@@ -130,13 +131,17 @@ export default function App() {
   // Audio mute state
   const [isMuted, setIsMuted] = useState(false);
 
+  // Chat & Voice State
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [showChatDrawer, setShowChatDrawer] = useState<boolean>(false);
+  const [ttsEnabled, setTtsEnabled] = useState<boolean>(true);
+
   // Modals
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showPointsModal, setShowPointsModal] = useState(false);
   const [showNoPointsModal, setShowNoPointsModal] = useState(false);
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [showRankModal, setShowRankModal] = useState(false);
-  const [showPracticeModal, setShowPracticeModal] = useState(false);
   const [showSpecialTesterModal, setShowSpecialTesterModal] = useState(false);
   const [showSkinModal, setShowSkinModal] = useState(false);
   const [showSubmitChoiceModal, setShowSubmitChoiceModal] = useState(false);
@@ -155,8 +160,6 @@ export default function App() {
   // Detected Special Hand
   const [specialHand, setSpecialHand] = useState<SpecialHandType | null>(null);
   const [useSpecialHand, setUseSpecialHand] = useState<boolean>(false);
-  const [practiceSpecialIndex, setPracticeSpecialIndex] = useState<number>(0);
-  const practiceSpecialIndexRef = useRef<number>(0);
 
   // AI Suggestions & Pattern Changer
   const [suggestions, setSuggestions] = useState<ArrangementOption[]>([]);
@@ -314,25 +317,22 @@ export default function App() {
     refreshPlayerStats(newName);
   };
 
-  // Start a new local match (8P, 4P, 2P, or practice)
+  // Start a new match (8P or 2P)
   const startNewMatch = (
     selectedMode: GameMode = mode,
-    seatOverride?: number,
-    practiceSpecialType?: SpecialHandType
+    seatOverride?: number
   ) => {
-    // 🛡️ 积分门槛限制：没有积分不允许进入真实牌局（试玩练习场免积分自由体验）
-    if (selectedMode !== 'practice' && currentAccount.points <= 0) {
+    // 🛡️ 积分门槛限制：没有积分不允许进入真实牌局
+    if (currentAccount.points <= 0) {
       setShowNoPointsModal(true);
       return;
     }
 
     // 🛡️ 契约精神核心防线：检查是否存在该账号未提交的真实牌局，不允许玩家因牌烂而中途放弃
-    if (selectedMode !== 'practice') {
-      const saved = loadActiveMatchSession(currentAccount.phone);
-      if (saved && saved.originalHand && saved.originalHand.length === 13) {
-        restoreFromSavedSession(saved, '根据游戏契约精神');
-        return;
-      }
+    const saved = loadActiveMatchSession(currentAccount.phone);
+    if (saved && saved.originalHand && saved.originalHand.length === 13) {
+      restoreFromSavedSession(saved, '根据游戏契约精神');
+      return;
     }
 
     sounds.playDeal();
@@ -341,127 +341,14 @@ export default function App() {
     setMatchResults(null);
     setUseSpecialHand(false);
 
-    // 🎮 试玩练习场：固定特殊牌型轮换发牌，让玩家每局都能体验各种震撼特殊牌型，快速熟悉规则与算分！
-    if (selectedMode === 'practice') {
-      let targetSpecialType = practiceSpecialType;
-
-      if (targetSpecialType) {
-        // 如果外部显式指定了特殊牌型（如特殊牌型库自选），同步当前序列索引
-        const foundIdx = PRACTICE_SPECIAL_HANDS_SEQUENCE.indexOf(targetSpecialType);
-        if (foundIdx !== -1) {
-          practiceSpecialIndexRef.current = foundIdx;
-          setPracticeSpecialIndex(foundIdx);
-        }
-      } else {
-        // 关键逻辑：若未指定牌型（例如在结算比牌页点击"再来一局"，或重新开局），每局自动递增轮换到下一个不同的特殊牌型！
-        if (gameState === 'revealing') {
-          const nextIdx = (practiceSpecialIndexRef.current + 1) % PRACTICE_SPECIAL_HANDS_SEQUENCE.length;
-          practiceSpecialIndexRef.current = nextIdx;
-          setPracticeSpecialIndex(nextIdx);
-          targetSpecialType = PRACTICE_SPECIAL_HANDS_SEQUENCE[nextIdx];
-        } else {
-          targetSpecialType =
-            PRACTICE_SPECIAL_HANDS_SEQUENCE[
-              practiceSpecialIndexRef.current % PRACTICE_SPECIAL_HANDS_SEQUENCE.length
-            ];
-        }
-      }
-
-      const playerDealt = generateSpecialHand(targetSpecialType);
-      const sortedPlayerHand = sortCards(playerDealt);
-
-      setOriginalHand(sortedPlayerHand);
-      setPool([]);
-      setSelectedCardIds([]);
-
-      // 检测特殊牌型 (确保必命中 targetSpecialType)
-      const special = detectSpecialHand(sortedPlayerHand) || targetSpecialType;
-      setSpecialHand(special);
-      setUseSpecialHand(true); // 默认启用特殊牌型免摆直接出牌，也可随时切换常规理牌
-
-      sounds.playVictory();
-      triggerHaptic('heavy');
-      confetti({ particleCount: 120, spread: 90, origin: { y: 0.35 } });
-
-      // 计算智能非倒水推荐牌型 (供常规摆牌参考)
-      const smartSuggestions = getSuggestedArrangements(sortedPlayerHand);
-      setSuggestions(smartSuggestions);
-      patternChangerRef.current = new PatternChanger(sortedPlayerHand);
-
-      if (smartSuggestions.length > 0) {
-        setFront(smartSuggestions[0].front);
-        setMid(smartSuggestions[0].middle);
-        setBack(smartSuggestions[0].back);
-        setPatternInfo({
-          tag: smartSuggestions[0].tag,
-          index: 1,
-          total: smartSuggestions.length
-        });
-      } else {
-        setFront(sortedPlayerHand.slice(0, 3));
-        setMid(sortedPlayerHand.slice(3, 8));
-        setBack(sortedPlayerHand.slice(8, 13));
-      }
-
-      // 生成 3 位高拟真电脑对手，排除玩家已用卡牌，同台比牌
-      const userCardIds = new Set(playerDealt.map(c => c.id));
-      const aiDeck = shuffle(createDoubleDeck().filter(c => !userCardIds.has(c.id)));
-
-      const aiAvatars = ['🤖', '🦊', '🧔'];
-      const aiNames = ['智多星 (AI)', '十三妹 (AI)', '雀圣阿旺 (AI)'];
-      const playersList: typeof playersInMatch = [
-        {
-          id: 'player_user',
-          name: currentAccount.nickname || playerName,
-          isAi: false,
-          avatar: currentAccount.avatar || '😎',
-          cards: sortedPlayerHand,
-          arrangement: {
-            front: [],
-            middle: [],
-            back: [],
-            specialHand: special,
-            isValid: true,
-            isDaoShui: false
-          }
-        }
-      ];
-
-      for (let i = 1; i <= 3; i++) {
-        const aiCards = aiDeck.slice((i - 1) * 13, i * 13);
-        const aiArrange = aiArrangeCards(aiCards);
-        playersList.push({
-          id: `ai_${i}`,
-          name: aiNames[i - 1] || `电脑对手 ${i}`,
-          isAi: true,
-          avatar: aiAvatars[i - 1] || '🤖',
-          cards: aiCards,
-          arrangement: aiArrange
-        });
-      }
-
-      setPlayersInMatch(playersList);
-      setGameState('arranging');
-
-      const specInfo = SPECIAL_HAND_CN[targetSpecialType];
-      const seqDisplayIndex = (practiceSpecialIndexRef.current % PRACTICE_SPECIAL_HANDS_SEQUENCE.length) + 1;
-      setCarriageToast({
-        show: true,
-        msg: `🎯 试玩特训第${seqDisplayIndex}/13局：【${specInfo ? specInfo.name : targetSpecialType}】(+${specInfo ? specInfo.points : 0}水)`,
-        pts: 0
-      });
-      setTimeout(() => setCarriageToast(null), 3200);
-      return;
-    }
-
-    // 🚆 8人模式与4人模式：使用预发牌存储与无缝连战逻辑
-    if (selectedMode === 'vs_ai_8p' || selectedMode === 'vs_ai_4p') {
+    // 🚆 8人巅峰场：使用异步包厢存储与300局池系统
+    if (selectedMode === 'vs_ai_8p') {
       const activeSeat = typeof seatOverride === 'number' ? seatOverride : carriageSeatIndex;
-      const { carriage, seatIndex, handCards, stats, isFull } = getOrCreateCurrentCarriage(activeSeat, selectedMode);
+      const { carriage, seatIndex, handCards, stats, isFull } = getOrCreateCurrentCarriage(activeSeat, 'vs_ai_8p');
 
-      const totalSeats = selectedMode === 'vs_ai_8p' ? 8 : 4;
+      const totalSeats = 8;
       if (isFull && carriage.submissions && Object.keys(carriage.submissions).length >= totalSeats && !carriage.submissions[seatIndex]) {
-        setErrorMsg(`该【${selectedMode === 'vs_ai_8p' ? '八人场' : '四人场'}】房间已满座 (0/${totalSeats})，无法再进入！`);
+        setErrorMsg(`该八人场房间已满座 (0/${totalSeats})，无法再进入！`);
         return;
       }
       
@@ -508,8 +395,7 @@ export default function App() {
         setBack(sortedPlayerHand.slice(8, 13));
       }
 
-      const is8P = selectedMode === 'vs_ai_8p';
-      const numPlayers = is8P ? 8 : 4;
+      const numPlayers = 8;
 
       // Prepare players list (User at seatIndex + other submissions or empty seat placeholders; NO AI BOTS)
       const playersList: {
@@ -572,9 +458,9 @@ export default function App() {
       return;
     }
 
-    // 4人场与2人场：标准对局逻辑
+    // 双人极速单挑场：标准 2 人对局逻辑
     const deck = shuffle(createDeck());
-    const numPlayers = selectedMode === 'vs_ai_2p' ? 2 : 4;
+    const numPlayers = 2;
     const playerDealt = deck.slice(0, 13);
     const sortedPlayerHand = sortCards(playerDealt);
 
@@ -658,6 +544,57 @@ export default function App() {
 
     setPlayersInMatch(playersList);
     setGameState('arranging');
+  };
+
+  // 💬 Chat & Voice Message Dispatcher
+  const handleSendMessage = (
+    type: ChatMessageType,
+    content: string,
+    audioUrl?: string,
+    audioDuration?: number
+  ) => {
+    const userMsg: ChatMessage = {
+      id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      senderId: currentAccount.id || 'user',
+      senderName: currentAccount.nickname || playerName || '我',
+      senderAvatar: currentAccount.avatar || '😎',
+      isUser: true,
+      type,
+      content,
+      audioUrl,
+      audioDuration,
+      timestamp: Date.now()
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    // AI opponents respond contextually if in local vs AI match
+    if (mode === 'vs_ai_8p' || mode === 'vs_ai_2p') {
+      const oppList = playersInMatch
+        .filter((p) => p.id !== 'player_user' && !p.id.startsWith('empty_'))
+        .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar }));
+
+      if (oppList.length > 0) {
+        setTimeout(() => {
+          const aiReply = getAiReplyForMessage(content, type, oppList);
+          if (aiReply) {
+            const aiMsg: ChatMessage = {
+              id: 'msg_ai_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+              senderId: aiReply.opponent.id,
+              senderName: aiReply.opponent.name,
+              senderAvatar: aiReply.opponent.avatar,
+              isUser: false,
+              type: aiReply.replyType,
+              content: aiReply.replyContent,
+              timestamp: Date.now()
+            };
+            setMessages((prev) => [...prev, aiMsg]);
+            if (ttsEnabled && aiReply.replyType !== 'emoji') {
+              speakTextMessage(aiReply.replyContent);
+            }
+          }
+        }, 1200 + Math.random() * 800);
+      }
+    }
   };
 
   // Multi-card selection toggle & Instant Two-Card Swap (点选两张牌直接对调)
@@ -920,28 +857,6 @@ export default function App() {
     setErrorMsg('');
   };
 
-  // 🎮 试玩模式专属：自动前进或后退轮换特殊牌型特训
-  const handleAdvancePracticeMatch = (step: number = 1) => {
-    const currentIdx = practiceSpecialIndexRef.current;
-    const nextIdx =
-      (currentIdx + step + PRACTICE_SPECIAL_HANDS_SEQUENCE.length) %
-      PRACTICE_SPECIAL_HANDS_SEQUENCE.length;
-    practiceSpecialIndexRef.current = nextIdx;
-    setPracticeSpecialIndex(nextIdx);
-    startNewMatch('practice', undefined, PRACTICE_SPECIAL_HANDS_SEQUENCE[nextIdx]);
-  };
-
-  // 🧪 试玩模式专属：载入指定固定特殊牌型测试
-  const handleLoadSpecialHandInPractice = (type: SpecialHandType) => {
-    const idx = PRACTICE_SPECIAL_HANDS_SEQUENCE.indexOf(type);
-    if (idx !== -1) {
-      practiceSpecialIndexRef.current = idx;
-      setPracticeSpecialIndex(idx);
-    }
-    startNewMatch('practice', undefined, type);
-    setShowSpecialTesterModal(false);
-  };
-
   // Submit Player Arrangement & Reveal (Opens Choice Modal)
   const handleSubmitArrangement = async () => {
     if (useSpecialHand && specialHand) {
@@ -1041,8 +956,8 @@ export default function App() {
       setGameState('revealing');
       return;
     }
-    // 🚆 8人模式与4人模式：预发牌异步结算
-    if (mode === 'vs_ai_8p' || mode === 'vs_ai_4p') {
+    // 🚆 8人模式：预发牌异步结算
+    if (mode === 'vs_ai_8p') {
       try {
         const res = await submitCarriageHandAndAdvance({
           carriageId,
@@ -1139,8 +1054,7 @@ export default function App() {
           setSuggestions(smartSuggestions);
           patternChangerRef.current = new PatternChanger(nextHand);
 
-          const is8P = mode === 'vs_ai_8p';
-          const numPlayers = is8P ? 8 : 4;
+          const numPlayers = 8;
           const nextCarriage = res.nextCarriageData.carriage;
           const nextSeatIndex = res.nextCarriageData.seatIndex;
 
@@ -1428,11 +1342,10 @@ export default function App() {
       <main className="flex-1 max-w-5xl w-full mx-auto px-2 sm:px-6 py-1 sm:py-2 flex flex-col items-center justify-start overflow-y-auto no-scrollbar">
         {gameState === 'menu' && (() => {
           const occ8P = getCurrentCarriageOccupancy('vs_ai_8p');
-          const occ4P = getCurrentCarriageOccupancy('vs_ai_4p');
 
           return (
             <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 my-auto">
-              {/* BLOCK 1: 八人场 (8-Player Arena) */}
+              {/* BLOCK 1: 八人巅峰场 (8-Player Arena) */}
               <div
                 id="arena-8p-section"
                 onClick={() => {
@@ -1471,10 +1384,10 @@ export default function App() {
 
                   <div className="space-y-1.5">
                     <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight group-hover:text-amber-300 transition">
-                      八人场
+                      八人巅峰场
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                      双副扑克牌 · 8人同台竞技 · 7枪全垒打狂暴翻倍
+                      双副扑克牌 · 8人同台竞技 · 7枪全垒打狂暴翻倍 · 异步连战
                     </p>
                   </div>
                 </div>
@@ -1487,88 +1400,78 @@ export default function App() {
                 </div>
               </div>
 
-              {/* BLOCK 2: 四人场 (4-Player Arena) */}
+              {/* BLOCK 2: 双人极速场 (2-Player Fast Duel) */}
               <div
-                id="arena-4p-section"
+                id="arena-2p-section"
                 onClick={() => {
                   if (currentAccount.points <= 0) {
                     setShowNoPointsModal(true);
                     return;
                   }
-                  if (occ4P.isFull) {
-                    setErrorMsg('四人场当前房间已满座 (0/4)，无法进入！');
-                    return;
-                  }
-                  startNewMatch('vs_ai_4p');
+                  startNewMatch('vs_ai_2p');
                 }}
-                className={`relative bg-gradient-to-br from-blue-950/70 via-slate-900 to-slate-950 border-2 border-blue-900/60 p-6 sm:p-8 rounded-3xl flex flex-col justify-between gap-6 cursor-pointer transition-all duration-300 group ${
-                  occ4P.isFull ? 'opacity-80 hover:border-blue-600/50' : 'hover:border-blue-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-950/50'
-                }`}
+                className="relative bg-gradient-to-br from-blue-950/70 via-slate-900 to-slate-950 border-2 border-blue-900/60 hover:border-blue-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-950/50 p-6 sm:p-8 rounded-3xl flex flex-col justify-between gap-6 cursor-pointer transition-all duration-300 group"
               >
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-slate-950 flex items-center justify-center text-2xl font-black shadow-lg shadow-blue-600/30 group-hover:scale-105 transition duration-300">
-                      ⚔️
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 text-slate-950 flex items-center justify-center text-2xl font-black shadow-lg shadow-blue-500/30 group-hover:scale-105 transition duration-300">
+                      ⚡
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/30">
                         单副 52 牌
                       </span>
-                      <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
-                        occ4P.isFull
-                          ? 'text-rose-400 bg-rose-500/10 border-rose-500/30'
-                          : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
-                      }`}>
-                        {occ4P.isFull ? '🔴 满座 (0/4)' : `🟢 剩余位置: ${occ4P.remainingSeats}/4`}
+                      <span className="text-xs font-bold text-cyan-400 bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-500/30">
+                        1v1 极速对决
                       </span>
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
                     <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight group-hover:text-blue-300 transition">
-                      四人场
+                      双人单挑场
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                      单副扑克牌 · 经典四人对决 · 正宗三墩比拼
+                      单副扑克牌 · 1v1 极速切磋 · 瞬发结算 · 真实水数较量
                     </p>
                   </div>
                 </div>
 
                 <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-sm sm:text-base font-bold text-blue-400 group-hover:text-blue-300">
-                  <span>{occ4P.isFull ? '已满座 (无法进入)' : '立即进入四人场'}</span>
+                  <span>立即进入双人场</span>
                   <div className="w-9 h-9 rounded-xl bg-blue-500/20 flex items-center justify-center group-hover:translate-x-1.5 transition">
                     <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
                 </div>
               </div>
 
-              {/* 🎮 大厅底部：试玩模式 (自由演练 · 模拟比牌计分 · 操作规则教学) */}
+              {/* BLOCK 3: 好友多人联机 (Multiplayer Room) */}
               <div
-                id="lobby-practice-hero-card"
-                onClick={() => startNewMatch('practice')}
-                className="col-span-1 md:col-span-2 bg-gradient-to-r from-emerald-950/60 via-slate-900 to-teal-950/60 hover:from-emerald-950/80 hover:to-teal-950/80 border-2 border-emerald-500/40 hover:border-emerald-400 p-5 sm:p-6 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-4 cursor-pointer transition-all duration-300 group shadow-xl hover:shadow-2xl hover:shadow-emerald-950/50"
+                id="lobby-multiplayer-card"
+                onClick={() => setGameState('room_lobby')}
+                className="col-span-1 md:col-span-2 bg-gradient-to-r from-purple-950/60 via-slate-900 to-indigo-950/60 hover:from-purple-950/80 hover:to-indigo-950/80 border-2 border-purple-500/40 hover:border-purple-400 p-5 sm:p-6 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-4 cursor-pointer transition-all duration-300 group shadow-xl hover:shadow-2xl hover:shadow-purple-950/50"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center text-2xl sm:text-3xl font-black shadow-lg shadow-emerald-600/30 group-hover:scale-105 transition duration-300 shrink-0">
-                    🎮
+                  <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center text-2xl sm:text-3xl font-black shadow-lg shadow-purple-600/30 group-hover:scale-105 transition duration-300 shrink-0">
+                    👥
                   </div>
                   <div className="space-y-1 text-left">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-base sm:text-lg font-black text-white group-hover:text-emerald-300 transition">
-                        免费试玩模式 (全真演练练习场)
+                      <h3 className="text-base sm:text-lg font-black text-white group-hover:text-purple-300 transition">
+                        好友联机开黑 (自定义房间)
                       </h3>
-                      <span className="text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                        零门槛 · 真实对局样式 · 无需积分
+                      <span className="text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                        房间对决 · 密码入场 · 实时同屏
                       </span>
                     </div>
                     <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
-                      采用与真实牌局 100% 完全相同的牌桌界面布局！自由理牌、点选双牌互换、一键修复倒水，模拟 4 人同台比拼与详细算分推导，帮您零成本精通十三水！
+                      输入房间号或创建房间，与好友面对面开黑！支持语音对讲、战术快捷语和实时比牌！
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/50 group-hover:translate-x-1 transition shrink-0 whitespace-nowrap">
-                  <span>进入试玩模式</span>
+                <div className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-purple-950/50 group-hover:translate-x-1 transition shrink-0 whitespace-nowrap">
+                  <span>进入多人联机</span>
                   <ArrowRight className="w-4 h-4" />
                 </div>
               </div>
@@ -1576,17 +1479,17 @@ export default function App() {
               {/* Lobby Quick Tool Shelf */}
               <div className="col-span-1 md:col-span-2 flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 pt-2">
                 <button
-                  id="btn-open-practice-modal"
-                  onClick={() => startNewMatch('practice')}
-                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/40 text-emerald-300 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
+                  id="btn-open-chat-from-lobby"
+                  onClick={() => setShowChatDrawer(true)}
+                  className="px-4 py-2.5 rounded-2xl bg-indigo-950/70 hover:bg-indigo-900/80 border border-indigo-500/40 text-indigo-300 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md cursor-pointer"
                 >
-                  <GraduationCap className="w-4 h-4 text-emerald-400" />
-                  <span>试玩模式 (全真演练)</span>
+                  <MessageSquare className="w-4 h-4 text-indigo-400" />
+                  <span>牌桌对讲聊天</span>
                 </button>
 
                 <button
                   onClick={() => setShowReplayModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
+                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md cursor-pointer"
                 >
                   <History className="w-4 h-4 text-amber-400" />
                   <span>战绩复盘</span>
@@ -1594,7 +1497,7 @@ export default function App() {
 
                 <button
                   onClick={() => setShowRankModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
+                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md cursor-pointer"
                 >
                   <Trophy className="w-4 h-4 text-blue-400" />
                   <span>排行榜</span>
@@ -1602,7 +1505,7 @@ export default function App() {
 
                 <button
                   onClick={() => setShowRuleModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
+                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md cursor-pointer"
                 >
                   <BookOpen className="w-4 h-4 text-indigo-400" />
                   <span>规则说明</span>
@@ -1610,7 +1513,7 @@ export default function App() {
 
                 <button
                   onClick={() => setShowSkinModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-purple-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md"
+                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-purple-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md cursor-pointer"
                 >
                   <Palette className="w-4 h-4 text-purple-400" />
                   <span>扑克装扮</span>
@@ -1635,86 +1538,26 @@ export default function App() {
         {/* 4. Active Game Table (Arranging / Revealing) */}
         {gameState === 'revealing' && matchResults && (
           <div className="w-full max-w-6xl flex flex-col items-center gap-6 overflow-y-auto pb-safe p-2 sm:p-4">
-            {mode === 'practice' && (
-              <div className="w-full bg-emerald-950/90 border border-emerald-500/40 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-emerald-200 text-xs sm:text-sm font-bold shadow-lg animate-in fade-in">
-                <div className="flex items-center gap-2">
-                  <span className="text-base sm:text-lg">🎮</span>
-                  <span>
-                    试玩练习场 · 【
-                    {specialHand
-                      ? SPECIAL_HAND_CN[specialHand]?.name || specialHand
-                      : SPECIAL_HAND_CN[PRACTICE_SPECIAL_HANDS_SEQUENCE[practiceSpecialIndex % PRACTICE_SPECIAL_HANDS_SEQUENCE.length]]?.name}
-                    】模拟对决完毕（不扣减真实积分）
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    onClick={() => handleAdvancePracticeMatch(1)}
-                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs transition shadow shrink-0 cursor-pointer flex items-center gap-1 active:scale-95"
-                  >
-                    <span>体验下一特殊牌型 ➔</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      const currType =
-                        PRACTICE_SPECIAL_HANDS_SEQUENCE[
-                          practiceSpecialIndexRef.current % PRACTICE_SPECIAL_HANDS_SEQUENCE.length
-                        ];
-                      startNewMatch('practice', undefined, currType);
-                    }}
-                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-amber-300 font-bold text-xs transition border border-amber-500/30 shrink-0 cursor-pointer active:scale-95"
-                  >
-                    重练本牌型
-                  </button>
-                  <button
-                    onClick={() => setShowSpecialTesterModal(true)}
-                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold text-xs transition border border-slate-700 shrink-0 cursor-pointer active:scale-95"
-                  >
-                    选特殊牌型
-                  </button>
-                  <button
-                    onClick={() => setGameState('menu')}
-                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold text-xs transition border border-slate-700 shrink-0 cursor-pointer active:scale-95"
-                  >
-                    返回大厅
-                  </button>
-                </div>
-              </div>
-            )}
             <ShowdownStage
               results={matchResults}
-              onPlayAgain={() => {
-                if (mode === 'practice') {
-                  handleAdvancePracticeMatch(1);
-                } else {
-                  startNewMatch(mode);
-                }
-              }}
+              onPlayAgain={() => startNewMatch(mode)}
               onBackToMenu={() => setGameState('menu')}
-              isPractice={mode === 'practice'}
-              nextSpecialName={
-                SPECIAL_HAND_CN[
-                  PRACTICE_SPECIAL_HANDS_SEQUENCE[
-                    (practiceSpecialIndexRef.current + 1) % PRACTICE_SPECIAL_HANDS_SEQUENCE.length
-                  ]
-                ]?.name
-              }
-              onSelectSpecialHand={() => setShowSpecialTesterModal(true)}
+              onOpenChat={() => setShowChatDrawer(true)}
             />
           </div>
         )}
         {gameState === 'arranging' && (
           <div className="w-full max-w-5xl flex-1 flex flex-col items-center justify-between gap-1 py-0.5 px-0 min-h-0 h-full overflow-hidden">
-            {/* 🚆 Compact Carriage Header Bar */}
-            {(mode === 'vs_ai_8p' || mode === 'vs_ai_4p') && (
+            {/* 🚆 Compact Carriage Header Bar for 8P Mode */}
+            {mode === 'vs_ai_8p' && (
               <CarriageHeaderBar
-                mode={mode}
+                mode="vs_ai_8p"
                 currentCarriageIndex={carriageIndex}
                 seatIndex={carriageSeatIndex}
                 submissions={carriageSubmissions}
                 onSeatChange={newSeat => {
                   setCarriageSeatIndex(newSeat);
-                  startNewMatch(mode, newSeat);
+                  startNewMatch('vs_ai_8p', newSeat);
                 }}
                 stats={carriageStats}
                 onOpenHub={() => setShowCarriageHubModal(true)}
@@ -1722,24 +1565,37 @@ export default function App() {
               />
             )}
 
-            {/* 🎮 Compact Practice Header Bar for Practice Mode */}
-            {mode === 'practice' && (
-              <PracticeHeaderBar
-                currentSpecialType={
-                  specialHand ||
-                  PRACTICE_SPECIAL_HANDS_SEQUENCE[
-                    practiceSpecialIndex % PRACTICE_SPECIAL_HANDS_SEQUENCE.length
-                  ]
-                }
-                currentIndex={practiceSpecialIndex % PRACTICE_SPECIAL_HANDS_SEQUENCE.length}
-                totalSpecials={PRACTICE_SPECIAL_HANDS_SEQUENCE.length}
-                onPrevSpecial={() => handleAdvancePracticeMatch(-1)}
-                onNextSpecial={() => handleAdvancePracticeMatch(1)}
-                onDealNewHand={() => handleAdvancePracticeMatch(1)}
-                onOpenSpecialLab={() => setShowSpecialTesterModal(true)}
-                onExit={() => setGameState('menu')}
-                points={currentAccount.points}
-              />
+            {/* ⚡ Header Bar for 2P Duel Mode */}
+            {mode === 'vs_ai_2p' && (
+              <div className="w-full px-3 py-2 bg-slate-900/90 border border-slate-800 rounded-2xl flex items-center justify-between shadow-md shrink-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setGameState('menu')}
+                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" /> 返回大厅
+                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base">⚡</span>
+                    <span className="text-xs font-black text-white">双人极速单挑场</span>
+                    <span className="text-[10px] text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">1v1</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="text-xs font-bold text-amber-400 flex items-center gap-1">
+                    <span>🪙</span>
+                    <span>{currentAccount.points.toLocaleString()} 水</span>
+                  </div>
+                  <button
+                    onClick={() => setShowChatDrawer(true)}
+                    className="px-3 py-1 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>聊天对讲</span>
+                  </button>
+                </div>
+              </div>
             )}
 
             {/* Special Hand Alert Banner (Compact) */}
@@ -2028,23 +1884,11 @@ export default function App() {
       <NoPointsModal
         isOpen={showNoPointsModal}
         onClose={() => setShowNoPointsModal(false)}
-        onOpenPractice={() => startNewMatch('practice')}
         onOpenPoints={() => setShowPointsModal(true)}
         currentPoints={currentAccount.points}
       />
 
-      <SpecialHandLabModal
-        isOpen={showSpecialTesterModal}
-        onClose={() => setShowSpecialTesterModal(false)}
-        onSelectSpecial={handleLoadSpecialHandInPractice}
-      />
-
       <RuleModal isOpen={showRuleModal} onClose={() => setShowRuleModal(false)} />
-
-      <PracticeModal
-        isOpen={showPracticeModal}
-        onClose={() => setShowPracticeModal(false)}
-      />
 
       <LeaderboardModal
         isOpen={showRankModal}
@@ -2063,17 +1907,15 @@ export default function App() {
       <CarriageHubModal
         isOpen={showCarriageHubModal}
         onClose={() => setShowCarriageHubModal(false)}
-        mode={mode === 'vs_ai_8p' || mode === 'vs_ai_4p' ? mode : 'vs_ai_8p'}
+        mode="vs_ai_8p"
         currentCarriageIndex={carriageIndex}
         onSelectCarriageIndex={idx => {
-          const activeMode = mode === 'vs_ai_8p' || mode === 'vs_ai_4p' ? mode : 'vs_ai_8p';
-          setPlayerCarriageIndexProgress(idx, activeMode);
-          startNewMatch(activeMode);
+          setPlayerCarriageIndexProgress(idx, 'vs_ai_8p');
+          startNewMatch('vs_ai_8p');
           setShowCarriageHubModal(false);
         }}
         onResetPool={() => {
-          const activeMode = mode === 'vs_ai_8p' || mode === 'vs_ai_4p' ? mode : 'vs_ai_8p';
-          startNewMatch(activeMode);
+          startNewMatch('vs_ai_8p');
         }}
       />
 
@@ -2083,7 +1925,7 @@ export default function App() {
         onConfirm={handleConfirmSubmit}
         onToggleSpecialHand={() => setUseSpecialHand(!useSpecialHand)}
         carriageIndex={carriageIndex}
-        mode={mode === 'vs_ai_8p' || mode === 'vs_ai_4p' ? mode : 'vs_ai_4p'}
+        mode={mode === 'vs_ai_8p' ? 'vs_ai_8p' : 'vs_ai_8p'}
         front={front}
         mid={mid}
         back={back}
@@ -2095,6 +1937,26 @@ export default function App() {
         isOpen={showReplayModal}
         onClose={() => setShowReplayModal(false)}
         phone={currentAccount.phone}
+      />
+
+      {/* 💬 Floating Chat Widget (accessible on table & showdown) */}
+      <ChatFloatingWidget
+        activeMessages={messages}
+        unreadCount={0}
+        onOpenChat={() => setShowChatDrawer(true)}
+      />
+
+      {/* 💬 Full Voice & Text Chat Drawer */}
+      <ChatDrawer
+        isOpen={showChatDrawer}
+        onClose={() => setShowChatDrawer(false)}
+        messages={messages}
+        onSendMessage={handleSendMessage}
+        currentUserId={currentAccount.id || currentAccount.phone || 'player_user'}
+        currentUserName={currentAccount.nickname || playerName || '我'}
+        currentUserAvatar={currentAccount.avatar || '😎'}
+        ttsEnabled={ttsEnabled}
+        onToggleTts={() => setTtsEnabled(!ttsEnabled)}
       />
     </div>
   );

@@ -133,6 +133,21 @@ export interface PlayerStats {
   specialHandsCount: number;
 }
 
+export type ChatMessageType = 'text' | 'voice' | 'emoji' | 'quick';
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar: string;
+  isUser: boolean;
+  type: ChatMessageType;
+  content: string; // Text content or emoji
+  audioUrl?: string; // Voice recording playback URL
+  audioDuration?: number; // Duration in seconds
+  timestamp: number;
+}
+
 export interface RoomState {
   roomCode: string;
   hostName: string;
