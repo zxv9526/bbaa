@@ -1,6 +1,6 @@
 {
   "name": "十三水 · 经典扑克对决 (Chinese Poker)",
-  "description": "十三水 (Chinese Poker) 游戏大厅，聚焦八人巅峰对决场，整合牌桌语音与文字实时对讲互动。",
+  "description": "十三水 (Chinese Poker) 游戏大厅，支持好友开黑场用户轮流做庄发牌、拟真洗牌与切牌互动，以及八人巅峰场实时战术对讲。",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

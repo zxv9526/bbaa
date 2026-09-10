@@ -26,6 +26,7 @@ interface ShowdownStageProps {
   onPlayAgain: () => void;
   onBackToMenu: () => void;
   onOpenChat?: () => void;
+  playAgainLabel?: string;
 }
 
 type Step = 'front' | 'middle' | 'back' | 'guns' | 'summary';
@@ -34,7 +35,8 @@ export function ShowdownStage({
   results,
   onPlayAgain,
   onBackToMenu,
-  onOpenChat
+  onOpenChat,
+  playAgainLabel
 }: ShowdownStageProps) {
   const [currentStep, setCurrentStep] = useState<Step>('front');
   const [autoPlay, setAutoPlay] = useState<boolean>(true);
@@ -634,7 +636,7 @@ export function ShowdownStage({
               className="px-7 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
-              再来一局
+              {playAgainLabel || '再来一局'}
             </button>
             {onOpenChat && (
               <button

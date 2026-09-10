@@ -27,7 +27,10 @@ import { SpecialHandBanner } from './components/SpecialHandBanner';
 import { RuleModal } from './components/RuleModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { MultiplayerRoom } from './components/MultiplayerRoom';
+import { ShuffleCutStage } from './components/ShuffleCutStage';
 import { ShowdownStage } from './components/ShowdownStage';
+import { RoomManager, getLocalRoom, subscribeRoomUpdates } from './lib/roomManager';
+import { RoomState } from './types';
 import { CardSkinModal } from './components/CardSkinModal';
 import { AuthModal } from './components/AuthModal';
 import { PointsManagementModal } from './components/PointsManagementModal';
@@ -116,8 +119,9 @@ export default function App() {
   const [playerName, setPlayerName] = useState<string>(() => currentAccount.nickname);
 
   const [mode, setMode] = useState<GameMode>('vs_ai_8p');
-  const [gameState, setGameState] = useState<'menu' | 'room_lobby' | 'arranging' | 'revealing'>('menu');
+  const [gameState, setGameState] = useState<'menu' | 'room_lobby' | 'shuffling_cutting' | 'arranging' | 'revealing'>('menu');
   const [roomCode, setRoomCode] = useState<string>('');
+  const [currentMultiplayerRoom, setCurrentMultiplayerRoom] = useState<RoomState | null>(null);
   const [joinInputCode8P, setJoinInputCode8P] = useState<string>('');
 
   // Carriage Mode State (8-player Async Carriage Flow)
@@ -457,6 +461,104 @@ export default function App() {
 
       setPlayersInMatch(playersList);
       setGameState('arranging');
+    }
+  };
+
+  // 👥 好友联机开黑场：轮流做庄发牌与洗切牌逻辑
+  const startMultiplayerMatch = (room: RoomState) => {
+    if (currentAccount.points <= 0) {
+      setShowNoPointsModal(true);
+      return;
+    }
+    setMode('multiplayer');
+    setRoomCode(room.roomCode);
+    setCurrentMultiplayerRoom(room);
+    setErrorMsg('');
+    setMatchResults(null);
+    setUseSpecialHand(false);
+
+    if (room.status === 'shuffling_cutting' || !room.status || room.status === 'waiting') {
+      setGameState('shuffling_cutting');
+    } else if (room.status === 'arranging') {
+      setupMultiplayerHandFromRoom(room);
+      setGameState('arranging');
+    } else if (room.status === 'revealing') {
+      setGameState('revealing');
+    }
+  };
+
+  const setupMultiplayerHandFromRoom = (room: RoomState) => {
+    const myName = currentAccount.nickname || playerName;
+    const myPlayer = room.players.find(p => p.name === myName || p.id === currentAccount.id) || room.players[0];
+    const myCards = myPlayer?.cards && myPlayer.cards.length === 13 ? myPlayer.cards : [];
+
+    const sortedPlayerHand = sortCards(myCards.length === 13 ? myCards : (room.maxPlayers === 8 ? createDoubleDeck().slice(0, 13) : createDeck().slice(0, 13)));
+    setOriginalHand(sortedPlayerHand);
+    setPool([]);
+    setFront(sortedPlayerHand.slice(0, 3));
+    setMid(sortedPlayerHand.slice(3, 8));
+    setBack(sortedPlayerHand.slice(8, 13));
+    setSelectedCardIds([]);
+
+    const special = detectSpecialHand(sortedPlayerHand);
+    setSpecialHand(special);
+    if (special) {
+      sounds.playVictory();
+      triggerHaptic('heavy');
+      confetti({ particleCount: 100, spread: 80, origin: { y: 0.4 } });
+    }
+
+    const smartSuggestions = getSuggestedArrangements(sortedPlayerHand);
+    setSuggestions(smartSuggestions);
+    patternChangerRef.current = new PatternChanger(sortedPlayerHand);
+    if (smartSuggestions.length > 0) {
+      setFront(smartSuggestions[0].front);
+      setMid(smartSuggestions[0].middle);
+      setBack(smartSuggestions[0].back);
+      setPatternInfo({
+        tag: smartSuggestions[0].tag,
+        index: 1,
+        total: smartSuggestions.length
+      });
+    }
+
+    const formattedList = room.players.map((rp, s) => {
+      const isMe = rp.name === myName || rp.id === currentAccount.id;
+      return {
+        id: isMe ? 'player_user' : rp.id,
+        name: `${rp.name} (${s + 1}号位)`,
+        isAi: !!rp.isAi,
+        avatar: rp.avatar || '😎',
+        cards: rp.cards || [],
+        arrangement: rp.arrangement || {
+          front: [],
+          middle: [],
+          back: [],
+          specialHand: null,
+          isValid: false,
+          isDaoShui: false
+        }
+      };
+    });
+    setPlayersInMatch(formattedList);
+  };
+
+  const handleMultiplayerConfirmDeal = (dealtCards: Card[]) => {
+    if (!roomCode) return;
+    const updated = RoomManager.dealCardsToPlayers(roomCode, dealtCards);
+    if (updated) {
+      setCurrentMultiplayerRoom(updated);
+      setupMultiplayerHandFromRoom(updated);
+      setGameState('arranging');
+    }
+  };
+
+  const handleMultiplayerNextRound = () => {
+    if (!roomCode) return;
+    const updated = RoomManager.nextRoundAndRotateDealer(roomCode);
+    if (updated) {
+      setCurrentMultiplayerRoom(updated);
+      setGameState('shuffling_cutting');
     }
   };
 
@@ -876,6 +978,50 @@ export default function App() {
       }
 
       setGameState('revealing');
+      return;
+    }
+    // 👥 好友联机开黑场：提交理牌并结算
+    if (mode === 'multiplayer') {
+      const pId = currentAccount.id || 'player_user';
+      const myName = currentAccount.nickname || playerName;
+      const updated = RoomManager.submitPlayerArrangement(roomCode, pId, userArrangement, originalHand);
+      if (updated) {
+        setCurrentMultiplayerRoom(updated);
+        if (updated.status === 'revealing') {
+          const formattedPlayers = updated.players.map(pl => {
+            const isMe = pl.id === pId || pl.name === myName;
+            return {
+              id: isMe ? 'player_user' : pl.id,
+              name: pl.name,
+              isAi: !!pl.isAi,
+              avatar: pl.avatar,
+              cards: pl.cards || [],
+              arrangement: pl.arrangement!
+            };
+          });
+          const results = calculateMatchScores(formattedPlayers);
+          setMatchResults(results);
+
+          const myRes = results.find(r => r.playerId === 'player_user');
+          if (myRes && myRes.finalPoints > 0) {
+            sounds.playVictory();
+            confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 } });
+            addPoints(myRes.finalPoints, 'MATCH_WIN', `好友联机开黑第${updated.roundIndex}局获胜`);
+          } else if (myRes && myRes.finalPoints < 0) {
+            sounds.playDunWin();
+            addPoints(myRes.finalPoints, 'MATCH_LOSS', `好友联机开黑第${updated.roundIndex}局结算`);
+          }
+          setCurrentAccount(getCurrentAccount());
+          setGameState('revealing');
+        } else {
+          setCarriageToast({
+            show: true,
+            msg: '理牌已提交！等待其他好友理牌中...',
+            pts: 0
+          });
+          setTimeout(() => setCarriageToast(null), 3000);
+        }
+      }
       return;
     }
     // 🚆 8人模式：预发牌异步结算
@@ -1357,10 +1503,36 @@ export default function App() {
           <MultiplayerRoom
             roomCode={roomCode}
             currentPlayerName={currentAccount.nickname || playerName}
+            currentPlayerAvatar={currentAccount.avatar}
+            onSetRoomCode={code => setRoomCode(code)}
             onStartRoomGame={room => {
-              startNewMatch('multiplayer');
+              startMultiplayerMatch(room);
             }}
             onExit={() => setGameState('menu')}
+          />
+        )}
+
+        {/* 3.5 Multiplayer Shuffling & Cutting Stage */}
+        {gameState === 'shuffling_cutting' && currentMultiplayerRoom && (
+          <ShuffleCutStage
+            room={currentMultiplayerRoom}
+            currentUserId={currentAccount.id || 'player_user'}
+            currentUserName={currentAccount.nickname || playerName}
+            onConfirmDeal={dealtCards => handleMultiplayerConfirmDeal(dealtCards)}
+            onShuffleAction={() => {
+              if (roomCode) {
+                const updated = RoomManager.performShuffle(roomCode);
+                if (updated) setCurrentMultiplayerRoom(updated);
+              }
+            }}
+            onCutAction={(cutPos, cutCard) => {
+              if (roomCode) {
+                const updated = RoomManager.performCut(roomCode, cutPos, cutCard);
+                if (updated) setCurrentMultiplayerRoom(updated);
+              }
+            }}
+            onSendMessage={text => handleSendMessage('text', text)}
+            onExit={() => setGameState('room_lobby')}
           />
         )}
 
@@ -1369,8 +1541,25 @@ export default function App() {
           <div className="w-full max-w-6xl flex flex-col items-center gap-6 overflow-y-auto pb-safe p-2 sm:p-4">
             <ShowdownStage
               results={matchResults}
-              onPlayAgain={() => startNewMatch(mode)}
-              onBackToMenu={() => setGameState('menu')}
+              onPlayAgain={() => {
+                if (mode === 'multiplayer') {
+                  handleMultiplayerNextRound();
+                } else {
+                  startNewMatch(mode);
+                }
+              }}
+              playAgainLabel={
+                mode === 'multiplayer' && currentMultiplayerRoom
+                  ? `下一局 (轮到【${currentMultiplayerRoom.players[(currentMultiplayerRoom.dealerIndex + 1) % currentMultiplayerRoom.players.length]?.name}】发牌)`
+                  : '再来一局'
+              }
+              onBackToMenu={() => {
+                if (mode === 'multiplayer') {
+                  setGameState('room_lobby');
+                } else {
+                  setGameState('menu');
+                }
+              }}
               onOpenChat={() => setShowChatDrawer(true)}
             />
           </div>
@@ -1396,6 +1585,46 @@ export default function App() {
                 onExit={() => setGameState('menu')}
                 players={playersInMatch}
               />
+            )}
+
+            {/* 👥 Multiplayer Header Bar */}
+            {mode === 'multiplayer' && currentMultiplayerRoom && (
+              <div className="w-full bg-slate-900/90 border border-purple-500/40 rounded-2xl p-2 sm:p-2.5 flex items-center justify-between shadow-lg backdrop-blur">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-purple-600/30 text-purple-300 flex items-center justify-center font-black text-sm border border-purple-500/40">
+                    <Crown className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-white">
+                        好友开黑第 {currentMultiplayerRoom.roundIndex || 1} 局
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
+                        房号: {currentMultiplayerRoom.roomCode}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-amber-300 font-bold">
+                      本局发牌手: {currentMultiplayerRoom.players[currentMultiplayerRoom.dealerIndex % currentMultiplayerRoom.players.length]?.name}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowChatDrawer(true)}
+                    className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-750 text-indigo-300 border border-indigo-500/30 font-bold text-xs flex items-center gap-1 transition"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>对讲</span>
+                  </button>
+                  <button
+                    onClick={() => setGameState('room_lobby')}
+                    className="px-2.5 py-1 rounded-xl border border-slate-700 text-slate-400 hover:text-white text-xs font-bold transition"
+                  >
+                    返回房间
+                  </button>
+                </div>
+              </div>
             )}
 
             {/* Special Hand Alert Banner (Compact) */}

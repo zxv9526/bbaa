@@ -72,6 +72,20 @@ export function shuffle(deck: Card[]): Card[] {
   return newDeck;
 }
 
+/**
+ * 切牌：在指定索引点将整副扑克牌裁成上下两叠并对调，返回切牌后的牌堆和交界切牌指示牌
+ */
+export function cutDeck(deck: Card[], cutIndex: number): { deck: Card[]; cutCard: Card } {
+  if (deck.length <= 1) return { deck: [...deck], cutCard: deck[0] };
+  const safeCut = Math.max(1, Math.min(deck.length - 1, Math.floor(cutIndex)));
+  const topPart = deck.slice(0, safeCut);
+  const bottomPart = deck.slice(safeCut);
+  // 切牌后对调：下半部移至顶部，上半部移至底部
+  const cutDeckResult = [...bottomPart, ...topPart];
+  const cutCard = deck[safeCut] || cutDeckResult[0];
+  return { deck: cutDeckResult, cutCard };
+}
+
 export function sortCards(cards: Card[]): Card[] {
   return [...cards].sort((a, b) => {
     if (b.rank !== a.rank) return b.rank - a.rank;

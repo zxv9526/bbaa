@@ -273,6 +273,74 @@ class SoundManager {
       t += n.duration * 0.9;
     });
   }
+
+  // 洗牌音效 (Riffle Shuffle)
+  public playShuffle() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    const numClicks = 14;
+    for (let i = 0; i < numClicks; i++) {
+      const clickTime = now + (i * 0.025) + (Math.random() * 0.006);
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(300 + Math.random() * 400, clickTime);
+      osc.frequency.exponentialRampToValueAtTime(100, clickTime + 0.03);
+
+      gain.gain.setValueAtTime(0.12, clickTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, clickTime + 0.03);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(clickTime);
+      osc.stop(clickTime + 0.03);
+    }
+  }
+
+  // 切牌音效 (Cut Deck)
+  public playCut() {
+    if (this.isMuted) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    // Thump
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(60, now + 0.1);
+
+    gain.gain.setValueAtTime(0.25, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.1);
+
+    // Slide swipe
+    setTimeout(() => {
+      if (!this.ctx || this.isMuted) return;
+      const oscSlide = this.ctx.createOscillator();
+      const gainSlide = this.ctx.createGain();
+      oscSlide.type = 'triangle';
+      oscSlide.frequency.setValueAtTime(450, this.ctx.currentTime);
+      oscSlide.frequency.exponentialRampToValueAtTime(700, this.ctx.currentTime + 0.08);
+
+      gainSlide.gain.setValueAtTime(0.15, this.ctx.currentTime);
+      gainSlide.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+
+      oscSlide.connect(gainSlide);
+      gainSlide.connect(this.ctx.destination);
+      oscSlide.start(this.ctx.currentTime);
+      oscSlide.stop(this.ctx.currentTime + 0.08);
+    }, 60);
+  }
 }
 
 export const sounds = new SoundManager();

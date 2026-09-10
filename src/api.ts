@@ -1,4 +1,5 @@
 import { GameRecord, PlayerStats, RoomState, TelegramBotStatus } from './types';
+import { RoomManager, getLocalRoom, saveLocalRoom } from './lib/roomManager';
 import {
   authorizePhone,
   revokePhone,
@@ -209,20 +210,22 @@ export class ApiClient {
   }
 
   // 5. 房间管理 (联机对战)
-  public static async createRoom(hostName: string, maxPlayers = 4, roomCode?: string): Promise<{ ok: boolean; roomCode?: string }> {
+  public static async createRoom(hostName: string, maxPlayers: 4 | 8 = 4, roomCode?: string, avatar = '😎'): Promise<{ ok: boolean; roomCode?: string; room?: RoomState }> {
     try {
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', playerName: hostName, maxPlayers, roomCode })
+        body: JSON.stringify({ action: 'create', playerName: hostName, maxPlayers, roomCode, avatar })
       });
       if (res.ok) {
-        return await res.json();
+        const data = await res.json();
+        if (data.ok) return data;
       }
-    } catch (e) {
-      console.warn('Create room network err:', e);
+    } catch {
+      // Local fallback
     }
-    return { ok: false };
+    const localRoom = RoomManager.createRoom(hostName, avatar, maxPlayers, roomCode);
+    return { ok: true, roomCode: localRoom.roomCode, room: localRoom };
   }
 
   public static async joinRoom(roomCode: string, playerName: string, avatar = '🀄'): Promise<{ ok: boolean; room?: RoomState; message?: string }> {
@@ -233,22 +236,28 @@ export class ApiClient {
         body: JSON.stringify({ action: 'join', roomCode, playerName, avatar })
       });
       if (res.ok) {
-        return await res.json();
+        const data = await res.json();
+        if (data.ok) return data;
       }
-    } catch (e) {
-      console.warn('Join room network err:', e);
+    } catch {
+      // Local fallback
     }
-    return { ok: false };
+    return RoomManager.joinRoom(roomCode, playerName, avatar);
   }
 
   public static async pollRoom(roomCode: string): Promise<{ ok: boolean; room?: RoomState }> {
     try {
       const res = await fetch(`/api/rooms?code=${encodeURIComponent(roomCode)}`);
       if (res.ok) {
-        return await res.json();
+        const data = await res.json();
+        if (data.ok && data.room) return data;
       }
     } catch {
-      // ignore
+      // Local fallback
+    }
+    const local = getLocalRoom(roomCode);
+    if (local) {
+      return { ok: true, room: local };
     }
     return { ok: false };
   }
@@ -260,10 +269,12 @@ export class ApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'submit', roomCode, playerId, arrangement, cards })
       });
-      return res.ok;
+      if (res.ok) return true;
     } catch {
-      return false;
+      // Local fallback
     }
+    const updated = RoomManager.submitPlayerArrangement(roomCode, playerId, arrangement, cards);
+    return !!updated;
   }
 
   // 6. Telegram Bot Admin Integration
