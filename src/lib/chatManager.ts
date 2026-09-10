@@ -69,6 +69,93 @@ export const AI_NAMES_POOL = [
 ];
 
 /**
+ * Generate a simulated voice note audio URL using Web Audio API
+ * Ensures voice messages can be previewed/played even without mic permissions
+ */
+export function createSimulatedVoiceAudioUrl(durationSec: number = 2, pitchFreq: number = 320): string {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return '';
+
+    const sampleRate = 22050;
+    const totalSamples = Math.floor(sampleRate * Math.min(10, Math.max(1, durationSec)));
+    const ctx = new AudioCtx();
+    const buffer = ctx.createBuffer(1, totalSamples, sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < totalSamples; i++) {
+      const t = i / sampleRate;
+      // Synthesize walkie-talkie / voice radio wave harmonics
+      const mainFreq = pitchFreq + Math.sin(t * 18) * 50;
+      const subFreq = mainFreq * 1.5;
+      const envelope = Math.sin((i / totalSamples) * Math.PI);
+      const voiceWave = Math.sin(2 * Math.PI * mainFreq * t) * 0.6 + Math.sin(2 * Math.PI * subFreq * t) * 0.3;
+      data[i] = voiceWave * envelope * 0.4;
+    }
+
+    // Convert AudioBuffer to WAV Blob
+    const wavBlob = audioBufferToWavBlob(buffer, sampleRate);
+    return URL.createObjectURL(wavBlob);
+  } catch (err) {
+    console.warn('Failed to synthesize voice audio:', err);
+    return '';
+  }
+}
+
+/**
+ * Helper to encode float32 audio buffer into a playable PCM WAV Blob
+ */
+function audioBufferToWavBlob(buffer: AudioBuffer, sampleRate: number): Blob {
+  const numChannels = 1;
+  const channelData = buffer.getChannelData(0);
+  const bufferLength = channelData.length;
+  const wavBuffer = new ArrayBuffer(44 + bufferLength * 2);
+  const view = new DataView(wavBuffer);
+
+  const writeString = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  };
+
+  /* RIFF identifier */
+  writeString(0, 'RIFF');
+  /* RIFF chunk length */
+  view.setUint32(4, 36 + bufferLength * 2, true);
+  /* RIFF type */
+  writeString(8, 'WAVE');
+  /* format chunk identifier */
+  writeString(12, 'fmt ');
+  /* format chunk length */
+  view.setUint32(16, 16, true);
+  /* sample format (raw PCM) */
+  view.setUint16(20, 1, true);
+  /* channel count */
+  view.setUint16(22, numChannels, true);
+  /* sample rate */
+  view.setUint32(24, sampleRate, true);
+  /* byte rate (sample rate * block align) */
+  view.setUint32(28, sampleRate * numChannels * 2, true);
+  /* block align (channel count * bytes per sample) */
+  view.setUint16(32, numChannels * 2, true);
+  /* bits per sample */
+  view.setUint16(34, 16, true);
+  /* data chunk identifier */
+  writeString(36, 'data');
+  /* data chunk length */
+  view.setUint32(40, bufferLength * 2, true);
+
+  /* float to 16-bit PCM conversion */
+  let offset = 44;
+  for (let i = 0; i < bufferLength; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, channelData[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+
+  return new Blob([wavBuffer], { type: 'audio/wav' });
+}
+
+/**
  * Browser-native Web Speech Synthesis (TTS)
  */
 export function speakTextMessage(text: string) {
@@ -86,56 +173,63 @@ export function speakTextMessage(text: string) {
 }
 
 /**
- * Simple Audio Recorder for Voice Messages
+ * Simple Audio Recorder for Voice Messages with Simulated Fallback
  */
 export class VoiceRecorder {
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
   private startTime: number = 0;
   private stream: MediaStream | null = null;
+  private isSimulated: boolean = false;
 
   async start(): Promise<void> {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('当前浏览器不支持录音功能');
-    }
-
     this.audioChunks = [];
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    this.startTime = Date.now();
+    this.isSimulated = false;
 
-    // Determine supported mime type
-    let mimeType = 'audio/webm';
-    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-      mimeType = 'audio/webm;codecs=opus';
-    } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-      mimeType = 'audio/mp4';
-    } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
-      mimeType = 'audio/ogg';
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        let mimeType = 'audio/webm';
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeType = 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          mimeType = 'audio/ogg';
+        }
+
+        this.mediaRecorder = new MediaRecorder(this.stream, { mimeType });
+        this.mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            this.audioChunks.push(event.data);
+          }
+        };
+        this.mediaRecorder.start(100);
+        return;
+      } catch (err) {
+        console.warn('Microphone permission denied/unavailable, switching to simulated voice mode:', err);
+      }
     }
 
-    this.mediaRecorder = new MediaRecorder(this.stream, { mimeType });
-    this.mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        this.audioChunks.push(event.data);
-      }
-    };
-
-    this.startTime = Date.now();
-    this.mediaRecorder.start(100);
+    // Fallback to simulated microphone recording
+    this.isSimulated = true;
   }
 
-  stop(): Promise<{ audioBlob: Blob; audioUrl: string; duration: number }> {
-    return new Promise((resolve, reject) => {
-      if (!this.mediaRecorder) {
-        reject(new Error('未在录音中'));
+  stop(): Promise<{ audioBlob: Blob | null; audioUrl: string; duration: number }> {
+    return new Promise((resolve) => {
+      const duration = Math.max(1, Math.round((Date.now() - this.startTime) / 1000));
+
+      if (this.isSimulated || !this.mediaRecorder) {
+        const audioUrl = createSimulatedVoiceAudioUrl(duration, 380);
+        resolve({ audioBlob: null, audioUrl, duration });
         return;
       }
 
       this.mediaRecorder.onstop = () => {
-        const duration = Math.max(1, Math.round((Date.now() - this.startTime) / 1000));
         const audioBlob = new Blob(this.audioChunks, { type: this.mediaRecorder?.mimeType || 'audio/webm' });
         const audioUrl = URL.createObjectURL(audioBlob);
 
-        // Stop all audio tracks
         if (this.stream) {
           this.stream.getTracks().forEach((track) => track.stop());
           this.stream = null;
@@ -147,7 +241,8 @@ export class VoiceRecorder {
       try {
         this.mediaRecorder.stop();
       } catch (err) {
-        reject(err);
+        const audioUrl = createSimulatedVoiceAudioUrl(duration, 380);
+        resolve({ audioBlob: null, audioUrl, duration });
       }
     });
   }

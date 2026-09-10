@@ -35,7 +35,7 @@ import { ChatDrawer } from './components/ChatDrawer';
 import { ChatFloatingWidget } from './components/ChatFloatingWidget';
 import { TableTacticalChatBar } from './components/TableTacticalChatBar';
 import { ChatMessage, ChatMessageType } from './types';
-import { getAiReplyForMessage, speakTextMessage, AI_NAMES_POOL } from './lib/chatManager';
+import { getAiReplyForMessage, speakTextMessage, AI_NAMES_POOL, createSimulatedVoiceAudioUrl } from './lib/chatManager';
 import { SpecialHandLabModal } from './components/SpecialHandLabModal';
 import { initCardSkins } from './lib/cardSkin';
 import {
@@ -496,14 +496,19 @@ export default function App() {
         setTimeout(() => {
           const aiReply = getAiReplyForMessage(content, type, oppList);
           if (aiReply) {
+            const isVoice = type === 'voice' || Math.random() < 0.25;
+            const audioUrl = isVoice ? createSimulatedVoiceAudioUrl(2, 320 + Math.random() * 120) : undefined;
+            
             const aiMsg: ChatMessage = {
               id: 'msg_ai_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
               senderId: aiReply.opponent.id,
               senderName: aiReply.opponent.name,
               senderAvatar: aiReply.opponent.avatar,
               isUser: false,
-              type: aiReply.replyType,
-              content: aiReply.replyContent,
+              type: isVoice ? 'voice' : aiReply.replyType,
+              content: isVoice ? `[对讲回复] ${aiReply.replyContent}` : aiReply.replyContent,
+              audioUrl,
+              audioDuration: isVoice ? 2 : undefined,
               timestamp: Date.now()
             };
             setMessages((prev) => [...prev, aiMsg]);

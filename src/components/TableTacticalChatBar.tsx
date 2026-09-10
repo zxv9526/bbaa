@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { MessageSquare, Mic, Volume2, VolumeX, Sparkles, Send, Radio } from 'lucide-react';
+import { MessageSquare, Mic, Volume2, VolumeX, Send, Radio } from 'lucide-react';
 import { VoiceRecorder } from '../lib/chatManager';
 import { triggerHaptic } from '../lib/haptics';
 
@@ -11,16 +11,6 @@ interface TableTacticalChatBarProps {
   unreadCount?: number;
 }
 
-const TACTICAL_PHRASES = [
-  '🔥 这把我必打枪！',
-  '⏳ 快点理牌，等急了！',
-  '⚠️ 兄弟小心倒水！',
-  '👑 特殊牌型直接通杀！',
-  '🥺 手气太背求轻虐~',
-  '💣 谁敢跟我硬碰硬！',
-  '🍻 牌品如人品，开开心心玩！'
-];
-
 export function TableTacticalChatBar({
   onSendMessage,
   onOpenFullChat,
@@ -28,6 +18,7 @@ export function TableTacticalChatBar({
   onToggleTts,
   unreadCount = 0
 }: TableTacticalChatBarProps) {
+  const [inputText, setInputText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const recorderRef = useRef<VoiceRecorder | null>(null);
@@ -66,7 +57,6 @@ export function TableTacticalChatBar({
     try {
       const { audioUrl, duration } = await recorderRef.current.stop();
       if (duration < 0.5) {
-        // Too short, disregard
         return;
       }
       onSendMessage('voice', `[语音消息 ${Math.round(duration)}秒]`, audioUrl, Math.round(duration));
@@ -77,9 +67,13 @@ export function TableTacticalChatBar({
     }
   };
 
-  const handleSendQuickPhrase = (phrase: string) => {
+  const handleSubmitText = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = inputText.trim();
+    if (!trimmed) return;
     triggerHaptic('light');
-    onSendMessage('quick', phrase);
+    onSendMessage('text', trimmed);
+    setInputText('');
   };
 
   return (
@@ -119,18 +113,24 @@ export function TableTacticalChatBar({
         </button>
       </div>
 
-      {/* 2. Tactical Quick Phrase Chips (横向滚动快捷喊话) */}
-      <div className="flex-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-1 min-w-0">
-        {TACTICAL_PHRASES.map((phrase, idx) => (
-          <button
-            key={idx}
-            onClick={() => handleSendQuickPhrase(phrase)}
-            className="px-2.5 py-1 rounded-full bg-slate-800 hover:bg-slate-750 hover:border-amber-500/40 border border-slate-700/80 text-slate-300 hover:text-amber-200 text-[11px] font-bold whitespace-nowrap transition active:scale-95 shrink-0 cursor-pointer shadow-sm"
-          >
-            {phrase}
-          </button>
-        ))}
-      </div>
+      {/* 2. Direct Text Input Form (文本输入框) */}
+      <form onSubmit={handleSubmitText} className="flex-1 flex items-center gap-1.5 min-w-0">
+        <input
+          type="text"
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder="输入聊天内容..."
+          className="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+        />
+        <button
+          type="submit"
+          disabled={!inputText.trim()}
+          className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-xs flex items-center gap-1 transition cursor-pointer shrink-0"
+        >
+          <Send className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">发送</span>
+        </button>
+      </form>
 
       {/* 3. Open Full Chat Drawer Button */}
       <div className="flex items-center shrink-0">
@@ -149,3 +149,4 @@ export function TableTacticalChatBar({
     </div>
   );
 }
+
