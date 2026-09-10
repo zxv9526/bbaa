@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, ChevronRight, Users, Coins, ArrowLeft, MessageSquare, Mic, Volume2 } from 'lucide-react';
+import { Sparkles, ChevronRight, Users, Coins, ArrowLeft, MessageSquare, Mic, VolumeX, Radio } from 'lucide-react';
 import { CarriagePoolStats, CarriageSubmission } from '../lib/carriageManager';
 import { ChatMessage } from '../types';
 
 interface CarriageHeaderBarProps {
-  mode?: 'vs_ai_8p';
+  mode?: 'vs_ai_8p' | 'realtime' | 'reservation';
   currentCarriageIndex: number;
   seatIndex?: number;
   submissions?: { [seatIndex: number]: CarriageSubmission };
@@ -20,7 +20,7 @@ interface CarriageHeaderBarProps {
 }
 
 export function CarriageHeaderBar({
-  mode = 'vs_ai_8p',
+  mode = 'realtime',
   currentCarriageIndex,
   seatIndex = 0,
   submissions = {},
@@ -34,20 +34,20 @@ export function CarriageHeaderBar({
   onExit,
   players = []
 }: CarriageHeaderBarProps) {
-  const is8P = true;
   const totalSeats = 8;
+  const isReservation = mode === 'reservation';
   
   // 👥 计算实际在席人数与比例
   const otherOccupiedCount = Object.keys(submissions).filter(s => Number(s) !== seatIndex).length;
   const seatedCount = Math.min(totalSeats, 1 + otherOccupiedCount);
   const isFull = seatedCount >= totalSeats;
 
-  // Track recent speech bubble to anchor to player avatar
+  // Track recent speech bubble to anchor to player avatar (only if not reservation mode)
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
   const [speakerSnippet, setSpeakerSnippet] = useState<string | null>(null);
 
   useEffect(() => {
-    if (latestMessage && Date.now() - latestMessage.timestamp < 5000) {
+    if (!isReservation && latestMessage && Date.now() - latestMessage.timestamp < 5000) {
       setActiveSpeakerId(latestMessage.senderId);
       setSpeakerSnippet(
         latestMessage.type === 'voice'
@@ -62,7 +62,7 @@ export function CarriageHeaderBar({
       }, 4500);
       return () => clearTimeout(timer);
     }
-  }, [latestMessage]);
+  }, [latestMessage, isReservation]);
 
   return (
     <div className="w-full flex flex-col gap-1.5 shrink-0 animate-in fade-in duration-200">
@@ -82,17 +82,32 @@ export function CarriageHeaderBar({
             </button>
           )}
 
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0 font-black text-xs sm:text-sm bg-gradient-to-tr from-amber-500 to-red-600">
-            8
+          <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0 font-black text-xs sm:text-sm bg-gradient-to-tr ${
+            isReservation ? 'from-blue-600 to-indigo-700' : 'from-amber-500 to-red-600'
+          }`}>
+            {isReservation ? '📅' : '⚡'}
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
             <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap">
-              八人巅峰场 · 第<span className="text-amber-400 font-mono px-0.5">{currentCarriageIndex}</span>局
+              {isReservation ? '预约场' : '实时对战场'} · 第<span className="text-amber-400 font-mono px-0.5">{currentCarriageIndex}</span>局
             </span>
             
+            {/* Mode badge */}
+            {isReservation ? (
+              <span className="hidden xs:flex items-center gap-1 text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                <VolumeX className="w-3 h-3 text-blue-400" />
+                <span>纯净无打扰</span>
+              </span>
+            ) : (
+              <span className="hidden xs:flex items-center gap-1 text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse">
+                <Radio className="w-3 h-3 text-emerald-400" />
+                <span>语音对讲中</span>
+              </span>
+            )}
+
             {/* 👥 人数比例徽章 */}
-            <div className={`hidden xs:flex items-center gap-1 text-[11px] sm:text-xs font-black px-2 py-0.5 rounded-full border whitespace-nowrap ${
+            <div className={`hidden sm:flex items-center gap-1 text-[11px] sm:text-xs font-black px-2 py-0.5 rounded-full border whitespace-nowrap ${
               isFull
                 ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
                 : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
@@ -103,7 +118,7 @@ export function CarriageHeaderBar({
           </div>
         </div>
 
-        {/* Right: Points, Chat & Hub Buttons */}
+        {/* Right: Points & Chat buttons */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* 🪙 积分显示 */}
           <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 shadow-sm">
@@ -113,14 +128,19 @@ export function CarriageHeaderBar({
             </span>
           </div>
 
-          
-
-          {/* 战绩记录入口 */}
-          
+          {!isReservation && (
+            <button
+              onClick={onOpenChat}
+              className="px-2.5 py-1 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-indigo-200" />
+              <span className="hidden min-[480px]:inline">聊天/对讲</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 2. 8-Seat Live Table Strip (八人同台席位与动态语音气泡) */}
+      {/* 2. 8-Seat Live Table Strip */}
       <div className="w-full bg-slate-950/80 border border-slate-800/80 rounded-xl px-2 py-1 flex items-center justify-between gap-1 overflow-x-auto no-scrollbar shadow-inner">
         {Array.from({ length: 8 }).map((_, s) => {
           const isUser = s === seatIndex;
@@ -128,7 +148,7 @@ export function CarriageHeaderBar({
           const playerObj = players[s];
           const avatar = isUser ? '😎' : sub ? sub.avatar : playerObj ? playerObj.avatar : ['🦁', '🐯', '🐲', '🦊', '🐰', '🐼', '🦅', '🐟'][s];
           const name = isUser ? '我' : sub ? sub.playerName : playerObj ? playerObj.name : `玩家${s + 1}`;
-          const isSpeaking = activeSpeakerId && (
+          const isSpeaking = !isReservation && activeSpeakerId && (
             (isUser && activeSpeakerId.includes('player_user')) ||
             (!isUser && playerObj && playerObj.id === activeSpeakerId) ||
             (!isUser && sub && sub.playerId === activeSpeakerId)
@@ -137,30 +157,27 @@ export function CarriageHeaderBar({
           return (
             <div
               key={s}
-              onClick={onOpenChat}
-              className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-0.5 px-1 rounded-lg transition-all cursor-pointer group ${
+              onClick={() => !isReservation && onOpenChat()}
+              className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-0.5 px-1 rounded-lg transition-all ${!isReservation ? 'cursor-pointer group' : ''} ${
                 isUser
                   ? 'bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold'
                   : sub
                   ? 'bg-slate-900/90 border border-emerald-500/30 text-emerald-400'
-                  : 'bg-slate-900/60 border border-slate-800 text-slate-400 hover:border-indigo-500/30'
+                  : 'bg-slate-900/60 border border-slate-800 text-slate-400'
               }`}
-              title={`${s + 1}号位: ${name} (点击对讲)`}
+              title={`${s + 1}号位: ${name} ${!isReservation ? '(点击对讲)' : '(预约场无对讲)'}`}
             >
               {/* Floating speech bubble over active speaker */}
               {isSpeaking && speakerSnippet && (
-                <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-30 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg border border-indigo-400 whitespace-nowrap animate-bounce">
-                  {speakerSnippet.length > 8 ? speakerSnippet.slice(0, 8) + '…' : speakerSnippet}
+                <div className="absolute -top-7 z-20 bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap animate-bounce flex items-center gap-1 border border-emerald-300">
+                  <span>{speakerSnippet}</span>
                 </div>
               )}
 
-              <div className="flex items-center gap-1">
-                <span className="text-xs group-hover:scale-110 transition">{avatar}</span>
-                <span className="text-[10px] font-mono opacity-60">#{s + 1}</span>
+              <div className="text-sm sm:text-base leading-none mb-0.5">{avatar}</div>
+              <div className="text-[10px] truncate max-w-full font-medium">
+                {isUser ? '我' : name}
               </div>
-              <span className="text-[9px] sm:text-[10px] truncate max-w-full leading-tight font-medium">
-                {name}
-              </span>
             </div>
           );
         })}
@@ -168,4 +185,3 @@ export function CarriageHeaderBar({
     </div>
   );
 }
-

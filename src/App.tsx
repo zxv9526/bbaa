@@ -98,6 +98,7 @@ import { CarriageHeaderBar } from './components/CarriageHeaderBar';
 import { CarriageHubModal } from './components/CarriageHubModal';
 import { SubmitChoiceModal } from './components/SubmitChoiceModal';
 import { MatchReplayModal } from './components/MatchReplayModal';
+import { ReservationModal } from './components/ReservationModal';
 import {
   saveActiveMatchSession,
   loadActiveMatchSession,
@@ -106,15 +107,15 @@ import {
 } from './lib/matchPersistence';
 import { saveMatchReplay } from './lib/matchReplay';
 import { triggerHaptic } from './lib/haptics';
-import { ArrowLeftRight, History, GraduationCap } from 'lucide-react';
+import { ArrowLeftRight, GraduationCap } from 'lucide-react';
 
-type GameMode = 'vs_ai_8p';
+type GameMode = 'realtime' | 'reservation' | 'vs_ai_8p';
 
 export default function App() {
   const [currentAccount, setCurrentAccount] = useState<UserAccount>(() => getCurrentAccount());
   const [playerName, setPlayerName] = useState<string>(() => currentAccount.nickname);
 
-  const [mode, setMode] = useState<GameMode>('vs_ai_8p');
+  const [mode, setMode] = useState<GameMode>('realtime');
   const [gameState, setGameState] = useState<'menu' | 'arranging' | 'revealing'>('menu');
 
   // Carriage Mode State (8-player Async Carriage Flow)
@@ -144,6 +145,7 @@ export default function App() {
   const [showSkinModal, setShowSkinModal] = useState(false);
   const [showSubmitChoiceModal, setShowSubmitChoiceModal] = useState(false);
   const [showReplayModal, setShowReplayModal] = useState(false);
+  const [showReservationModal, setShowReservationModal] = useState(false);
   const [pendingArrangement, setPendingArrangement] = useState<PlayerArrangement | null>(null);
 
   // Player Hand State
@@ -339,22 +341,22 @@ export default function App() {
     setMatchResults(null);
     setUseSpecialHand(false);
 
-    // 🚆 8人巅峰场：使用异步包厢存储与300局池系统
-    if (selectedMode === 'vs_ai_8p') {
-      const activeSeat = typeof seatOverride === 'number' ? seatOverride : carriageSeatIndex;
-      const { carriage, seatIndex, handCards, stats, isFull } = getOrCreateCurrentCarriage(activeSeat, 'vs_ai_8p');
+    // 🚆 8人巅峰场 / 实时对战场 / 预约场：使用包厢存储与牌池系统
+    const poolMode = selectedMode === 'reservation' ? 'vs_ai_8p' : 'vs_ai_8p';
+    const activeSeat = typeof seatOverride === 'number' ? seatOverride : carriageSeatIndex;
+    const { carriage, seatIndex, handCards, stats, isFull } = getOrCreateCurrentCarriage(activeSeat, poolMode);
 
-      const totalSeats = 8;
-      if (isFull && carriage.submissions && Object.keys(carriage.submissions).length >= totalSeats && !carriage.submissions[seatIndex]) {
-        setErrorMsg(`该八人场车厢已满座 (0/${totalSeats})，无法再进入！`);
-        return;
-      }
-      
-      setCarriageSeatIndex(seatIndex);
-      setCarriageIndex(carriage.index);
-      setCarriageId(carriage.id);
-      setCarriageStats(stats);
-      setCarriageSubmissions(carriage.submissions || {});
+    const totalSeats = 8;
+    if (isFull && carriage.submissions && Object.keys(carriage.submissions).length >= totalSeats && !carriage.submissions[seatIndex]) {
+      setErrorMsg(`当前赛场已满座 (0/${totalSeats})，无法再进入！`);
+      return;
+    }
+    
+    setCarriageSeatIndex(seatIndex);
+    setCarriageIndex(carriage.index);
+    setCarriageId(carriage.id);
+    setCarriageStats(stats);
+    setCarriageSubmissions(carriage.submissions || {});
 
       const sortedPlayerHand = sortCards(handCards);
       setOriginalHand(sortedPlayerHand);
@@ -454,7 +456,6 @@ export default function App() {
 
       setPlayersInMatch(playersList);
       setGameState('arranging');
-    }
   };
 
   // 💬 Chat & Voice Message Dispatcher
@@ -478,8 +479,8 @@ export default function App() {
     };
     setMessages((prev) => [...prev, userMsg]);
 
-    // AI opponents respond contextually in 8-player match
-    if (mode === 'vs_ai_8p') {
+    // AI opponents respond contextually in real-time match (disabled in reservation mode)
+    if (mode !== 'reservation') {
       let oppList = playersInMatch
         .filter((p) => p.id !== 'player_user')
         .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar }));
@@ -892,8 +893,8 @@ export default function App() {
       setGameState('revealing');
       return;
     }
-    // 🚆 8人模式：预发牌异步结算
-    if (mode === 'vs_ai_8p') {
+    // 🚆 8人模式 / 实时对战场 / 预约场：预发牌异步结算
+    if (mode === 'vs_ai_8p' || mode === 'realtime' || mode === 'reservation') {
       try {
         const res = await submitCarriageHandAndAdvance({
           carriageId,
@@ -1093,8 +1094,9 @@ export default function App() {
     back.length === 5 &&
     !isValidArrangement(front, mid, back);
 
-  // Available patterns from original full hand or unplaced pool
+  // Available patterns from original hand or unplaced pool
   const availablePatterns = findAvailablePatterns(originalHand);
+  const occ8P = getCurrentCarriageOccupancy('vs_ai_8p');
 
   return (
     <div className="h-screen h-[100dvh] max-h-[100dvh] w-screen w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
@@ -1125,90 +1127,146 @@ export default function App() {
 
       {/* 2. Main Body Content: Minimalist & Clean Two Arena Blocks */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-2 sm:px-6 py-1 sm:py-2 flex flex-col items-center justify-start overflow-y-auto no-scrollbar">
-        {gameState === 'menu' && (() => {
-          const occ8P = getCurrentCarriageOccupancy('vs_ai_8p');
-
-          return (
-            <div className="w-full flex flex-col items-center justify-center gap-6 sm:gap-8 my-auto">
+        {gameState === 'menu' && (
+          <div className="w-full max-w-4xl flex flex-col items-center justify-center gap-6 my-auto animate-fade-in-up py-2">
               {/* Hero Banner Area */}
-              <div className="flex flex-col items-center gap-2 mb-2 sm:mb-4 animate-fade-in-up">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-gradient-to-br from-amber-400 to-red-600 flex items-center justify-center text-4xl sm:text-5xl font-black shadow-lg shadow-red-600/30 ring-4 ring-slate-950 ring-offset-4 ring-offset-red-500/20 transform hover:scale-105 transition-transform duration-300">🀄</div>
-                <h1 className="text-3xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-400 to-orange-500 tracking-tight mt-4 drop-shadow-sm">十三水巅峰对决</h1>
-                <p className="text-sm sm:text-base text-slate-400 font-medium tracking-wide">随时随地 · 极速匹配 · 畅快交锋</p>
+              <div className="flex flex-col items-center gap-1.5 text-center">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-600 flex items-center justify-center text-3xl sm:text-4xl font-black shadow-xl shadow-red-600/30 ring-4 ring-slate-950 ring-offset-2 ring-offset-amber-500/20 transform hover:scale-105 transition-transform">
+                  🀄
+                </div>
+                <h1 className="text-3xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-400 to-orange-500 tracking-tight mt-2 drop-shadow">
+                  十三水巅峰对决
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-400 font-medium tracking-wide">
+                  两大特色赛场 · 专注理牌 or 自由社交
+                </p>
               </div>
 
-              {/* BLOCK 1: 八人巅峰场 */}
-              <div
-                id="arena-8p-section"
-                onClick={() => {
-                  if (currentAccount.points <= 0) {
-                    setShowNoPointsModal(true);
-                    return;
-                  }
-                  if (occ8P.isFull) {
-                    setErrorMsg('八人场当前车厢已满座 (0/8)，无法进入！');
-                    return;
-                  }
-                  startNewMatch('vs_ai_8p');
-                }}
-                className={`w-full max-w-4xl relative bg-gradient-to-br from-red-950/80 via-slate-900 to-amber-950/40 border-2 border-amber-500/50 p-6 sm:p-8 rounded-3xl flex flex-col justify-between gap-6 cursor-pointer transition-all duration-300 group shadow-2xl hover:border-amber-400 hover:-translate-y-1 hover:shadow-red-950/60 ${
-                  occ8P.isFull ? 'opacity-80' : ''
-                }`}
-              >
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-3">
-                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-red-600 text-slate-950 flex items-center justify-center text-3xl font-black shadow-lg shadow-red-600/30 group-hover:scale-105 transition duration-300">
-                        👑
+              {/* TWO GAME SECTION CARDS */}
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
+                
+                {/* SECTION 1: 预约场 */}
+                <div
+                  id="arena-reservation-section"
+                  onClick={() => {
+                    if (currentAccount.points <= 0) {
+                      setShowNoPointsModal(true);
+                      return;
+                    }
+                    setShowReservationModal(true);
+                  }}
+                  className="relative bg-gradient-to-br from-blue-950/80 via-slate-900 to-indigo-950/90 border-2 border-blue-500/50 p-6 sm:p-7 rounded-3xl flex flex-col justify-between gap-5 cursor-pointer transition-all duration-300 group shadow-xl hover:border-blue-400 hover:-translate-y-1 hover:shadow-blue-950/80"
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/40 text-blue-400 flex items-center justify-center text-2xl font-black shadow-inner group-hover:scale-110 transition">
+                        📅
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight group-hover:text-amber-300 transition">
-                            八人巅峰对决场
-                          </h2>
-                          <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 animate-pulse">
-                            官方旗舰场
-                          </span>
-                        </div>
-                        <p className="text-xs sm:text-sm text-slate-300 mt-1">
-                          双副104扑克 · 8人同台竞技 · 7枪全垒打狂暴翻倍 · 异步连战
-                        </p>
-                      </div>
+                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center gap-1">
+                        <VolumeX className="w-3 h-3 text-blue-400" />
+                        纯净无打扰 · 禁用聊天
+                      </span>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/30">
-                        双副 104 牌
-                      </span>
-                      <span className="text-xs font-bold text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/30 flex items-center gap-1">
-                        <MessageSquare className="w-3 h-3 text-indigo-400" />
-                        整合实时语音对讲
-                      </span>
-                      <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
-                        occ8P.isFull
-                          ? 'text-rose-400 bg-rose-500/10 border-rose-500/30'
-                          : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
-                      }`}>
-                        {occ8P.isFull ? '🔴 满座 (0/8)' : `🟢 剩余席位: ${occ8P.remainingSeats}/8`}
-                      </span>
+                    <div>
+                      <h2 className="text-2xl font-black text-white group-hover:text-blue-300 transition tracking-tight">
+                        预约场
+                      </h2>
+                      <p className="text-xs sm:text-sm text-slate-300 mt-1.5 leading-relaxed">
+                        预定开局时间与席位 · 专心致志比拼理牌牌力 · 绝无外界消息与语音打扰。
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs text-slate-400 pt-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-blue-400 font-bold">✓</span>
+                        <span>定时定场 & 赛事组房</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-blue-400 font-bold">✓</span>
+                        <span>无语音文本干扰静音专区</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-blue-400 font-bold">✓</span>
+                        <span>支持契约恢复与倒水校验</span>
+                      </div>
                     </div>
                   </div>
 
-                  </div>
-                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-sm sm:text-base font-bold text-amber-400 group-hover:text-amber-300">
-                  <div className="flex items-center gap-2">
-                    <span>{occ8P.isFull ? '当前车厢已满座' : '立即进入八人巅峰对决'}</span>
-                    <span className="text-xs font-normal text-slate-400 hidden sm:inline">(自动就近分配空余车厢)</span>
-                  </div>
-                  <div className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-red-600 text-slate-950 font-black text-sm flex items-center gap-2 group-hover:translate-x-1.5 transition shadow-lg shadow-red-600/30">
-                    <span>进入对局</span>
-                    <ArrowRight className="w-4 h-4" />
+                  <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between font-bold text-blue-300 group-hover:text-blue-200">
+                    <span className="text-sm">进入预约场</span>
+                    <div className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-black flex items-center gap-1.5 group-hover:translate-x-1 transition shadow-lg shadow-blue-600/30">
+                      <span>进入预约</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </div>
                   </div>
                 </div>
+
+                {/* SECTION 2: 实时对战场 */}
+                <div
+                  id="arena-realtime-section"
+                  onClick={() => {
+                    if (currentAccount.points <= 0) {
+                      setShowNoPointsModal(true);
+                      return;
+                    }
+                    if (occ8P.isFull) {
+                      setErrorMsg('实时对战场当前车厢已满座 (0/8)，无法进入！');
+                      return;
+                    }
+                    startNewMatch('realtime');
+                  }}
+                  className="relative bg-gradient-to-br from-red-950/80 via-slate-900 to-amber-950/90 border-2 border-amber-500/50 p-6 sm:p-7 rounded-3xl flex flex-col justify-between gap-5 cursor-pointer transition-all duration-300 group shadow-xl hover:border-amber-400 hover:-translate-y-1 hover:shadow-red-950/80"
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-red-600 text-slate-950 flex items-center justify-center text-2xl font-black shadow-lg shadow-red-600/30 group-hover:scale-110 transition">
+                        ⚡
+                      </div>
+                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 animate-pulse">
+                        <MessageSquare className="w-3 h-3 text-emerald-400" />
+                        集成实时语音对讲与自由文本
+                      </span>
+                    </div>
+
+                    <div>
+                      <h2 className="text-2xl font-black text-white group-hover:text-amber-300 transition tracking-tight">
+                        实时对战场
+                      </h2>
+                      <p className="text-xs sm:text-sm text-slate-300 mt-1.5 leading-relaxed">
+                        8人同台极速匹配 · 集成实时语音对讲、自由文本输入与动态牌桌对讲。
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs text-slate-400 pt-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-400 font-bold">✓</span>
+                        <span>牌桌对讲 & 自由文本打字</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-400 font-bold">✓</span>
+                        <span>AI 对手真实语音 & 拟真回复</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-400 font-bold">✓</span>
+                        <span>7枪全垒打狂暴倍率竞技</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between font-bold text-amber-400 group-hover:text-amber-300">
+                    <span className="text-sm">极速匹配进入对局</span>
+                    <div className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-red-600 text-slate-950 text-xs font-black flex items-center gap-1.5 group-hover:translate-x-1 transition shadow-lg shadow-red-600/30">
+                      <span>立即对战</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
-              {/* Lobby Quick Tool Shelf - Simplified */}
-              <div className="w-full max-w-4xl flex flex-wrap items-center justify-center gap-3 sm:gap-4 pt-4 border-t border-slate-800/50">
+              {/* Lobby Quick Tool Shelf */}
+              <div className="w-full flex flex-wrap items-center justify-center gap-3 sm:gap-4 pt-3 border-t border-slate-800/50">
                 <button
                   onClick={() => setShowRuleModal(true)}
                   className="px-5 py-2.5 rounded-full bg-slate-900/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-white text-sm font-bold flex items-center gap-2.5 transition-all shadow-sm cursor-pointer"
@@ -1225,8 +1283,7 @@ export default function App() {
                 </button>
               </div>
             </div>
-          );
-        })()}
+        )}
 
         {/* 4. Active Game Table (Arranging / Revealing) */}
         {gameState === 'revealing' && matchResults && (
@@ -1245,26 +1302,24 @@ export default function App() {
         )}
         {gameState === 'arranging' && (
           <div className="w-full max-w-5xl flex-1 flex flex-col items-center justify-between gap-1 py-0.5 px-0 min-h-0 h-full overflow-hidden">
-            {/* 🚆 Compact Carriage Header Bar for 8P Mode with Live Seating & Chat */}
-            {mode === 'vs_ai_8p' && (
-              <CarriageHeaderBar
-                mode="vs_ai_8p"
-                currentCarriageIndex={carriageIndex}
-                seatIndex={carriageSeatIndex}
-                submissions={carriageSubmissions}
-                onSeatChange={newSeat => {
-                  setCarriageSeatIndex(newSeat);
-                  startNewMatch('vs_ai_8p', newSeat);
-                }}
-                stats={carriageStats}
-                onOpenHub={() => setShowCarriageHubModal(true)}
-                points={currentAccount.points}
-                onOpenChat={() => setShowChatDrawer(true)}
-                latestMessage={messages[messages.length - 1] || null}
-                onExit={() => setGameState('menu')}
-                players={playersInMatch}
-              />
-            )}
+            {/* 🚆 Compact Carriage Header Bar with Live Seating & Chat */}
+            <CarriageHeaderBar
+              mode={mode}
+              currentCarriageIndex={carriageIndex}
+              seatIndex={carriageSeatIndex}
+              submissions={carriageSubmissions}
+              onSeatChange={newSeat => {
+                setCarriageSeatIndex(newSeat);
+                startNewMatch(mode, newSeat);
+              }}
+              stats={carriageStats}
+              onOpenHub={() => setShowCarriageHubModal(true)}
+              points={currentAccount.points}
+              onOpenChat={() => mode !== 'reservation' && setShowChatDrawer(true)}
+              latestMessage={messages[messages.length - 1] || null}
+              onExit={() => setGameState('menu')}
+              players={playersInMatch}
+            />
 
 
             {/* Special Hand Alert Banner (Compact) */}
@@ -1469,10 +1524,25 @@ export default function App() {
 
             </div>
 
-            {/* 💬 Tactical Table Chat Bar (牌桌实时语音与快捷语对讲) */}
-            <div className="w-full max-w-2xl mx-auto shrink-0 px-1 sm:px-2">
-              
-            </div>
+            {/* 💬 Tactical Table Chat Bar (仅在实时对战场提供语音与文本聊天功能) */}
+            {mode !== 'reservation' ? (
+              <div className="w-full max-w-2xl mx-auto shrink-0 px-1 sm:px-2">
+                <TableTacticalChatBar
+                  onSendMessage={handleSendMessage}
+                  onOpenFullChat={() => setShowChatDrawer(true)}
+                  ttsEnabled={ttsEnabled}
+                  onToggleTts={() => setTtsEnabled(!ttsEnabled)}
+                  unreadCount={0}
+                />
+              </div>
+            ) : (
+              <div className="w-full max-w-2xl mx-auto shrink-0 px-1 sm:px-2 my-0.5">
+                <div className="w-full py-1.5 px-3 bg-slate-950/80 border border-slate-800/80 rounded-xl flex items-center justify-center gap-2 text-xs font-bold text-slate-400 shadow-inner">
+                  <VolumeX className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>📅 当前为【预约场】：已开启纯净无打扰模式，不含语音与文本聊天</span>
+                </div>
+              </div>
+            )}
 
             {/* Bottom Actions: Clean Two Primary Action Buttons (变换牌型 / 一键纠正 & 提交牌型) */}
             <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1 shrink-0 pt-0.5 pb-2 sm:pb-3">
@@ -1613,25 +1683,39 @@ export default function App() {
         phone={currentAccount.phone}
       />
 
-      {/* 💬 Floating Chat Widget (accessible on table & showdown) */}
-      <ChatFloatingWidget
-        activeMessages={messages}
-        unreadCount={0}
-        onOpenChat={() => setShowChatDrawer(true)}
+      <ReservationModal
+        isOpen={showReservationModal}
+        onClose={() => setShowReservationModal(false)}
+        onStartReservationMatch={(roomTitle) => {
+          setShowReservationModal(false);
+          startNewMatch('reservation');
+        }}
+        userPoints={currentAccount.points}
       />
 
-      {/* 💬 Full Voice & Text Chat Drawer */}
-      <ChatDrawer
-        isOpen={showChatDrawer}
-        onClose={() => setShowChatDrawer(false)}
-        messages={messages}
-        onSendMessage={handleSendMessage}
-        currentUserId={currentAccount.id || currentAccount.phone || 'player_user'}
-        currentUserName={currentAccount.nickname || playerName || '我'}
-        currentUserAvatar={currentAccount.avatar || '😎'}
-        ttsEnabled={ttsEnabled}
-        onToggleTts={() => setTtsEnabled(!ttsEnabled)}
-      />
+      {/* 💬 Floating Chat Widget (仅在实时对战场显示) */}
+      {mode !== 'reservation' && (
+        <ChatFloatingWidget
+          activeMessages={messages}
+          unreadCount={0}
+          onOpenChat={() => setShowChatDrawer(true)}
+        />
+      )}
+
+      {/* 💬 Full Voice & Text Chat Drawer (仅在实时对战场显示) */}
+      {mode !== 'reservation' && (
+        <ChatDrawer
+          isOpen={showChatDrawer}
+          onClose={() => setShowChatDrawer(false)}
+          messages={messages}
+          onSendMessage={handleSendMessage}
+          currentUserId={currentAccount.id || currentAccount.phone || 'player_user'}
+          currentUserName={currentAccount.nickname || playerName || '我'}
+          currentUserAvatar={currentAccount.avatar || '😎'}
+          ttsEnabled={ttsEnabled}
+          onToggleTts={() => setTtsEnabled(!ttsEnabled)}
+        />
+      )}
     </div>
   );
 }
