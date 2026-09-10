@@ -360,51 +360,6 @@ export function ShowdownStage({
         })}
       </div>
 
-      {/* Step Details & Explanations */}
-      {currentStep === 'front' && (
-        <div className="w-full bg-slate-900 border border-slate-800 rounded-3xl p-5 text-center text-slate-300 text-xs font-medium space-y-1">
-          <div className="font-bold text-sm text-blue-400">🔹 第一步：头墩 (前墩 3 张) 比拼</div>
-          <p className="text-slate-400">前墩比拼牌力大小。若前墩凑出“三条”（冲三），直接享有喜分 +3 水！</p>
-        </div>
-      )}
-
-      {currentStep === 'middle' && (
-        <div className="w-full bg-slate-900 border border-slate-800 rounded-3xl p-5 text-center text-slate-300 text-xs font-medium space-y-1">
-          <div className="font-bold text-sm text-indigo-400">🔷 第二步：中墩 (5 张) 策略比拼</div>
-          <p className="text-slate-400">中墩出现同花顺(+10水)、铁支(+8水)、葫芦(+2水)享墩位特殊高额喜分。</p>
-        </div>
-      )}
-
-      {currentStep === 'back' && (
-        <div className="w-full bg-slate-900 border border-slate-800 rounded-3xl p-5 text-center text-slate-300 text-xs font-medium space-y-1">
-          <div className="font-bold text-sm text-purple-400">🟣 第三步：尾墩 (5 张) 决胜压轴</div>
-          <p className="text-slate-400">尾墩为整手牌最强压轴墩位（尾墩铁支+4水，同花顺+5水），锁住最终胜局！</p>
-        </div>
-      )}
-
-      {currentStep === 'guns' && (
-        <div className="w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col items-center gap-3 text-center">
-          <div className="text-2xl font-black text-amber-400 flex items-center gap-2">
-            💥 打枪与全垒打结算
-          </div>
-          <div className="text-xs text-slate-300 max-w-lg leading-relaxed space-y-1">
-            {results.some(r => r.isHomeRun) ? (
-              <span className="text-yellow-300 font-bold block">
-                👑 震撼全场！有玩家完成【全垒打】（通杀全场所有对手），总赢水数直接 ×2 翻倍！
-              </span>
-            ) : results.some(r => Object.values(r.dunScores).some(d => d.isGun)) ? (
-              <span className="text-orange-300 font-bold block">
-                🔫 发生打枪对决！三墩全胜玩家获得额外的 +3 水打枪通杀奖励！
-              </span>
-            ) : (
-              <span className="text-slate-400 block">
-                本局各对手互有胜负，未发生 3-0 通杀打枪，比分平稳入账。
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* FINAL SUMMARY LEDGER */}
       {currentStep === 'summary' && (
         <div className="w-full bg-slate-900 border-2 border-blue-500/60 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col items-center gap-6 text-center animate-in zoom-in-95">
@@ -643,24 +598,9 @@ export function ShowdownStage({
               <span>{playAgainLabel || '下一局 · 轮换发牌'}</span>
             </button>
 
-            {onQuickPlayAgain && (
-              <button
-                onClick={onQuickPlayAgain}
-                className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
-              >
-                <span>⚡ {quickPlayAgainLabel || '极速再来一局 (自动发牌)'}</span>
-              </button>
-            )}
+            
 
-            {onOpenChat && (
-              <button
-                onClick={onOpenChat}
-                className="px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-750 text-indigo-300 border border-indigo-500/30 font-bold text-sm transition cursor-pointer active:scale-95 flex items-center gap-1.5 shadow"
-              >
-                <MessageSquare className="w-4 h-4 text-indigo-400" />
-                <span>互动对讲</span>
-              </button>
-            )}
+            
 
             <button
               onClick={onBackToMenu}

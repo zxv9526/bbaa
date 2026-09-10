@@ -114,10 +114,7 @@ export function ChatFloatingWidget({
             <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-rose-500 border-2 border-slate-900" />
           )}
         </div>
-        <div className="hidden min-[480px]:flex flex-col items-start leading-none text-left">
-          <span className="text-xs font-black tracking-wide">聊天 / 语音</span>
-          <span className="text-[10px] text-indigo-200">按住对讲 · 快捷语</span>
-        </div>
+        
       </button>
     </>
   );

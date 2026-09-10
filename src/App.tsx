@@ -1093,60 +1093,28 @@ export default function App() {
 
   return (
     <div className="h-screen h-[100dvh] max-h-[100dvh] w-screen w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
-      {/* 1. Header Bar: ONLY shown on main menu/lobby; completely hidden during game match */}
+      {/* 1. Header Bar: Minimalist */}
       {gameState === 'menu' && (
-        <header className="shrink-0 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-8 py-3 flex items-center justify-between shadow-sm">
-          {/* TOP LEFT: Registration / Login / Profile Entry */}
+        <header className="shrink-0 bg-transparent absolute top-0 left-0 w-full z-30 px-4 sm:px-8 py-4 flex items-center justify-between">
           <button
             id="user-auth-entry-btn"
             onClick={() => setShowAuthModal(true)}
-            className="flex items-center gap-3 px-3 py-1.5 rounded-2xl border border-slate-800 bg-slate-950/80 hover:bg-slate-900 hover:border-blue-500/50 transition active:scale-95 text-left group shadow-sm"
-            title="手机号登录 / 注册 / 个人中心"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/60 hover:bg-slate-800 backdrop-blur-sm border border-slate-700/50 transition active:scale-95 group"
           >
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600/30 to-indigo-600/30 border border-blue-500/40 flex items-center justify-center text-lg shadow-inner group-hover:scale-105 transition">
-              {currentAccount.avatar}
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs sm:text-sm font-bold text-white group-hover:text-blue-300 transition truncate max-w-[110px]">
-                  {currentAccount.nickname}
-                </span>
-              </div>
-              <div className="text-[10px] text-slate-400 font-mono">
-                {currentAccount.phone}
-              </div>
-            </div>
+            <div className="text-xl">{currentAccount.avatar}</div>
+            <span className="text-sm font-bold text-white group-hover:text-blue-300 transition max-w-[100px] truncate">
+              {currentAccount.nickname}
+            </span>
           </button>
-          
-          {/* Center Brand Title */}
-          <div
-            onClick={() => setGameState('menu')}
-            className="cursor-pointer select-none text-center"
-          >
-            <h1 className="font-black text-lg sm:text-xl tracking-wider text-white flex items-center justify-center gap-1.5">
-              十三水
-            </h1>
-          </div>
 
-          {/* TOP RIGHT: Points Management Entry */}
-          <div className="flex items-center gap-3">
-            <button
-              id="points-management-entry-btn"
-              onClick={() => setShowPointsModal(true)}
-              className="flex items-center gap-2 px-3 sm:px-3.5 py-1.5 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/50 to-slate-950 hover:border-amber-400 text-amber-300 transition active:scale-95 shadow-md shadow-amber-500/10 group"
-              title="点击打开积分管理：手机号互赠积分"
-            >
-              <div className="w-7 h-7 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-sm text-amber-400 group-hover:scale-110 transition">
-                🪙
-              </div>
-              <div className="text-left">
-                <div className="text-[9px] text-amber-400/80 font-bold leading-tight">积分</div>
-                <div className="text-xs sm:text-sm font-black text-amber-400 leading-none">
-                  {currentAccount.points.toLocaleString()}
-                </div>
-              </div>
-            </button>
-          </div>
+          <button
+            id="points-management-entry-btn"
+            onClick={() => setShowPointsModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900/60 hover:bg-slate-800 backdrop-blur-sm border border-amber-500/30 text-amber-400 transition active:scale-95"
+          >
+            <span className="text-sm">🪙</span>
+            <span className="text-sm font-black">{currentAccount.points.toLocaleString()}</span>
+          </button>
         </header>
       )}
 
@@ -1221,39 +1189,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Highlights Banner */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
-                    <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2.5">
-                      <span className="text-xl">🎙️</span>
-                      <div>
-                        <div className="text-xs font-bold text-white">牌桌实时对讲</div>
-                        <div className="text-[10px] text-slate-400">语音战术互动</div>
-                      </div>
-                    </div>
-                    <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2.5">
-                      <span className="text-xl">💥</span>
-                      <div>
-                        <div className="text-xs font-bold text-white">7枪全垒打</div>
-                        <div className="text-[10px] text-slate-400">通杀全场狂暴翻倍</div>
-                      </div>
-                    </div>
-                    <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2.5">
-                      <span className="text-xl">🗃️</span>
-                      <div>
-                        <div className="text-xs font-bold text-white">智能车厢轮转</div>
-                        <div className="text-[10px] text-slate-400">异步比牌无缝衔接</div>
-                      </div>
-                    </div>
-                    <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2.5">
-                      <span className="text-xl">🪙</span>
-                      <div>
-                        <div className="text-xs font-bold text-white">真实水数进出</div>
-                        <div className="text-[10px] text-slate-400">智能纠正绝不倒水</div>
-                      </div>
-                    </div>
                   </div>
-                </div>
-
                 <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-sm sm:text-base font-bold text-amber-400 group-hover:text-amber-300">
                   <div className="flex items-center gap-2">
                     <span>{occ8P.isFull ? '当前车厢已满座' : '立即进入八人巅峰对决'}</span>
@@ -1266,47 +1202,21 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Lobby Quick Tool Shelf */}
-              <div className="col-span-1 md:col-span-2 flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 pt-2">
-                <button
-                  id="btn-open-chat-from-lobby"
-                  onClick={() => setShowChatDrawer(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-indigo-950/70 hover:bg-indigo-900/80 border border-indigo-500/40 text-indigo-300 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md cursor-pointer"
-                >
-                  <MessageSquare className="w-4 h-4 text-indigo-400" />
-                  <span>牌桌对讲聊天</span>
-                </button>
-
-                <button
-                  onClick={() => setShowReplayModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md cursor-pointer"
-                >
-                  <History className="w-4 h-4 text-amber-400" />
-                  <span>战绩复盘</span>
-                </button>
-
-                <button
-                  onClick={() => setShowRankModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-blue-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md cursor-pointer"
-                >
-                  <Trophy className="w-4 h-4 text-blue-400" />
-                  <span>排行榜</span>
-                </button>
-
+              {/* Lobby Quick Tool Shelf - Simplified */}
+              <div className="w-full max-w-4xl flex flex-wrap items-center justify-center gap-3 sm:gap-4 pt-4 border-t border-slate-800/50">
                 <button
                   onClick={() => setShowRuleModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md cursor-pointer"
+                  className="px-5 py-2.5 rounded-full bg-slate-900/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-white text-sm font-bold flex items-center gap-2.5 transition-all shadow-sm cursor-pointer"
                 >
                   <BookOpen className="w-4 h-4 text-indigo-400" />
-                  <span>规则说明</span>
+                  <span>玩法规则</span>
                 </button>
-
                 <button
-                  onClick={() => setShowSkinModal(true)}
-                  className="px-4 py-2.5 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-purple-500/40 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-md cursor-pointer"
+                  onClick={() => setShowReplayModal(true)}
+                  className="px-5 py-2.5 rounded-full bg-slate-900/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-white text-sm font-bold flex items-center gap-2.5 transition-all shadow-sm cursor-pointer"
                 >
-                  <Palette className="w-4 h-4 text-purple-400" />
-                  <span>扑克装扮</span>
+                  <History className="w-4 h-4 text-amber-400" />
+                  <span>我的战绩</span>
                 </button>
               </div>
             </div>
@@ -1556,15 +1466,7 @@ export default function App() {
 
             {/* 💬 Tactical Table Chat Bar (牌桌实时语音与快捷语对讲) */}
             <div className="w-full max-w-2xl mx-auto shrink-0 px-1 sm:px-2">
-              <TableTacticalChatBar
-                onSendMessage={(type, content, audioUrl, audioDuration) => {
-                  handleSendMessage(type, content, audioUrl, audioDuration);
-                }}
-                onOpenFullChat={() => setShowChatDrawer(true)}
-                ttsEnabled={ttsEnabled}
-                onToggleTts={() => setTtsEnabled(prev => !prev)}
-                unreadCount={0}
-              />
+              
             </div>
 
             {/* Bottom Actions: Clean Two Primary Action Buttons (变换牌型 / 一键纠正 & 提交牌型) */}

@@ -55,13 +55,12 @@ export function NoPointsModal({
           <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2 text-xs text-slate-300 leading-relaxed">
             <div className="font-bold text-amber-300 flex items-center gap-1.5 text-xs sm:text-sm">
               <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>入场限制规则说明</span>
+              <span>补充积分</span>
             </div>
             <p className="text-slate-300">
-              十三水对局为<b>真实结算牌局</b>，对局结束时将根据实际胜负道数、喜分及打枪倍率进行严格结算。为维护牌局契约精神与公平竞技环境，<b>积分为 0 或无积分的玩家不允许进入牌局</b>。
+              您的积分不足，需要补充积分才能继续巅峰对决。
             </p>
           </div>
-
           {/* Solution */}
           <div className="space-y-2.5">
             <div className="text-xs font-bold text-slate-400">解决方案：</div>

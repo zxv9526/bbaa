@@ -194,26 +194,9 @@ export function SubmitChoiceModal({
               <Sparkles className="w-4 h-4 text-slate-950 shrink-0" />
             </button>
 
-            {/* Choice 2: Quick Next Round (Auto Deal New Hand) */}
-            <button
-              id="btn-confirm-submit-and-next"
-              onClick={handleQuickNext}
-              className="w-full p-3 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black flex items-center justify-between shadow-md transition active:scale-[0.98] cursor-pointer group"
-            >
-              <div className="flex items-center gap-3 text-left">
-                <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0 group-hover:scale-105 transition">
-                  <span className="text-xs">⚡</span>
-                </div>
-                <div>
-                  <div className="text-xs sm:text-sm font-black text-white">极速连局 · 自动发牌直接下一局</div>
-                  <div className="text-[10px] sm:text-[11px] text-emerald-100/80 font-normal">
-                    后台自动轮庄发牌，跳过等待直接进入第 {carriageIndex + 1} 局理牌
-                  </div>
-                </div>
-              </div>
-            </button>
+            
 
-            {/* Choice 3: Submit & Finish Game (Return to Lobby) */}
+            {/* Choice 2: Submit & Finish Game (Return to Lobby) */}
             <button
               id="btn-confirm-submit-and-exit"
               onClick={handleExit}

@@ -113,30 +113,10 @@ export function CarriageHeaderBar({
             </span>
           </div>
 
-          {/* 💬 牌桌对讲 (Integrated Chat Trigger) */}
-          <button
-            id="btn-carriage-chat"
-            onClick={onOpenChat}
-            className="relative px-2.5 sm:px-3 py-1 rounded-xl bg-indigo-600/25 hover:bg-indigo-600/40 text-indigo-300 hover:text-white border border-indigo-500/40 text-xs font-bold transition flex items-center gap-1.5 shrink-0 active:scale-95 shadow cursor-pointer group"
-            title="打开牌桌语音与文字对讲"
-          >
-            <MessageSquare className="w-3.5 h-3.5 text-indigo-400 group-hover:scale-110 transition" />
-            <span className="hidden xs:inline font-black">对讲</span>
-            {unreadChatCount > 0 && (
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping absolute -top-0.5 -right-0.5" />
-            )}
-          </button>
+          
 
           {/* 战绩记录入口 */}
-          <button
-            onClick={onOpenHub}
-            className="px-2 py-1 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center gap-1 shrink-0 active:scale-95 shadow cursor-pointer"
-            title="查看本局与历史战绩"
-          >
-            <Sparkles className="w-3 h-3 text-amber-400" />
-            <span className="hidden sm:inline">记录</span>
-            <ChevronRight className="w-3 h-3 text-slate-400" />
-          </button>
+          
         </div>
       </div>
 

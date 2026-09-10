@@ -439,25 +439,7 @@ export function ChatDrawer({
 
         {/* Bottom Input & Voice Record Action Bar */}
         <div className="p-3 sm:p-4 bg-slate-950/70 border-t border-slate-800/80 flex items-center gap-2 shrink-0">
-          {/* Voice Record Button (按住/点击对讲) */}
-          <button
-            onClick={() => {
-              if (isRecording) {
-                handleStopRecord();
-              } else {
-                handleStartRecord();
-              }
-            }}
-            className={`px-3.5 py-2.5 rounded-xl font-black text-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 shadow ${
-              isRecording
-                ? 'bg-rose-600 text-white animate-pulse'
-                : 'bg-slate-850 hover:bg-slate-800 text-emerald-400 border border-emerald-500/30'
-            }`}
-            title="点击开始录制语音对讲消息"
-          >
-            {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4 text-emerald-400" />}
-            <span className="hidden min-[400px]:inline">{isRecording ? '点击结束' : '语音对讲'}</span>
-          </button>
+          
 
           {/* Text Input */}
           <input
