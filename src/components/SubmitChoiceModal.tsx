@@ -7,9 +7,10 @@ import { triggerHaptic } from '../lib/haptics';
 interface SubmitChoiceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (advanceToNext: boolean) => void;
+  onConfirm: (action: 'reveal' | 'quick_next' | 'exit') => void;
   carriageIndex: number;
-  mode?: 'vs_ai_8p' | 'vs_ai_4p';
+  roundIndex?: number;
+  mode?: 'vs_ai_8p' | 'vs_ai_4p' | 'practice';
   front: Card[];
   mid: Card[];
   back: Card[];
@@ -23,6 +24,7 @@ export function SubmitChoiceModal({
   onClose,
   onConfirm,
   carriageIndex,
+  roundIndex,
   mode,
   front,
   mid,
@@ -38,14 +40,19 @@ export function SubmitChoiceModal({
   const mEval = !isSpecial && mid.length === 5 ? evaluateHand(mid, 'middle') : null;
   const bEval = !isSpecial && back.length === 5 ? evaluateHand(back, 'back') : null;
 
-  const handleNext = () => {
+  const handleReveal = () => {
     triggerHaptic('success');
-    onConfirm(true);
+    onConfirm('reveal');
+  };
+
+  const handleQuickNext = () => {
+    triggerHaptic('medium');
+    onConfirm('quick_next');
   };
 
   const handleExit = () => {
-    triggerHaptic('medium');
-    onConfirm(false);
+    triggerHaptic('light');
+    onConfirm('exit');
   };
 
   return (
@@ -61,7 +68,7 @@ export function SubmitChoiceModal({
             <div>
               <h3 className="text-base font-black text-white">确认提交牌型</h3>
               <p className="text-xs text-slate-400">
-                八人巅峰场 • 第 <span className="text-amber-400 font-bold font-mono">{carriageIndex}</span> 局
+                {mode === 'vs_ai_4p' ? '四人匹配赛' : mode === 'practice' ? '单机练习' : '八人巅峰场'} • 第 <span className="text-amber-400 font-bold font-mono">{carriageIndex}</span> 局
               </p>
             </div>
           </div>
@@ -167,41 +174,57 @@ export function SubmitChoiceModal({
               请选择提交后的后续操作：
             </div>
 
-            {/* Choice 1: Submit & Advance to Next Round */}
+            {/* Choice 1: Confirm & Reveal Showdown (Recommended Standard Flow) */}
             <button
-              id="btn-confirm-submit-and-next"
-              onClick={handleNext}
-              className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-black flex items-center justify-between shadow-lg shadow-emerald-500/20 transition active:scale-[0.98] cursor-pointer group"
+              id="btn-confirm-submit-reveal"
+              onClick={handleReveal}
+              className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 hover:from-amber-400 hover:to-red-400 text-slate-950 font-black flex items-center justify-between shadow-lg shadow-orange-500/20 transition active:scale-[0.98] cursor-pointer group"
             >
               <div className="flex items-center gap-3 text-left">
-                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0 group-hover:scale-105 transition">
+                <div className="w-9 h-9 rounded-xl bg-slate-950/20 flex items-center justify-center text-slate-950 shrink-0 group-hover:scale-105 transition">
                   <ArrowRight className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="text-sm font-black text-white">提交并进入下一局</div>
-                  <div className="text-[11px] text-emerald-100/90 font-normal">
-                    结算本局得分，并立即自动发牌进入第 {carriageIndex + 1} 局
+                  <div className="text-sm font-black text-slate-950">确认交牌 · 揭晓比牌 (推荐)</div>
+                  <div className="text-[11px] text-slate-900/80 font-bold">
+                    揭晓全员三墩、打枪全垒打与总水数，再进入下局发牌
                   </div>
                 </div>
               </div>
-              <Sparkles className="w-4 h-4 text-emerald-200 shrink-0" />
+              <Sparkles className="w-4 h-4 text-slate-950 shrink-0" />
             </button>
 
-            {/* Choice 2: Submit & Finish Game (Return to Lobby) */}
+            {/* Choice 2: Quick Next Round (Auto Deal New Hand) */}
+            <button
+              id="btn-confirm-submit-and-next"
+              onClick={handleQuickNext}
+              className="w-full p-3 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black flex items-center justify-between shadow-md transition active:scale-[0.98] cursor-pointer group"
+            >
+              <div className="flex items-center gap-3 text-left">
+                <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0 group-hover:scale-105 transition">
+                  <span className="text-xs">⚡</span>
+                </div>
+                <div>
+                  <div className="text-xs sm:text-sm font-black text-white">极速连局 · 自动发牌直接下一局</div>
+                  <div className="text-[10px] sm:text-[11px] text-emerald-100/80 font-normal">
+                    后台自动轮庄发牌，跳过等待直接进入第 {carriageIndex + 1} 局理牌
+                  </div>
+                </div>
+              </div>
+            </button>
+
+            {/* Choice 3: Submit & Finish Game (Return to Lobby) */}
             <button
               id="btn-confirm-submit-and-exit"
               onClick={handleExit}
-              className="w-full p-3.5 rounded-2xl bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-amber-500/50 text-slate-200 font-black flex items-center justify-between shadow-md transition active:scale-[0.98] cursor-pointer group"
+              className="w-full p-2.5 rounded-2xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-slate-300 font-bold flex items-center justify-between transition active:scale-[0.98] cursor-pointer group"
             >
-              <div className="flex items-center gap-3 text-left">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 group-hover:scale-105 transition">
-                  <Home className="w-5 h-5" />
+              <div className="flex items-center gap-2.5 text-left">
+                <div className="w-7 h-7 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 shrink-0">
+                  <Home className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-sm font-black text-amber-300">提交后结束游戏</div>
-                  <div className="text-[11px] text-slate-400 font-normal">
-                    结算本局积分并直接返回游戏大厅
-                  </div>
+                  <div className="text-xs font-bold text-slate-300">交牌后结束游戏并返回大厅</div>
                 </div>
               </div>
             </button>

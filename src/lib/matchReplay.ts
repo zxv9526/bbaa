@@ -27,7 +27,7 @@ export interface MatchReplayItem {
   id: string;
   phone: string;
   timestamp: number;
-  mode: 'vs_ai_8p' | 'multiplayer' | string;
+  mode: 'vs_ai_8p' | string;
   carriageIndex: number;
   myScore: number;
   players: PlayerReplayData[];

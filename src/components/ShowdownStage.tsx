@@ -24,9 +24,11 @@ import {
 interface ShowdownStageProps {
   results: PlayerScoreDetail[];
   onPlayAgain: () => void;
+  onQuickPlayAgain?: () => void;
   onBackToMenu: () => void;
   onOpenChat?: () => void;
   playAgainLabel?: string;
+  quickPlayAgainLabel?: string;
 }
 
 type Step = 'front' | 'middle' | 'back' | 'guns' | 'summary';
@@ -34,9 +36,11 @@ type Step = 'front' | 'middle' | 'back' | 'guns' | 'summary';
 export function ShowdownStage({
   results,
   onPlayAgain,
+  onQuickPlayAgain,
   onBackToMenu,
   onOpenChat,
-  playAgainLabel
+  playAgainLabel,
+  quickPlayAgainLabel
 }: ShowdownStageProps) {
   const [currentStep, setCurrentStep] = useState<Step>('front');
   const [autoPlay, setAutoPlay] = useState<boolean>(true);
@@ -633,23 +637,34 @@ export function ShowdownStage({
           <div className="flex items-center gap-3 sm:gap-4 mt-2 flex-wrap justify-center">
             <button
               onClick={onPlayAgain}
-              className="px-7 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
+              className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black text-sm shadow-xl shadow-orange-600/20 flex items-center gap-2 transition active:scale-95 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
-              {playAgainLabel || '再来一局'}
+              <span>{playAgainLabel || '下一局 · 轮换发牌'}</span>
             </button>
+
+            {onQuickPlayAgain && (
+              <button
+                onClick={onQuickPlayAgain}
+                className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
+              >
+                <span>⚡ {quickPlayAgainLabel || '极速再来一局 (自动发牌)'}</span>
+              </button>
+            )}
+
             {onOpenChat && (
               <button
                 onClick={onOpenChat}
                 className="px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-750 text-indigo-300 border border-indigo-500/30 font-bold text-sm transition cursor-pointer active:scale-95 flex items-center gap-1.5 shadow"
               >
                 <MessageSquare className="w-4 h-4 text-indigo-400" />
-                互动对讲
+                <span>互动对讲</span>
               </button>
             )}
+
             <button
               onClick={onBackToMenu}
-              className="px-6 py-3.5 rounded-2xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold text-sm transition cursor-pointer"
+              className="px-5 py-3.5 rounded-2xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold text-sm transition cursor-pointer"
             >
               返回大厅
             </button>

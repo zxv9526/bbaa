@@ -171,7 +171,7 @@ export function LeaderboardModal({ isOpen, onClose, currentPlayerName }: Leaderb
                             {h.result === 'WIN' ? '胜利' : h.result === 'SPECIAL_WIN' ? '特殊牌大胜' : h.result === 'LOSE' ? '失利' : '平局'}
                           </span>
                           <span className="font-bold text-slate-700 dark:text-slate-300">{h.playerName}</span>
-                          <span className="text-slate-400">({h.mode === 'vs_ai_4p' ? '四人对局' : h.mode === 'multiplayer' ? '多人房间' : '双人对决'})</span>
+                          <span className="text-slate-400">({h.mode === 'vs_ai_4p' ? '四人对局' : '双人对决'})</span>
                         </div>
                         <div className="text-slate-500 text-[11px]">
                           牌型: 前墩[{HAND_TYPE_CN[h.frontType as any] || h.frontType}] / 中墩[{HAND_TYPE_CN[h.midType as any] || h.midType}] / 后墩[{HAND_TYPE_CN[h.backType as any] || h.backType}]

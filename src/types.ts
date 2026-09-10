@@ -148,34 +148,7 @@ export interface ChatMessage {
   timestamp: number;
 }
 
-export interface RoomPlayer {
-  id: string;
-  name: string;
-  avatar: string;
-  isReady: boolean;
-  hasSubmitted: boolean;
-  isAi?: boolean;
-  cards?: Card[];
-  arrangement?: PlayerArrangement;
-  scoreResult?: PlayerScoreDetail;
-  waterPoints?: number;
-}
 
-export interface RoomState {
-  roomCode: string;
-  hostName: string;
-  maxPlayers: number;
-  status: 'waiting' | 'shuffling_cutting' | 'arranging' | 'revealing' | 'finished';
-  roundIndex: number;
-  dealerIndex: number; // 轮流发牌：当前发牌庄家在 players 中的索引
-  shuffleCount: number; // 当前局已洗牌次数
-  cutPosition?: number; // 切牌深度 (1~51 或 1~103)
-  cutCard?: Card | null; // 切牌亮出的指示牌
-  lastActionText?: string;
-  players: RoomPlayer[];
-  createdAt: string;
-  updatedAt: string;
-}
 
 export interface TelegramBotStatus {
   ok: boolean;
