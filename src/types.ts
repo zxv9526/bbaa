@@ -89,7 +89,7 @@ export interface PlayerScoreDetail {
 export interface GameRecord {
   id: string;
   playerName: string;
-  mode: 'vs_ai_2p' | 'vs_ai_4p' | 'vs_ai_8p' | 'multiplayer';
+  mode: 'vs_ai_8p' | 'multiplayer' | string;
   pointsWon: number;
   result: 'WIN' | 'LOSE' | 'DRAW' | 'SPECIAL_WIN';
   specialHand?: string | null;

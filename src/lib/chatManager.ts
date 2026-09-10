@@ -57,6 +57,17 @@ export const CHAT_EMOJIS = [
   '👍', '🙏', '🎉', '😈'
 ];
 
+export const AI_NAMES_POOL = [
+  { name: '智多星', avatar: '🤖' },
+  { name: '百胜侯', avatar: '🦊' },
+  { name: '十三叔', avatar: '🐼' },
+  { name: '猛虎客', avatar: '🐯' },
+  { name: '龙行天下', avatar: '🐉' },
+  { name: '幻影刺客', avatar: '🥷' },
+  { name: '东方不败', avatar: '🦁' },
+  { name: '财神到', avatar: '🎩' }
+];
+
 /**
  * Browser-native Web Speech Synthesis (TTS)
  */

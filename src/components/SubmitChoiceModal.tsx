@@ -9,7 +9,7 @@ interface SubmitChoiceModalProps {
   onClose: () => void;
   onConfirm: (advanceToNext: boolean) => void;
   carriageIndex: number;
-  mode: 'vs_ai_8p' | 'vs_ai_4p' | 'vs_ai_2p';
+  mode?: 'vs_ai_8p' | 'vs_ai_4p';
   front: Card[];
   mid: Card[];
   back: Card[];
@@ -61,7 +61,7 @@ export function SubmitChoiceModal({
             <div>
               <h3 className="text-base font-black text-white">确认提交牌型</h3>
               <p className="text-xs text-slate-400">
-                {mode === 'vs_ai_8p' ? '八人场' : mode === 'vs_ai_4p' ? '四人场' : '双人场'} • 第 <span className="text-amber-400 font-bold font-mono">{carriageIndex}</span> 局
+                八人巅峰场 • 第 <span className="text-amber-400 font-bold font-mono">{carriageIndex}</span> 局
               </p>
             </div>
           </div>
