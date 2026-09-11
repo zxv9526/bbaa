@@ -390,9 +390,9 @@ export default function App() {
           total: smartSuggestions.length
         });
       } else {
-        setFront(sortedPlayerHand.slice(0, 3));
-        setMid(sortedPlayerHand.slice(3, 8));
-        setBack(sortedPlayerHand.slice(8, 13));
+        setFront(sortedPlayerHand.slice(10, 13));
+        setMid(sortedPlayerHand.slice(5, 10));
+        setBack(sortedPlayerHand.slice(0, 5));
       }
 
       const numPlayers = 8;
@@ -978,9 +978,6 @@ export default function App() {
           const nextHand = sortCards(res.nextCarriageData.handCards);
           setOriginalHand(nextHand);
           setPool([]);
-          setFront(nextHand.slice(0, 3));
-          setMid(nextHand.slice(3, 8));
-          setBack(nextHand.slice(8, 13));
           setSelectedCardIds([]);
           setErrorMsg('');
           setUseSpecialHand(false);
@@ -990,6 +987,21 @@ export default function App() {
           const smartSuggestions = getSuggestedArrangements(nextHand);
           setSuggestions(smartSuggestions);
           patternChangerRef.current = new PatternChanger(nextHand);
+
+          if (smartSuggestions && smartSuggestions.length > 0) {
+            setFront(smartSuggestions[0].front);
+            setMid(smartSuggestions[0].middle);
+            setBack(smartSuggestions[0].back);
+            setPatternInfo({
+              tag: smartSuggestions[0].tag,
+              index: 1,
+              total: smartSuggestions.length
+            });
+          } else {
+            setFront(nextHand.slice(10, 13));
+            setMid(nextHand.slice(5, 10));
+            setBack(nextHand.slice(0, 5));
+          }
 
           const numPlayers = 8;
           const nextCarriage = res.nextCarriageData.carriage;
@@ -1099,7 +1111,7 @@ export default function App() {
   const occ8P = getCurrentCarriageOccupancy('vs_ai_8p');
 
   return (
-    <div className="h-screen h-[100dvh] max-h-[100dvh] w-screen w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
+    <div className="min-h-screen min-h-[100dvh] w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden relative">
       {/* 1. Header Bar: Minimalist */}
       {gameState === 'menu' && (
         <header className="shrink-0 bg-transparent absolute top-0 left-0 w-full z-30 px-4 sm:px-8 py-4 flex items-center justify-between">

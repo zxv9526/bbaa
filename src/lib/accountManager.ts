@@ -82,7 +82,7 @@ export async function checkOrSyncPhoneAuthorization(phone: string): Promise<bool
   // 2. 向服务端 API 查询授权状态 (D1 / Bot 授权同步)
   try {
     const res = await fetch(`/api/telegram?action=checkAuth&phone=${encodeURIComponent(norm)}`);
-    if (res.ok) {
+    if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
       const data = await res.json();
       if (data.authorized) {
         authorizePhone(norm);
@@ -96,7 +96,7 @@ export async function checkOrSyncPhoneAuthorization(phone: string): Promise<bool
   // 3. 兜底拉取完整授权名录同步
   try {
     const res = await fetch('/api/telegram?action=authlist');
-    if (res.ok) {
+    if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
       const data = await res.json();
       if (Array.isArray(data.list) && data.list.length > 0) {
         data.list.forEach((p: string) => authorizePhone(p));
@@ -151,7 +151,7 @@ export async function revokePhone(phone: string): Promise<{ success: boolean; me
 export async function syncWithServerAuth(): Promise<string[]> {
   try {
     const res = await fetch('/api/telegram?action=authlist');
-    if (res.ok) {
+    if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
       const data = await res.json();
       if (Array.isArray(data.list) && data.list.length > 0) {
         const currentList = getAuthorizedPhones();

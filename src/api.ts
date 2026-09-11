@@ -45,7 +45,7 @@ export class ApiClient {
   public static async initializeDatabase(): Promise<InitResponse> {
     try {
       const res = await fetch('/api/init', { method: 'GET' });
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = (await res.json()) as InitResponse;
         this.isD1Available = data.d1Bound;
         return data;
@@ -70,7 +70,7 @@ export class ApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(record)
       });
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         if (data.d1Bound) return;
       }
@@ -128,7 +128,7 @@ export class ApiClient {
     try {
       const url = playerName ? `/api/history?player=${encodeURIComponent(playerName)}&limit=${limit}` : `/api/history?limit=${limit}`;
       const res = await fetch(url);
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         if (data.d1Bound && data.records) {
           return data.records.map((r: any) => ({
@@ -165,7 +165,7 @@ export class ApiClient {
   public static async getStats(): Promise<StatsResponse> {
     try {
       const res = await fetch('/api/stats');
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
         if (data.d1Bound) {
           return {
@@ -213,7 +213,7 @@ export class ApiClient {
   public static async getTelegramBotStatus(): Promise<TelegramBotStatus> {
     try {
       const res = await fetch('/api/telegram?action=status');
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         return (await res.json()) as TelegramBotStatus;
       }
     } catch {
@@ -239,16 +239,19 @@ export class ApiClient {
     try {
       const targetUrl = url ? encodeURIComponent(url) : '';
       const res = await fetch(`/api/telegram?action=setWebhook${targetUrl ? `&url=${targetUrl}` : ''}`);
-      return await res.json();
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+        return await res.json();
+      }
     } catch (e: any) {
       return { ok: false, message: e.message || 'Network error' };
     }
+    return { ok: false, message: 'API not available' };
   }
 
   public static async simulateTelegramCommand(command: string): Promise<{ ok: boolean; response: { text: string; reply_markup?: any } }> {
     try {
       const res = await fetch(`/api/telegram?action=simulate&command=${encodeURIComponent(command)}`);
-      if (res.ok) {
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         return await res.json();
       }
     } catch {

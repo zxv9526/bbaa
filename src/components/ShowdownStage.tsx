@@ -57,7 +57,7 @@ export function ShowdownStage({
   let gunKillCount = 0;
 
   opponents.forEach(opp => {
-    const vsInfo = userResult.dunScores[opp.playerId];
+    const vsInfo = userResult?.dunScores?.[opp.playerId];
     if (!vsInfo) return;
     if (vsInfo.total > 0) wonCount++;
     else if (vsInfo.total < 0) lostCount++;
@@ -76,7 +76,7 @@ export function ShowdownStage({
     if (currentStep === 'front' || currentStep === 'middle' || currentStep === 'back') {
       sounds.playDunWin();
     } else if (currentStep === 'guns') {
-      const hasGun = results.some(r => Object.values(r.dunScores).some(d => d.isGun));
+      const hasGun = results.some(r => Object.values(r?.dunScores || {}).some(d => d.isGun));
       const hasHomeRun = results.some(r => r.isHomeRun);
       if (hasHomeRun) {
         sounds.playHomeRun();
@@ -371,7 +371,7 @@ export function ShowdownStage({
                   👑 全垒打 (Home Run) × 2倍
                 </span>
               )}
-              {Object.values(userResult.dunScores).some(d => d.isGun) && !userResult.isHomeRun && (
+              {Object.values(userResult?.dunScores || {}).some(d => d.isGun) && !userResult?.isHomeRun && (
                 <span className="bg-indigo-600 text-white font-black text-xs px-3.5 py-1 rounded-full">
                   💥 打枪大捷 (Gun Win)
                 </span>
@@ -521,7 +521,7 @@ export function ShowdownStage({
                     {!isUser && (expandedOppId === player.playerId || results.length === 2) && (
                       <div className="px-4 pb-3.5 pt-1 border-t border-slate-800/80 bg-slate-950/40 text-[11px] space-y-2 animate-in fade-in duration-200">
                         {(() => {
-                          const vsInfo = userResult.dunScores[player.playerId];
+                          const vsInfo = userResult?.dunScores?.[player.playerId];
                           if (!vsInfo) return <div className="text-slate-500 text-center py-1">暂无对局明细</div>;
 
                           return (

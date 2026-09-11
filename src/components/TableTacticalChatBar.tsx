@@ -43,8 +43,7 @@ export function TableTacticalChatBar({
         });
       }, 1000);
     } catch (err: any) {
-      console.error('Record failed:', err);
-      alert(err.message || '麦克风权限未开启或录音不可用');
+      console.warn('Microphone recording error:', err);
     }
   };
 
