@@ -1114,7 +1114,7 @@ export default function App() {
     <div className="min-h-screen min-h-[100dvh] w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden relative">
       {/* 1. Header Bar: Minimalist */}
       {gameState === 'menu' && (
-        <header className="shrink-0 bg-transparent absolute top-0 left-0 w-full z-30 px-4 sm:px-8 py-4 flex items-center justify-between">
+        <header className="w-full shrink-0 z-30 px-4 sm:px-8 pt-4 pb-2 flex items-center justify-between">
           <button
             id="user-auth-entry-btn"
             onClick={() => setShowAuthModal(true)}
@@ -1138,9 +1138,9 @@ export default function App() {
       )}
 
       {/* 2. Main Body Content: Minimalist & Clean Two Arena Blocks */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-2 sm:px-6 py-1 sm:py-2 flex flex-col items-center justify-start overflow-y-auto no-scrollbar">
+      <main className="flex-1 w-full max-w-5xl mx-auto px-2 sm:px-6 py-2 flex flex-col items-center justify-start overflow-y-auto no-scrollbar">
         {gameState === 'menu' && (
-          <div className="w-full max-w-4xl flex flex-col items-center justify-center gap-6 my-auto animate-fade-in-up py-2">
+          <div className="w-full max-w-4xl flex flex-col items-center justify-center gap-6 py-4 sm:py-8 my-auto animate-fade-in-up">
               {/* Hero Banner Area */}
               <div className="flex flex-col items-center gap-1.5 text-center">
                 <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-600 flex items-center justify-center text-3xl sm:text-4xl font-black shadow-xl shadow-red-600/30 ring-4 ring-slate-950 ring-offset-2 ring-offset-amber-500/20 transform hover:scale-105 transition-transform">
@@ -1313,7 +1313,7 @@ export default function App() {
           </div>
         )}
         {gameState === 'arranging' && (
-          <div className="w-full max-w-5xl flex-1 flex flex-col items-center justify-between gap-1 py-0.5 px-0 min-h-0 h-full overflow-hidden">
+          <div className="w-full max-w-5xl flex-1 flex flex-col items-center justify-between gap-2 py-1 px-0 min-h-0">
             {/* 🚆 Compact Carriage Header Bar with Live Seating & Chat */}
             <CarriageHeaderBar
               mode={mode}
