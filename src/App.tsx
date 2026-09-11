@@ -80,7 +80,8 @@ import {
   ChevronRight,
   Gem,
   Gift,
-  Train
+  Train,
+  History
 } from 'lucide-react';
 
 import {
