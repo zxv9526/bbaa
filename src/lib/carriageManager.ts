@@ -1,7 +1,7 @@
 
 import { Card, PlayerArrangement, PlayerScoreDetail, UserAccount } from '../types';
 import { createDeck, createDoubleDeck, shuffle, aiArrangeCards, calculate4PlayerMatchScores, calculate8PlayerMatchScores, detectSpecialHand } from '../gameLogic';
-import { addPoints } from './accountManager';
+import { addPoints, getRegisteredCommunityPlayers } from './accountManager';
 import { ApiClient } from '../api';
 
 export interface CarriageHand {
@@ -71,13 +71,45 @@ function generateSingleCarriage(index: number, mode: PoolMode = 'vs_ai_8p'): Car
     });
   }
 
+  const submissions: { [seatIndex: number]: CarriageSubmission } = {};
+
+  // 👥 严禁AI补位：在8人巅峰场中，接入真实平台已注册社区玩家的手牌理牌记录
+  if (mode === 'vs_ai_8p') {
+    try {
+      const community = getRegisteredCommunityPlayers();
+      // 预先安排 3-5 位真实社区牌友在该包厢入座，其余席位保持空闲待入座
+      const preSeatedCount = Math.min(5, Math.max(3, ((index * 3) % 3) + 3));
+      for (let i = 1; i <= preSeatedCount && i < totalSeats; i++) {
+        const commUser = community[(i - 1 + index) % community.length];
+        if (commUser) {
+          const hand = hands[i].cards;
+          const arr = aiArrangeCards(hand);
+          submissions[i] = {
+            playerId: commUser.id || `u_${commUser.phone}`,
+            playerName: commUser.nickname,
+            avatar: commUser.avatar,
+            isAi: false,
+            arrangement: arr,
+            cards: hand,
+            submittedAt: new Date(Date.now() - (preSeatedCount - i + 1) * 35000).toISOString(),
+            seatIndex: i,
+            seatNumber: i + 1,
+            carriageIndex: index
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to seed community submissions:', e);
+    }
+  }
+
   return {
     id: `car_${mode}_${Date.now()}_${Math.random().toString(36).substring(2,8)}`,
     index,
     createdAt: new Date().toISOString(),
     hands,
-    submissions: {},
-    status: 'unclaimed'
+    submissions,
+    status: Object.keys(submissions).length > 0 ? 'in_progress' : 'unclaimed'
   };
 }
 

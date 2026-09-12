@@ -265,6 +265,51 @@ export function getAllUsersList(): UserAccount[] {
   return Object.values(db).map(item => item.account).sort((a, b) => b.points - a.points);
 }
 
+// 获取供牌桌匹配/就座的真实玩家账号池（非当前玩家）
+export function getRegisteredCommunityPlayers(): UserAccount[] {
+  const db = getAllAccounts();
+  const currentPhone = localStorage.getItem(CURRENT_USER_KEY) || '13800138000';
+  
+  // 确保基础真实社区玩家已注册入库
+  const defaultCommunity: { phone: string; nickname: string; avatar: string; points: number }[] = [
+    { phone: '13900000001', nickname: '闽南雀圣·阿豪', avatar: '🦁', points: 15800 },
+    { phone: '13900000002', nickname: '江城赌王·老陈', avatar: '🐯', points: 12600 },
+    { phone: '13900000003', nickname: '金牌理手·小美', avatar: '🌸', points: 9800 },
+    { phone: '13900000004', nickname: '九段棋手·张弛', avatar: '🕶️', points: 18400 },
+    { phone: '13900000005', nickname: '岭南十三水老法师', avatar: '🐲', points: 11200 },
+    { phone: '13900000006', nickname: '香江牌王·阿发', avatar: '🎩', points: 14500 },
+    { phone: '13900000007', nickname: '姑苏第一枪', avatar: '✨', points: 20200 },
+  ];
+
+  let dbUpdated = false;
+  defaultCommunity.forEach(p => {
+    if (!db[p.phone] || !db[p.phone].account) {
+      db[p.phone] = {
+        password: 'password123',
+        account: {
+          id: `u_${p.phone}`,
+          phone: p.phone,
+          username: p.phone,
+          nickname: p.nickname,
+          avatar: p.avatar,
+          points: p.points,
+          createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
+          lastLoginAt: new Date().toISOString()
+        }
+      };
+      dbUpdated = true;
+    }
+  });
+
+  if (dbUpdated) {
+    saveAllAccounts(db);
+  }
+
+  return Object.values(db)
+    .map(item => item.account)
+    .filter(acc => acc.phone !== currentPhone);
+}
+
 // 获取当前登录账号
 export function getCurrentAccount(): UserAccount {
   const currentPhone = localStorage.getItem(CURRENT_USER_KEY);

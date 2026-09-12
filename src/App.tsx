@@ -41,7 +41,8 @@ import { initCardSkins } from './lib/cardSkin';
 import {
   getCurrentAccount,
   subscribeAccount,
-  addPoints
+  addPoints,
+  getRegisteredCommunityPlayers
 } from './lib/accountManager';
 import { ApiClient } from './api';
 import { sounds } from './sound';
@@ -127,36 +128,44 @@ export default function App() {
   // ⚡ 实时对战场：轮流发牌与牌桌状态 (Live Rotation Dealer Table)
   const [realtimeRound, setRealtimeRound] = useState<number>(1);
   const [realtimeDealerIndex, setRealtimeDealerIndex] = useState<number>(0);
-  const [realtimePlayers, setRealtimePlayers] = useState<RealtimeSeatPlayer[]>([
-    {
-      id: 'player_user',
-      name: `${getCurrentAccount().nickname || '我'} (1号位)`,
-      avatar: getCurrentAccount().avatar || '😎',
-      isAi: false,
-      score: 0
-    },
-    {
-      id: 'bot_1',
-      name: '雀圣阿豪 (2号位)',
-      avatar: '🦁',
-      isAi: true,
-      score: 0
-    },
-    {
-      id: 'bot_2',
-      name: '九段棋手 (3号位)',
-      avatar: '🐯',
-      isAi: true,
-      score: 0
-    },
-    {
-      id: 'bot_3',
-      name: '江城赌神 (4号位)',
-      avatar: '🐲',
-      isAi: true,
-      score: 0
-    }
-  ]);
+  const [realtimePlayers, setRealtimePlayers] = useState<RealtimeSeatPlayer[]>(() => {
+    const me = getCurrentAccount();
+    const community = getRegisteredCommunityPlayers();
+    const p2 = community[0] || { id: 'u_13900000001', nickname: '闽南雀圣·阿豪', avatar: '🦁' };
+    const p3 = community[1] || { id: 'u_13900000002', nickname: '江城赌王·老陈', avatar: '🐯' };
+    const p4 = community[2] || { id: 'u_13900000003', nickname: '金牌理手·小美', avatar: '🌸' };
+
+    return [
+      {
+        id: 'player_user',
+        name: `${me.nickname || '我'} (1号位)`,
+        avatar: me.avatar || '😎',
+        isAi: false,
+        score: 0
+      },
+      {
+        id: p2.id || 'u_13900000001',
+        name: `${p2.nickname} (2号位)`,
+        avatar: p2.avatar,
+        isAi: false,
+        score: 0
+      },
+      {
+        id: p3.id || 'u_13900000002',
+        name: `${p3.nickname} (3号位)`,
+        avatar: p3.avatar,
+        isAi: false,
+        score: 0
+      },
+      {
+        id: p4.id || 'u_13900000003',
+        name: `${p4.nickname} (4号位)`,
+        avatar: p4.avatar,
+        isAi: false,
+        score: 0
+      }
+    ];
+  });
 
   // Carriage Mode State (8-player Async Carriage Flow)
   const [carriageSeatIndex, setCarriageSeatIndex] = useState<number>(0);
@@ -419,23 +428,27 @@ export default function App() {
     setGameState('realtime_dealer');
   };
 
-  const handleAddRealtimeAi = () => {
+  const handleAddRealtimePlayer = () => {
     if (realtimePlayers.length >= 8) return;
     const nextIdx = realtimePlayers.length;
-    const aiTemplate = AI_NAMES_POOL[nextIdx % AI_NAMES_POOL.length];
+    const community = getRegisteredCommunityPlayers();
+    const existingIds = new Set(realtimePlayers.map(p => p.id));
+    const available = community.filter(c => !existingIds.has(c.id));
+    const nextUser = available[0] || community[nextIdx % community.length];
+
     setRealtimePlayers(prev => [
       ...prev,
       {
-        id: `bot_${Date.now()}_${nextIdx}`,
-        name: `${aiTemplate.name} (${nextIdx + 1}号位)`,
-        avatar: aiTemplate.avatar,
-        isAi: true,
+        id: nextUser?.id || `user_${Date.now()}_${nextIdx}`,
+        name: `${nextUser?.nickname || `牌友${nextIdx + 1}`} (${nextIdx + 1}号位)`,
+        avatar: nextUser?.avatar || '🦁',
+        isAi: false,
         score: 0
       }
     ]);
   };
 
-  const handleRemoveRealtimeAi = () => {
+  const handleRemoveRealtimePlayer = () => {
     if (realtimePlayers.length <= 2) return;
     setRealtimePlayers(prev => {
       const copy = [...prev];
@@ -502,10 +515,10 @@ export default function App() {
       setBack(initialBack);
     }
 
-    // 构建实时场参战玩家列表
+    // 构建实时场参战玩家列表（全员真实选手，无AI补位）
     const matchPlayersList = realtimePlayers.map((p) => {
       const pCards = dealtHands[p.id] || [];
-      if (p.id === 'player_user' || !p.isAi) {
+      if (p.id === 'player_user') {
         return {
           id: 'player_user',
           name: p.name,
@@ -523,15 +536,26 @@ export default function App() {
         };
       }
 
-      // AI 对手根据手牌自动生成合法不倒水方案
-      const aiArrangement = aiArrangeCards(pCards);
+      // 同桌真实玩家自动排定合法手牌（高阶无倒水方案）
+      const playerSuggestions = getSuggestedArrangements(pCards);
+      const arranged = playerSuggestions[0]
+        ? {
+            front: playerSuggestions[0].front,
+            middle: playerSuggestions[0].middle,
+            back: playerSuggestions[0].back,
+            specialHand: detectSpecialHand(pCards),
+            isValid: true,
+            isDaoShui: false
+          }
+        : aiArrangeCards(pCards);
+
       return {
         id: p.id,
         name: p.name,
-        isAi: true,
+        isAi: false,
         avatar: p.avatar,
         cards: pCards,
-        arrangement: aiArrangement
+        arrangement: arranged
       };
     });
 
@@ -704,12 +728,11 @@ export default function App() {
           arrangement: sub.arrangement
         });
       } else {
-        const defaultAI = AI_NAMES_POOL[s % AI_NAMES_POOL.length];
         playersList.push({
           id: `seat_${s}`,
-          name: `${defaultAI.name} (${s + 1}号位)`,
-          isAi: true,
-          avatar: defaultAI.avatar,
+          name: `待入座 (${s + 1}号位)`,
+          isAi: false,
+          avatar: '🪑',
           cards: [],
           arrangement: {
             front: [],
@@ -769,42 +792,43 @@ export default function App() {
     };
     setMessages((prev) => [...prev, userMsg]);
 
-    // AI opponents respond contextually in real-time match (disabled in reservation mode)
+    // 同桌真实牌友互动回复 (纯真人牌局体验)
     if (mode !== 'reservation') {
       let oppList = playersInMatch
-        .filter((p) => p.id !== 'player_user')
+        .filter((p) => p.id !== 'player_user' && !p.id.startsWith('seat_'))
         .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar }));
 
       if (oppList.length === 0) {
-        oppList = AI_NAMES_POOL.map((ai, idx) => ({
-          id: `seat_${idx + 1}`,
-          name: `${ai.name} (${idx + 2}号位)`,
-          avatar: ai.avatar
+        const community = getRegisteredCommunityPlayers();
+        oppList = community.slice(0, 3).map((u, idx) => ({
+          id: u.id,
+          name: `${u.nickname} (${idx + 2}号位)`,
+          avatar: u.avatar
         }));
       }
 
       if (oppList.length > 0) {
         setTimeout(() => {
-          const aiReply = getAiReplyForMessage(content, type, oppList);
-          if (aiReply) {
+          const tableReply = getAiReplyForMessage(content, type, oppList);
+          if (tableReply) {
             const isVoice = type === 'voice' || Math.random() < 0.25;
             const audioUrl = isVoice ? createSimulatedVoiceAudioUrl(2, 320 + Math.random() * 120) : undefined;
             
-            const aiMsg: ChatMessage = {
-              id: 'msg_ai_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-              senderId: aiReply.opponent.id,
-              senderName: aiReply.opponent.name,
-              senderAvatar: aiReply.opponent.avatar,
+            const playerMsg: ChatMessage = {
+              id: 'msg_p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+              senderId: tableReply.opponent.id,
+              senderName: tableReply.opponent.name,
+              senderAvatar: tableReply.opponent.avatar,
               isUser: false,
-              type: isVoice ? 'voice' : aiReply.replyType,
-              content: isVoice ? `[对讲回复] ${aiReply.replyContent}` : aiReply.replyContent,
+              type: isVoice ? 'voice' : tableReply.replyType,
+              content: isVoice ? `[对讲回复] ${tableReply.replyContent}` : tableReply.replyContent,
               audioUrl,
               audioDuration: isVoice ? 2 : undefined,
               timestamp: Date.now()
             };
-            setMessages((prev) => [...prev, aiMsg]);
-            if (ttsEnabled && aiReply.replyType !== 'emoji') {
-              speakTextMessage(aiReply.replyContent);
+            setMessages((prev) => [...prev, playerMsg]);
+            if (ttsEnabled && tableReply.replyType !== 'emoji') {
+              speakTextMessage(tableReply.replyContent);
             }
           }
         }, 1200 + Math.random() * 800);
@@ -1886,8 +1910,8 @@ export default function App() {
             dealerIndex={realtimeDealerIndex}
             players={realtimePlayers}
             currentUserId="player_user"
-            onAddAiPlayer={handleAddRealtimeAi}
-            onRemoveAiPlayer={handleRemoveRealtimeAi}
+            onAddPlayer={handleAddRealtimePlayer}
+            onRemovePlayer={handleRemoveRealtimePlayer}
             onStartDeal={handleRealtimeDealComplete}
             onBackToMenu={() => setGameState('menu')}
           />

@@ -148,8 +148,9 @@ export function CarriageHeaderBar({
           const isUser = s === seatIndex;
           const sub = submissions[s];
           const playerObj = players[s];
-          const avatar = isUser ? '😎' : sub ? sub.avatar : playerObj ? playerObj.avatar : ['🦁', '🐯', '🐲', '🦊', '🐰', '🐼', '🦅', '🐟'][s];
-          const name = isUser ? '我' : sub ? sub.playerName : playerObj ? playerObj.name : `玩家${s + 1}`;
+          const isOccupied = isUser || !!sub || !!playerObj;
+          const avatar = isUser ? '😎' : sub ? sub.avatar : playerObj ? playerObj.avatar : '🪑';
+          const name = isUser ? '我' : sub ? sub.playerName : playerObj ? playerObj.name : '待入座';
           const isSpeaking = !isReservation && activeSpeakerId && (
             (isUser && activeSpeakerId.includes('player_user')) ||
             (!isUser && playerObj && playerObj.id === activeSpeakerId) ||
@@ -159,15 +160,17 @@ export function CarriageHeaderBar({
           return (
             <div
               key={s}
-              onClick={() => !isReservation && onOpenChat()}
-              className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-0.5 px-1 rounded-lg transition-all ${!isReservation ? 'cursor-pointer group' : ''} ${
+              onClick={() => !isReservation && isOccupied && onOpenChat()}
+              className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-0.5 px-1 rounded-lg transition-all ${!isReservation && isOccupied ? 'cursor-pointer group' : ''} ${
                 isUser
                   ? 'bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold'
                   : sub
                   ? 'bg-slate-900/90 border border-emerald-500/30 text-emerald-400'
-                  : 'bg-slate-900/60 border border-slate-800 text-slate-400'
+                  : playerObj
+                  ? 'bg-slate-900/80 border border-blue-500/30 text-blue-300'
+                  : 'bg-slate-950/40 border border-dashed border-slate-800 text-slate-500'
               }`}
-              title={`${s + 1}号位: ${name} ${!isReservation ? '(点击对讲)' : '(预约场无对讲)'}`}
+              title={`${s + 1}号位: ${name}`}
             >
               {/* Floating speech bubble over active speaker */}
               {isSpeaking && speakerSnippet && (

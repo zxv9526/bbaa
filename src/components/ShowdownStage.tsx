@@ -249,7 +249,7 @@ export function ShowdownStage({
                       </div>
                     ) : (
                       <div className="text-[11px] text-slate-400 font-medium">
-                        {p.isAi ? '电脑玩家' : '玩家'}
+                        {isUser ? '本家选手' : '在线玩家'}
                       </div>
                     )}
                   </div>

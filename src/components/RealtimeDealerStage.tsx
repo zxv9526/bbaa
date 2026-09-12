@@ -31,8 +31,8 @@ interface RealtimeDealerStageProps {
   dealerIndex: number;
   players: RealtimeSeatPlayer[];
   currentUserId: string;
-  onAddAiPlayer: () => void;
-  onRemoveAiPlayer: () => void;
+  onAddPlayer: () => void;
+  onRemovePlayer: () => void;
   onStartDeal: (dealtHands: { [playerId: string]: Card[] }, dealerIndex: number) => void;
   onBackToMenu: () => void;
 }
@@ -42,14 +42,14 @@ export function RealtimeDealerStage({
   dealerIndex,
   players,
   currentUserId,
-  onAddAiPlayer,
-  onRemoveAiPlayer,
+  onAddPlayer,
+  onRemovePlayer,
   onStartDeal,
   onBackToMenu
 }: RealtimeDealerStageProps) {
   const seatedCount = players.length;
   const currentDealer = players[dealerIndex] || players[0];
-  const isHumanDealer = currentDealer?.id === currentUserId || !currentDealer?.isAi;
+  const isHumanDealer = currentDealer?.id === currentUserId;
 
   // Shuffle & Cut interactive states
   const [deck, setDeck] = useState<Card[]>(() => {
@@ -61,7 +61,7 @@ export function RealtimeDealerStage({
   const [cutSliderPos, setCutSliderPos] = useState(50); // percentage 15..85
   const [cutCard, setCutCard] = useState<Card | null>(null);
   const [isDealing, setIsDealing] = useState(false);
-  const [aiStep, setAiStep] = useState<'idle' | 'shuffling' | 'cutting' | 'dealing'>('idle');
+  const [dealerStep, setDealerStep] = useState<'idle' | 'shuffling' | 'cutting' | 'dealing'>('idle');
 
   const animationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -73,10 +73,10 @@ export function RealtimeDealerStage({
     setCutCard(null);
   }, [seatedCount]);
 
-  // AI Dealer auto-play routine
+  // Seated Player Dealer routine when other player is dealer
   useEffect(() => {
     if (!isHumanDealer && seatedCount >= 2) {
-      setAiStep('shuffling');
+      setDealerStep('shuffling');
       setIsShuffling(true);
       sounds.playShuffle();
       triggerHaptic('medium');
@@ -84,7 +84,7 @@ export function RealtimeDealerStage({
       const timer1 = setTimeout(() => {
         setIsShuffling(false);
         setShuffleCount(1);
-        setAiStep('cutting');
+        setDealerStep('cutting');
         setIsCutting(true);
         sounds.playCut();
         triggerHaptic('heavy');
@@ -96,7 +96,7 @@ export function RealtimeDealerStage({
 
         const timer2 = setTimeout(() => {
           setIsCutting(false);
-          setAiStep('dealing');
+          setDealerStep('dealing');
           setIsDealing(true);
           sounds.playDealSequence(seatedCount);
 
@@ -263,25 +263,25 @@ export function RealtimeDealerStage({
             </span>
           </div>
 
-          {/* Add / Remove Bot Controls */}
+          {/* Add / Remove Player Controls */}
           <div className="flex items-center gap-2">
             <button
-              onClick={onRemoveAiPlayer}
+              onClick={onRemovePlayer}
               disabled={seatedCount <= 2}
               className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition cursor-pointer"
-              title="减少一名AI对手 (最少保留2人)"
+              title="减少一名席位玩家 (最少保留2人)"
             >
               <UserMinus className="w-3.5 h-3.5" />
-              <span>减人</span>
+              <span>减席</span>
             </button>
             <button
-              onClick={onAddAiPlayer}
+              onClick={onAddPlayer}
               disabled={seatedCount >= 8}
               className="px-2.5 py-1 rounded-lg bg-blue-600/30 border border-blue-500/40 text-blue-300 hover:text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition cursor-pointer"
-              title="增加一名AI对手 (最多8人)"
+              title="邀请/匹配真实玩家入座 (最多8人)"
             >
               <UserPlus className="w-3.5 h-3.5" />
-              <span>加人</span>
+              <span>邀请/匹配牌友</span>
             </button>
           </div>
         </div>
@@ -339,14 +339,14 @@ export function RealtimeDealerStage({
               至少需要 2 位玩家就座才能发牌
             </h3>
             <p className="text-xs text-slate-400 max-w-sm">
-              当前牌桌仅有 1 位玩家。请点击下方“就座补齐”添入玩家后由庄家开始洗牌切牌。
+              当前牌桌仅有 1 位玩家。请点击下方“匹配牌友”入座后由庄家开始洗牌切牌。
             </p>
             <button
-              onClick={onAddAiPlayer}
+              onClick={onAddPlayer}
               className="mt-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
             >
               <UserPlus className="w-4 h-4" />
-              <span>补齐玩家 (立即就座)</span>
+              <span>匹配真实牌友 (立即入座)</span>
             </button>
           </div>
         ) : isHumanDealer ? (
@@ -484,7 +484,7 @@ export function RealtimeDealerStage({
             </div>
           </div>
         ) : (
-          /* CASE C: AI is Dealer -> Visual Broadcast Routine */
+          /* CASE C: Another Seated Player is Dealer -> Visual Broadcast Routine */
           <div className="flex flex-col items-center text-center gap-4 z-10 animate-fade-in">
             <div className="w-16 h-16 rounded-3xl bg-amber-500/20 border-2 border-amber-400 text-3xl flex items-center justify-center shadow-lg animate-pulse">
               {currentDealer?.avatar}
@@ -493,17 +493,17 @@ export function RealtimeDealerStage({
             <div className="space-y-1">
               <div className="flex items-center justify-center gap-2 text-amber-300 text-sm font-black">
                 <Crown className="w-4 h-4" />
-                <span>庄家【{currentDealer?.name}】正在发牌</span>
+                <span>庄家【{currentDealer?.name}】正在洗牌发牌</span>
               </div>
               <p className="text-xs text-slate-300">
-                {aiStep === 'shuffling' && '🎴 庄家正在进行交错对洗...'}
-                {aiStep === 'cutting' && '✂️ 庄家正在切牌分叠并验牌...'}
-                {aiStep === 'dealing' && '🚀 正在将13张手牌分发给在座全员...'}
-                {aiStep === 'idle' && '准备就绪，即将开局...'}
+                {dealerStep === 'shuffling' && '🎴 庄家正在进行交错对洗...'}
+                {dealerStep === 'cutting' && '✂️ 庄家正在切牌分叠并验牌...'}
+                {dealerStep === 'dealing' && '🚀 正在将13张手牌分发给在座全员...'}
+                {dealerStep === 'idle' && '准备就绪，即将开局...'}
               </p>
             </div>
 
-            {/* Visual AI Deck Animation */}
+            {/* Visual Deck Animation */}
             <div className="relative w-44 h-28 flex items-center justify-center my-1">
               <div
                 className={`w-20 h-28 rounded-xl bg-gradient-to-br from-amber-700 to-red-950 border-2 border-amber-300 shadow-2xl flex items-center justify-center text-2xl transition-all duration-500 transform ${
@@ -514,7 +514,7 @@ export function RealtimeDealerStage({
               </div>
             </div>
 
-            {/* Skip AI Animation Button */}
+            {/* Skip Animation Button */}
             <button
               onClick={handleSkipAiAnimation}
               className="px-5 py-2.5 rounded-full bg-slate-800/90 hover:bg-slate-700 border border-slate-600 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow"
