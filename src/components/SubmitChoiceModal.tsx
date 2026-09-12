@@ -9,6 +9,7 @@ interface SubmitChoiceModalProps {
   onClose: () => void;
   onConfirm: (action: 'reveal' | 'quick_next' | 'exit') => void;
   carriageIndex: number;
+  seatIndex?: number;
   roundIndex?: number;
   mode?: 'vs_ai_8p' | 'realtime' | 'reservation';
   front: Card[];
@@ -24,6 +25,7 @@ export function SubmitChoiceModal({
   onClose,
   onConfirm,
   carriageIndex,
+  seatIndex = 0,
   roundIndex,
   mode,
   front,
@@ -67,8 +69,14 @@ export function SubmitChoiceModal({
             </div>
             <div>
               <h3 className="text-base font-black text-white">确认提交牌型</h3>
-              <p className="text-xs text-slate-400">
-                {mode === 'reservation' ? '📅 预约场' : mode === 'realtime' ? '⚡ 实时对战场' : '八人巅峰场'} • 第 <span className="text-amber-400 font-bold font-mono">{carriageIndex}</span> 局
+              <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <span>{mode === 'reservation' ? '📅 预约场' : mode === 'realtime' ? '⚡ 实时对战场' : '八人巅峰场'}</span>
+                <span>•</span>
+                <span>第 <span className="text-amber-400 font-bold font-mono">{carriageIndex}</span> 局</span>
+                <span>•</span>
+                <span className="text-amber-300 font-bold font-mono bg-amber-500/20 px-1.5 py-0.2 rounded border border-amber-500/40 text-[11px]">
+                  {seatIndex + 1}号座位
+                </span>
               </p>
             </div>
           </div>
@@ -174,43 +182,113 @@ export function SubmitChoiceModal({
               请选择提交后的后续操作：
             </div>
 
-            {/* Choice 1: Confirm & Reveal Showdown (Recommended Standard Flow) */}
-            <button
-              id="btn-confirm-submit-reveal"
-              onClick={handleReveal}
-              className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 hover:from-amber-400 hover:to-red-400 text-slate-950 font-black flex items-center justify-between shadow-lg shadow-orange-500/20 transition active:scale-[0.98] cursor-pointer group"
-            >
-              <div className="flex items-center gap-3 text-left">
-                <div className="w-9 h-9 rounded-xl bg-slate-950/20 flex items-center justify-center text-slate-950 shrink-0 group-hover:scale-105 transition">
-                  <ArrowRight className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="text-sm font-black text-slate-950">确认交牌 · 揭晓比牌 (推荐)</div>
-                  <div className="text-[11px] text-slate-900/80 font-bold">
-                    揭晓全员三墩、打枪全垒打与总水数，再进入下局发牌
+            {mode === 'reservation' ? (
+              <>
+                {/* Reservation Mode Choice 1: Submit & Pick Seat for Next Round */}
+                <button
+                  id="btn-submit-and-select-seat"
+                  onClick={handleQuickNext}
+                  className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 hover:from-amber-400 hover:to-red-400 text-slate-950 font-black flex items-center justify-between shadow-lg shadow-orange-500/20 transition active:scale-[0.98] cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3 text-left">
+                    <div className="w-9 h-9 rounded-xl bg-slate-950/20 flex items-center justify-center text-slate-950 shrink-0 group-hover:scale-105 transition">
+                      <ArrowRight className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-black text-slate-950">提交并选择位置进入下一局</div>
+                      <div className="text-[11px] text-slate-900/85 font-bold">
+                        保存本局({seatIndex + 1}号位)理牌，选座进入第 {carriageIndex + 1} 局继续对局
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-              <Sparkles className="w-4 h-4 text-slate-950 shrink-0" />
-            </button>
+                  <Sparkles className="w-4 h-4 text-slate-950 shrink-0" />
+                </button>
 
-            
+                {/* Reservation Mode Choice 2: Submit & Finish Game (Return to Lobby) */}
+                <button
+                  id="btn-confirm-submit-and-exit"
+                  onClick={handleExit}
+                  className="w-full p-3 rounded-2xl bg-slate-800/90 hover:bg-slate-750 border border-slate-700 text-slate-200 font-bold flex items-center justify-between transition active:scale-[0.98] cursor-pointer group"
+                >
+                  <div className="flex items-center gap-2.5 text-left">
+                    <div className="w-8 h-8 rounded-xl bg-slate-700/60 flex items-center justify-center text-slate-300 shrink-0">
+                      <Home className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white">提交并结束游戏</div>
+                      <div className="text-[10px] text-slate-400">
+                        保存本局({seatIndex + 1}号位)战绩记录，结束牌局返回大厅
+                      </div>
+                    </div>
+                  </div>
+                </button>
 
-            {/* Choice 2: Submit & Finish Game (Return to Lobby) */}
-            <button
-              id="btn-confirm-submit-and-exit"
-              onClick={handleExit}
-              className="w-full p-2.5 rounded-2xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-slate-300 font-bold flex items-center justify-between transition active:scale-[0.98] cursor-pointer group"
-            >
-              <div className="flex items-center gap-2.5 text-left">
-                <div className="w-7 h-7 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 shrink-0">
-                  <Home className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-300">交牌后结束游戏并返回大厅</div>
-                </div>
-              </div>
-            </button>
+                {/* Optional: Showdown Reveal */}
+                <button
+                  id="btn-confirm-submit-reveal"
+                  onClick={handleReveal}
+                  className="w-full p-2.5 rounded-2xl bg-slate-900/90 hover:bg-slate-850 border border-slate-800 text-slate-400 hover:text-slate-300 font-medium flex items-center justify-between transition active:scale-[0.98] cursor-pointer"
+                >
+                  <span className="text-xs">观看本局全员比牌与结算揭晓 (可选)</span>
+                  <span className="text-[10px] text-slate-500">揭晓三墩</span>
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Normal Mode Choice 1: Confirm & Reveal Showdown */}
+                <button
+                  id="btn-confirm-submit-reveal"
+                  onClick={handleReveal}
+                  className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 hover:from-amber-400 hover:to-red-400 text-slate-950 font-black flex items-center justify-between shadow-lg shadow-orange-500/20 transition active:scale-[0.98] cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3 text-left">
+                    <div className="w-9 h-9 rounded-xl bg-slate-950/20 flex items-center justify-center text-slate-950 shrink-0 group-hover:scale-105 transition">
+                      <ArrowRight className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-black text-slate-950">确认交牌 · 揭晓比牌 (推荐)</div>
+                      <div className="text-[11px] text-slate-900/80 font-bold">
+                        揭晓全员三墩、打枪全垒打与总水数，再进入下局发牌
+                      </div>
+                    </div>
+                  </div>
+                  <Sparkles className="w-4 h-4 text-slate-950 shrink-0" />
+                </button>
+
+                {/* Normal Mode Choice 2: Quick Next */}
+                <button
+                  id="btn-quick-next"
+                  onClick={handleQuickNext}
+                  className="w-full p-3 rounded-2xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-bold flex items-center justify-between transition active:scale-[0.98] cursor-pointer group"
+                >
+                  <div className="flex items-center gap-2.5 text-left">
+                    <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-300 shrink-0">
+                      <ArrowRight className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white">直接交牌并进入下一局</div>
+                      <div className="text-[10px] text-blue-300/80">跳过比牌动画，极速开下一局</div>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Normal Mode Choice 3: Submit & Finish Game */}
+                <button
+                  id="btn-confirm-submit-and-exit"
+                  onClick={handleExit}
+                  className="w-full p-2.5 rounded-2xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-slate-300 font-bold flex items-center justify-between transition active:scale-[0.98] cursor-pointer group"
+                >
+                  <div className="flex items-center gap-2.5 text-left">
+                    <div className="w-7 h-7 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 shrink-0">
+                      <Home className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-300">交牌后结束游戏并返回大厅</div>
+                    </div>
+                  </div>
+                </button>
+              </>
+            )}
           </div>
 
           {/* Cancel Button */}

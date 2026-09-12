@@ -29,6 +29,7 @@ export interface MatchReplayItem {
   timestamp: number;
   mode: 'vs_ai_8p' | string;
   carriageIndex: number;
+  seatNumber?: number;
   myScore: number;
   players: PlayerReplayData[];
   summaryText: string;

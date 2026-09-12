@@ -93,6 +93,8 @@ import {
   getCurrentCarriageOccupancy,
   CarriagePoolStats,
   CarriageSubmission,
+  Carriage,
+  getCarriageByRound,
   resetCarriagePool
 } from './lib/carriageManager';
 import { CarriageHeaderBar } from './components/CarriageHeaderBar';
@@ -100,6 +102,7 @@ import { CarriageHubModal } from './components/CarriageHubModal';
 import { SubmitChoiceModal } from './components/SubmitChoiceModal';
 import { MatchReplayModal } from './components/MatchReplayModal';
 import { ReservationModal } from './components/ReservationModal';
+import { ReservationSeatModal } from './components/ReservationSeatModal';
 import {
   saveActiveMatchSession,
   loadActiveMatchSession,
@@ -147,6 +150,14 @@ export default function App() {
   const [showSubmitChoiceModal, setShowSubmitChoiceModal] = useState(false);
   const [showReplayModal, setShowReplayModal] = useState(false);
   const [showReservationModal, setShowReservationModal] = useState(false);
+  const [showSeatModal, setShowSeatModal] = useState(false);
+  const [seatModalRound, setSeatModalRound] = useState<number>(1);
+  const [seatModalCarriage, setSeatModalCarriage] = useState<Carriage | null>(null);
+  const [previousRoundResult, setPreviousRoundResult] = useState<{
+    roundIndex: number;
+    seatNumber: number;
+    pointsWon: number;
+  } | null>(null);
   const [pendingArrangement, setPendingArrangement] = useState<PlayerArrangement | null>(null);
 
   // Player Hand State
@@ -318,10 +329,30 @@ export default function App() {
     refreshPlayerStats(newName);
   };
 
+  // 📅 预约场座位选择流程
+  const openReservationSeatSelection = (
+    round?: number,
+    prevResult?: { roundIndex: number; seatNumber: number; pointsWon: number } | null
+  ) => {
+    const targetRound = typeof round === 'number' ? round : getPlayerCarriageIndexProgress('reservation');
+    const carriage = getCarriageByRound(targetRound, 'reservation');
+    setSeatModalRound(targetRound);
+    setSeatModalCarriage(carriage);
+    setPreviousRoundResult(prevResult || null);
+    setShowSeatModal(true);
+  };
+
+  const handleSelectReservationSeat = (seatIndex: number, roundIndex: number) => {
+    setShowSeatModal(false);
+    startNewMatch('reservation', seatIndex, roundIndex, true);
+  };
+
   // Start a new match (8P or 2P)
   const startNewMatch = (
     selectedMode: GameMode = mode,
-    seatOverride?: number
+    seatOverride?: number,
+    roundOverride?: number,
+    forceExactSeat: boolean = false
   ) => {
     // 🛡️ 积分门槛限制：没有积分不允许进入真实牌局
     if (currentAccount.points <= 0) {
@@ -336,6 +367,12 @@ export default function App() {
       return;
     }
 
+    // 📅 预约场首要规则：进入后必须选择1-8号位置对应8副手牌
+    if (selectedMode === 'reservation' && seatOverride === undefined) {
+      openReservationSeatSelection(roundOverride);
+      return;
+    }
+
     sounds.playDeal();
     setMode(selectedMode);
     setErrorMsg('');
@@ -343,9 +380,14 @@ export default function App() {
     setUseSpecialHand(false);
 
     // 🚆 8人巅峰场 / 实时对战场 / 预约场：使用包厢存储与牌池系统
-    const poolMode = selectedMode === 'reservation' ? 'vs_ai_8p' : 'vs_ai_8p';
+    const poolMode = selectedMode === 'reservation' ? 'reservation' : 'vs_ai_8p';
     const activeSeat = typeof seatOverride === 'number' ? seatOverride : carriageSeatIndex;
-    const { carriage, seatIndex, handCards, stats, isFull } = getOrCreateCurrentCarriage(activeSeat, poolMode);
+    const { carriage, seatIndex, handCards, stats, isFull } = getOrCreateCurrentCarriage(
+      activeSeat,
+      poolMode,
+      roundOverride,
+      forceExactSeat
+    );
 
     const totalSeats = 8;
     if (isFull && carriage.submissions && Object.keys(carriage.submissions).length >= totalSeats && !carriage.submissions[seatIndex]) {
@@ -359,104 +401,132 @@ export default function App() {
     setCarriageStats(stats);
     setCarriageSubmissions(carriage.submissions || {});
 
-      const sortedPlayerHand = sortCards(handCards);
-      setOriginalHand(sortedPlayerHand);
-      setPool([]);
-      setFront(sortedPlayerHand.slice(0, 3));
-      setMid(sortedPlayerHand.slice(3, 8));
-      setBack(sortedPlayerHand.slice(8, 13));
-      setSelectedCardIds([]);
+    const sortedPlayerHand = sortCards(handCards);
+    setOriginalHand(sortedPlayerHand);
+    setPool([]);
+    setSelectedCardIds([]);
 
-      // Detect Special Hand
-      const special = detectSpecialHand(sortedPlayerHand);
-      setSpecialHand(special);
-      if (special) {
-        sounds.playVictory();
-        triggerHaptic('heavy');
-        confetti({ particleCount: 120, spread: 90, origin: { y: 0.35 } });
-      }
+    // Detect Special Hand
+    const special = detectSpecialHand(sortedPlayerHand);
+    setSpecialHand(special);
+    if (special) {
+      sounds.playVictory();
+      triggerHaptic('heavy');
+      confetti({ particleCount: 120, spread: 90, origin: { y: 0.35 } });
+    }
 
-      // Compute AI Suggestions for player (100% legal, non-daoshui)
-      const smartSuggestions = getSuggestedArrangements(sortedPlayerHand);
-      setSuggestions(smartSuggestions);
-      patternChangerRef.current = new PatternChanger(sortedPlayerHand);
+    // Compute AI Suggestions for player (100% legal, non-daoshui)
+    const smartSuggestions = getSuggestedArrangements(sortedPlayerHand);
+    setSuggestions(smartSuggestions);
+    patternChangerRef.current = new PatternChanger(sortedPlayerHand);
 
-      if (smartSuggestions.length > 0) {
-        setFront(smartSuggestions[0].front);
-        setMid(smartSuggestions[0].middle);
-        setBack(smartSuggestions[0].back);
-        setPatternInfo({
-          tag: smartSuggestions[0].tag,
-          index: 1,
-          total: smartSuggestions.length
+    let initialFront: Card[];
+    let initialMid: Card[];
+    let initialBack: Card[];
+
+    if (smartSuggestions.length > 0) {
+      initialFront = smartSuggestions[0].front;
+      initialMid = smartSuggestions[0].middle;
+      initialBack = smartSuggestions[0].back;
+      setFront(initialFront);
+      setMid(initialMid);
+      setBack(initialBack);
+      setPatternInfo({
+        tag: smartSuggestions[0].tag,
+        index: 1,
+        total: smartSuggestions.length
+      });
+    } else {
+      initialFront = sortedPlayerHand.slice(10, 13);
+      initialMid = sortedPlayerHand.slice(5, 10);
+      initialBack = sortedPlayerHand.slice(0, 5);
+      setFront(initialFront);
+      setMid(initialMid);
+      setBack(initialBack);
+    }
+
+    const numPlayers = 8;
+
+    // Prepare players list (User at seatIndex + other submissions or empty seat placeholders; NO AI BOTS)
+    const playersList: {
+      id: string;
+      name: string;
+      isAi: boolean;
+      avatar: string;
+      cards: Card[];
+      arrangement: PlayerArrangement;
+    }[] = [];
+
+    for (let s = 0; s < numPlayers; s++) {
+      if (s === seatIndex) {
+        playersList.push({
+          id: 'player_user',
+          name: `${currentAccount.nickname || playerName} (${s + 1}号位)`,
+          isAi: false,
+          avatar: currentAccount.avatar || '😎',
+          cards: sortedPlayerHand,
+          arrangement: {
+            front: [],
+            middle: [],
+            back: [],
+            specialHand: null,
+            isValid: false,
+            isDaoShui: false
+          }
+        });
+      } else if (carriage.submissions && carriage.submissions[s]) {
+        const sub = carriage.submissions[s];
+        playersList.push({
+          id: sub.playerId,
+          name: `${sub.playerName} (${s + 1}号位)`,
+          isAi: sub.isAi,
+          avatar: sub.avatar,
+          cards: sub.cards,
+          arrangement: sub.arrangement
         });
       } else {
-        setFront(sortedPlayerHand.slice(10, 13));
-        setMid(sortedPlayerHand.slice(5, 10));
-        setBack(sortedPlayerHand.slice(0, 5));
+        const defaultAI = AI_NAMES_POOL[s % AI_NAMES_POOL.length];
+        playersList.push({
+          id: `seat_${s}`,
+          name: `${defaultAI.name} (${s + 1}号位)`,
+          isAi: true,
+          avatar: defaultAI.avatar,
+          cards: [],
+          arrangement: {
+            front: [],
+            middle: [],
+            back: [],
+            specialHand: null,
+            isValid: false,
+            isDaoShui: false
+          }
+        });
       }
+    }
 
-      const numPlayers = 8;
+    setPlayersInMatch(playersList);
+    setGameState('arranging');
 
-      // Prepare players list (User at seatIndex + other submissions or empty seat placeholders; NO AI BOTS)
-      const playersList: {
-        id: string;
-        name: string;
-        isAi: boolean;
-        avatar: string;
-        cards: Card[];
-        arrangement: PlayerArrangement;
-      }[] = [];
-
-      for (let s = 0; s < numPlayers; s++) {
-        if (s === seatIndex) {
-          playersList.push({
-            id: 'player_user',
-            name: `${currentAccount.nickname || playerName} (${s + 1}号位)`,
-            isAi: false,
-            avatar: currentAccount.avatar || '😎',
-            cards: sortedPlayerHand,
-            arrangement: {
-              front: [],
-              middle: [],
-              back: [],
-              specialHand: null,
-              isValid: false,
-              isDaoShui: false
-            }
-          });
-        } else if (carriage.submissions && carriage.submissions[s]) {
-          const sub = carriage.submissions[s];
-          playersList.push({
-            id: sub.playerId,
-            name: `${sub.playerName} (${s + 1}号位)`,
-            isAi: sub.isAi,
-            avatar: sub.avatar,
-            cards: sub.cards,
-            arrangement: sub.arrangement
-          });
-        } else {
-          const defaultAI = AI_NAMES_POOL[s % AI_NAMES_POOL.length];
-          playersList.push({
-            id: `seat_${s}`,
-            name: `${defaultAI.name} (${s + 1}号位)`,
-            isAi: true,
-            avatar: defaultAI.avatar,
-            cards: [],
-            arrangement: {
-              front: [],
-              middle: [],
-              back: [],
-              specialHand: null,
-              isValid: false,
-              isDaoShui: false
-            }
-          });
-        }
-      }
-
-      setPlayersInMatch(playersList);
-      setGameState('arranging');
+    // 绑定并保存当前选座牌局状态，防止刷新或退出导致数据混乱
+    saveActiveMatchSession({
+      phone: currentAccount.phone,
+      mode: selectedMode,
+      carriageId: carriage.id,
+      carriageIndex: carriage.index,
+      carriageSeatIndex: seatIndex,
+      carriageSubmissions: carriage.submissions || {},
+      carriageStats: stats,
+      originalHand: sortedPlayerHand,
+      front: initialFront,
+      mid: initialMid,
+      back: initialBack,
+      pool: [],
+      selectedCardIds: [],
+      playersInMatch: playersList,
+      specialHand: special,
+      useSpecialHand: false,
+      timestamp: Date.now()
+    });
   };
 
   // 💬 Chat & Voice Message Dispatcher
@@ -795,7 +865,7 @@ export default function App() {
         isDaoShui: false
       };
       if (mode === 'practice') {
-        settleMatch(userArrangement, true);
+        settleMatch(userArrangement, 'reveal');
         return;
       }
       setPendingArrangement(userArrangement);
@@ -843,7 +913,7 @@ export default function App() {
     };
 
     if (mode === 'practice') {
-      settleMatch(userArrangement, true);
+      settleMatch(userArrangement, 'reveal');
       return;
     }
 
@@ -854,23 +924,10 @@ export default function App() {
   const handleConfirmSubmit = (action: 'reveal' | 'quick_next' | 'exit') => {
     setShowSubmitChoiceModal(false);
     if (!pendingArrangement) return;
-
-    if (action === 'exit') {
-      settleMatch(pendingArrangement, false);
-      setGameState('menu');
-      return;
-    }
-
-    if (action === 'quick_next') {
-      settleMatch(pendingArrangement, true);
-      return;
-    }
-
-    // action === 'reveal': standard path, calculate scores and reveal showdown
-    settleMatch(pendingArrangement, false);
+    settleMatch(pendingArrangement, action);
   };
 
-  const settleMatch = async (userArrangement: PlayerArrangement, advanceToNext: boolean = true) => {
+  const settleMatch = async (userArrangement: PlayerArrangement, action: 'reveal' | 'quick_next' | 'exit' = 'quick_next') => {
     // 🎮 试玩练习场模式：不扣减/增加真实积分，直接进行 4 人模拟比牌与全流程战报呈现
     if (mode === 'practice') {
       const updatedPlayers = playersInMatch.map(p => {
@@ -950,15 +1007,57 @@ export default function App() {
             phone: currentAccount.phone,
             mode,
             carriageIndex,
+            seatNumber: carriageSeatIndex + 1,
             myScore: res.playerResult.finalPoints,
             players: replayPlayers,
-            summaryText: `第 ${carriageIndex} 局 • 本局总得失: ${deltaStr} 水`
+            summaryText: `第 ${carriageIndex} 局 (${carriageSeatIndex + 1}号位) • 本局总得失: ${deltaStr} 水`
           });
         } catch (e) {
           console.error('Failed to record replay:', e);
         }
 
-        if (advanceToNext) {
+        // 🛡️ 当前局已成功提交，清空当前未完成契约
+        clearActiveMatchSession(currentAccount.phone);
+
+        if (action === 'exit') {
+          // 提交并结束游戏：返回大厅
+          setCarriageToast({
+            show: true,
+            msg: `🎉 第 ${carriageIndex} 局 (${carriageSeatIndex + 1}号位) 提交成功！获得 ${deltaStr} 水，战绩已保存！`,
+            pts: res.playerResult.finalPoints
+          });
+          setTimeout(() => {
+            setCarriageToast(null);
+          }, 4500);
+          setGameState('menu');
+          refreshPlayerStats(currentAccount.nickname || playerName);
+          return;
+        }
+
+        if (action === 'quick_next') {
+          if (mode === 'reservation') {
+            // 📅 预约场核心业务流程：理牌提交后，弹出选座窗口选择下一局席位继续牌局
+            setCarriageToast({
+              show: true,
+              msg: `🎉 第 ${carriageIndex} 局 (${carriageSeatIndex + 1}号位) 提交成功！获得 ${deltaStr} 水！请选择第 ${res.nextCarriageData.carriage.index} 局座位继续牌局...`,
+              pts: res.playerResult.finalPoints
+            });
+            setTimeout(() => {
+              setCarriageToast(null);
+            }, 4000);
+
+            openReservationSeatSelection(
+              res.nextCarriageData.carriage.index,
+              {
+                roundIndex: carriageIndex,
+                seatNumber: carriageSeatIndex + 1,
+                pointsWon: res.playerResult.finalPoints
+              }
+            );
+            refreshPlayerStats(currentAccount.nickname || playerName);
+            return;
+          }
+
           // 🚀 提交并进入下一局
           setCarriageToast({
             show: true,
@@ -1078,17 +1177,18 @@ export default function App() {
           });
 
           refreshPlayerStats(currentAccount.nickname || playerName);
-        } else {
-          // 🏁 揭晓比牌阶段：展示全员三墩比牌与结算详情
-          if (res.allMatchResults && res.allMatchResults.length > 0) {
-            setMatchResults(res.allMatchResults);
-            setGameState('revealing');
-          } else {
-            clearActiveMatchSession(currentAccount.phone);
-            setGameState('menu');
-          }
-          refreshPlayerStats(currentAccount.nickname || playerName);
+          return;
         }
+
+        // 🏁 揭晓比牌阶段：展示全员三墩比牌与结算详情 (action === 'reveal')
+        if (res.allMatchResults && res.allMatchResults.length > 0) {
+          setMatchResults(res.allMatchResults);
+          setGameState('revealing');
+        } else {
+          clearActiveMatchSession(currentAccount.phone);
+          setGameState('menu');
+        }
+        refreshPlayerStats(currentAccount.nickname || playerName);
       } catch (err: any) {
         setErrorMsg(err.message || '理牌提交失败');
       }
@@ -1303,9 +1403,15 @@ export default function App() {
           <div className="w-full max-w-6xl flex flex-col items-center gap-6 overflow-y-auto pb-safe p-2 sm:p-4">
             <ShowdownStage
               results={matchResults}
-              onPlayAgain={() => startNewMatch(mode)}
-              playAgainLabel={'下一局 · 重新发牌'}
-              quickPlayAgainLabel="极速再来一局 (自动发牌)"
+              onPlayAgain={() => {
+                if (mode === 'reservation') {
+                  openReservationSeatSelection();
+                } else {
+                  startNewMatch(mode);
+                }
+              }}
+              playAgainLabel={mode === 'reservation' ? '选择座位进入下一局' : '下一局 · 重新发牌'}
+              quickPlayAgainLabel={mode === 'reservation' ? '选择座位继续' : '极速再来一局 (自动发牌)'}
               onBackToMenu={() => {
                 setGameState('menu');
               }}
@@ -1682,6 +1788,7 @@ export default function App() {
         onConfirm={handleConfirmSubmit}
         onToggleSpecialHand={() => setUseSpecialHand(!useSpecialHand)}
         carriageIndex={carriageIndex}
+        seatIndex={carriageSeatIndex}
         mode={mode}
         front={front}
         mid={mid}
@@ -1699,11 +1806,22 @@ export default function App() {
       <ReservationModal
         isOpen={showReservationModal}
         onClose={() => setShowReservationModal(false)}
-        onStartReservationMatch={(roomTitle) => {
+        onStartReservationMatch={(_roomTitle) => {
           setShowReservationModal(false);
-          startNewMatch('reservation');
+          openReservationSeatSelection();
         }}
         userPoints={currentAccount.points}
+      />
+
+      <ReservationSeatModal
+        isOpen={showSeatModal}
+        onClose={() => setShowSeatModal(false)}
+        carriageIndex={seatModalRound}
+        carriage={seatModalCarriage}
+        currentUserId={currentAccount.id || 'player_user'}
+        onSelectSeat={(seatIndex) => handleSelectReservationSeat(seatIndex, seatModalRound)}
+        previousRoundResult={previousRoundResult}
+        onAdvanceToNextRound={() => openReservationSeatSelection(seatModalRound + 1)}
       />
 
       {/* 💬 Floating Chat Widget (仅在实时对战场显示) */}

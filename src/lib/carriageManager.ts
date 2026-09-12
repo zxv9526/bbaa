@@ -17,6 +17,10 @@ export interface CarriageSubmission {
   arrangement: PlayerArrangement;
   cards: Card[];
   submittedAt: string;
+  seatIndex?: number;
+  seatNumber?: number;
+  carriageIndex?: number;
+  pointsWon?: number;
 }
 
 export interface Carriage {
@@ -44,6 +48,12 @@ const PLAYER_PROGRESS_KEY_8P = 'thirteen_water_player_carriage_progress_v3';
 type PoolMode = 'vs_ai_8p' | 'realtime' | 'reservation' | string;
 
 function getStorageKeys(mode: PoolMode = 'vs_ai_8p') {
+  if (mode === 'reservation') {
+    return {
+      CARRIAGE_STORAGE_KEY: 'thirteen_water_carriage_pool_reservation_v2',
+      PLAYER_PROGRESS_KEY: 'thirteen_water_player_carriage_progress_reservation_v2'
+    };
+  }
   return { CARRIAGE_STORAGE_KEY: CARRIAGE_STORAGE_KEY_8P, PLAYER_PROGRESS_KEY: PLAYER_PROGRESS_KEY_8P };
 }
 
@@ -195,8 +205,34 @@ export function getCurrentCarriageOccupancy(mode: PoolMode = 'vs_ai_8p'): {
   };
 }
 
+// 🚂 获取指定轮次的牌局数据 (保证存在)
+export function getCarriageByRound(roundIndex: number, mode: PoolMode = 'reservation'): Carriage {
+  checkAndReplenishCarriages(mode);
+  const storage = loadCarriageStorage(mode);
+  let carriage = storage.carriages.find(c => c.index === roundIndex);
+  if (!carriage) {
+    const unclaimed = storage.carriages.find(c => c.status === 'unclaimed');
+    if (unclaimed) {
+      unclaimed.index = roundIndex;
+      unclaimed.status = 'in_progress';
+      carriage = unclaimed;
+    } else {
+      carriage = generateSingleCarriage(roundIndex, mode);
+      carriage.status = 'in_progress';
+      storage.carriages.push(carriage);
+    }
+    saveCarriageStorage(storage, mode);
+  }
+  return carriage;
+}
+
 // 🚂 获取玩家进入的当前/下一局 (如当前牌局不存在，自动从预发牌池分配)
-export function getOrCreateCurrentCarriage(preferredSeatIndex: number = 0, mode: PoolMode = 'vs_ai_8p'): {
+export function getOrCreateCurrentCarriage(
+  preferredSeatIndex: number = 0,
+  mode: PoolMode = 'vs_ai_8p',
+  roundOverride?: number,
+  forceExactSeat: boolean = false
+): {
   carriage: Carriage;
   seatIndex: number;
   handCards: Card[];
@@ -205,8 +241,8 @@ export function getOrCreateCurrentCarriage(preferredSeatIndex: number = 0, mode:
 } {
   const stats = checkAndReplenishCarriages(mode);
   const storage = loadCarriageStorage(mode);
-  const playerIndex = getPlayerCarriageIndexProgress(mode);
-  const totalSeats = mode === 'vs_ai_8p' ? 8 : 4;
+  const playerIndex = typeof roundOverride === 'number' ? roundOverride : getPlayerCarriageIndexProgress(mode);
+  const totalSeats = 8;
   const maxSeat = totalSeats - 1;
 
   let carriage = storage.carriages.find(c => c.index === playerIndex);
@@ -231,9 +267,9 @@ export function getOrCreateCurrentCarriage(preferredSeatIndex: number = 0, mode:
   const occupiedCount = Object.keys(submissions).length;
   const isFull = occupiedCount >= totalSeats;
 
-  // 如果首选位置已被占用，自动寻找空余位置
+  // 如果强制指定位置（例如玩家自主挑选的座位），严格返回该座位的手牌
   let validSeat = Math.max(0, Math.min(maxSeat, preferredSeatIndex));
-  if (submissions[validSeat]) {
+  if (!forceExactSeat && submissions[validSeat]) {
     for (let s = 0; s < totalSeats; s++) {
       if (!submissions[s]) {
         validSeat = s;
@@ -283,7 +319,7 @@ export async function submitCarriageHandAndAdvance(params: {
   
   const carriage = storage.carriages[carriageIndex];
 
-  // 1. 写入玩家本人的提交记录
+  // 1. 写入玩家本人的提交记录（附带座位号与局号信息，严防混淆）
   carriage.submissions[seatIndex] = {
     playerId: 'player_user',
     playerName: playerAccount.nickname || '玩家',
@@ -291,10 +327,13 @@ export async function submitCarriageHandAndAdvance(params: {
     isAi: false,
     arrangement,
     cards: handCards,
-    submittedAt: new Date().toISOString()
+    submittedAt: new Date().toISOString(),
+    seatIndex,
+    seatNumber: seatIndex + 1,
+    carriageIndex: carriage.index
   };
 
-  // 2. 收集所有已有真实提交的玩家理牌结果 (已移除 AI 自动补位!)
+  // 2. 收集所有已有真实提交的玩家理牌结果
   const matchPlayersInput: {
     id: string;
     name: string;
@@ -315,6 +354,8 @@ export async function submitCarriageHandAndAdvance(params: {
   const allMatchResults = calculate8PlayerMatchScores(matchPlayersInput);
     
   const playerResult = allMatchResults.find(r => r.playerId === 'player_user') || allMatchResults[0];
+  const pointsDelta = playerResult.finalPoints;
+  carriage.submissions[seatIndex].pointsWon = pointsDelta;
 
   // 4. 满座时标注牌局完成，否则标记为进行中
   if (Object.keys(carriage.submissions).length >= numPlayers) {
@@ -331,24 +372,23 @@ export async function submitCarriageHandAndAdvance(params: {
   saveCarriageStorage(storage, mode);
 
   // 6. 给玩家结算积分与战绩历史
-  const pointsDelta = playerResult.finalPoints;
   addPoints(
     pointsDelta * 100,
     pointsDelta >= 0 ? 'MATCH_WIN' : 'MATCH_LOSS',
-    `【第 ${carriage.index} 局】8人场比牌`
+    `【第 ${carriage.index} 局 • ${seatIndex + 1}号座位】8人场比牌`
   );
 
   try {
     await ApiClient.recordGame({
       playerName: playerAccount.nickname,
-      mode: 'vs_ai_8p',
+      mode: mode === 'reservation' ? 'reservation' : 'vs_ai_8p',
       pointsWon: pointsDelta,
       result: pointsDelta > 0 ? (playerResult.specialHand ? 'SPECIAL_WIN' : 'WIN') : pointsDelta < 0 ? 'LOSE' : 'DRAW',
       specialHand: playerResult.specialHand || null,
       frontType: playerResult.frontScore.type,
       midType: playerResult.midScore.type,
       backType: playerResult.backScore.type,
-      opponentsSummary: `第 ${carriage.index} 局 (8人场)`
+      opponentsSummary: `第 ${carriage.index} 局 • ${seatIndex + 1}号座位 (${mode === 'reservation' ? '预约场' : '8人场'})`
     });
   } catch (e) {
     console.error(`Cloud sync carriage record error:`, e);
@@ -359,7 +399,7 @@ export async function submitCarriageHandAndAdvance(params: {
   setPlayerCarriageIndexProgress(nextCarriageIndex, mode);
 
   // 8. 自动拉取下一局
-  const nextCarriageData = getOrCreateCurrentCarriage(seatIndex, mode);
+  const nextCarriageData = getOrCreateCurrentCarriage(seatIndex, mode, nextCarriageIndex);
 
   return {
     completedCarriage: carriage,
