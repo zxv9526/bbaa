@@ -96,7 +96,9 @@ import {
   CarriageSubmission,
   Carriage,
   getCarriageByRound,
-  resetCarriagePool
+  resetCarriagePool,
+  getReservationCycleInfo,
+  setReservationCycleSeat
 } from './lib/carriageManager';
 import { CarriageHeaderBar } from './components/CarriageHeaderBar';
 import { CarriageHubModal } from './components/CarriageHubModal';
@@ -380,7 +382,17 @@ export default function App() {
     round?: number,
     prevResult?: { roundIndex: number; seatNumber: number; pointsWon: number } | null
   ) => {
-    const targetRound = typeof round === 'number' ? round : getPlayerCarriageIndexProgress('reservation');
+    const targetRound = typeof round === 'number' ? Math.max(1, round) : getPlayerCarriageIndexProgress('reservation');
+    
+    const cycleInfo = getReservationCycleInfo(targetRound);
+    
+    // 如果处于 10局周期的第 2-10 局且已锁定座位，直接跳过选座面板
+    if (!cycleInfo.canChooseSeat && cycleInfo.lockedSeatIndex !== null) {
+      // 若带有上一局成绩（比如从 quick_next 过来），已经在外面展示过 Toast 了
+      startNewMatch('reservation', cycleInfo.lockedSeatIndex, targetRound, true);
+      return;
+    }
+
     const carriage = getCarriageByRound(targetRound, 'reservation');
     setSeatModalRound(targetRound);
     setSeatModalCarriage(carriage);
@@ -390,6 +402,8 @@ export default function App() {
 
   const handleSelectReservationSeat = (seatIndex: number, roundIndex: number) => {
     setShowSeatModal(false);
+    // 📅 记住该 10 局周期的选座：首局选定后后续 9 局默认保持该位置
+    setReservationCycleSeat(roundIndex, seatIndex);
     startNewMatch('reservation', seatIndex, roundIndex, true);
   };
 
@@ -633,7 +647,7 @@ export default function App() {
     );
 
     const totalSeats = 8;
-    if (isFull && carriage.submissions && Object.keys(carriage.submissions).length >= totalSeats && !carriage.submissions[seatIndex]) {
+    if (selectedMode !== 'reservation' && isFull && carriage.submissions && Object.keys(carriage.submissions).length >= totalSeats && !carriage.submissions[seatIndex]) {
       setErrorMsg(`当前赛场已满座 (0/${totalSeats})，无法再进入！`);
       return;
     }
@@ -1513,10 +1527,11 @@ export default function App() {
 
         if (action === 'quick_next') {
           if (mode === 'reservation') {
+            const nextCycle = getReservationCycleInfo(res.nextCarriageData.carriage.index);
             // 📅 预约场核心业务流程：理牌提交后，弹出选座窗口选择下一局席位继续牌局
             setCarriageToast({
               show: true,
-              msg: `🎉 第 ${carriageIndex} 局 (${carriageSeatIndex + 1}号位) 提交成功！获得 ${deltaStr} 水！请选择第 ${res.nextCarriageData.carriage.index} 局座位继续牌局...`,
+              msg: `🎉 第 ${carriageIndex} 局 (${carriageSeatIndex + 1}号位) 提交成功！获得 ${deltaStr} 水！${nextCycle.canChooseSeat ? `请选择第 ${res.nextCarriageData.carriage.index} 局座位继续牌局...` : `已自动带入锁定位置进入第 ${res.nextCarriageData.carriage.index} 局...`}`,
               pts: res.playerResult.finalPoints
             });
             setTimeout(() => {
@@ -1775,7 +1790,7 @@ export default function App() {
                       setShowNoPointsModal(true);
                       return;
                     }
-                    setShowReservationModal(true);
+                    openReservationSeatSelection();
                   }}
                   className="relative bg-gradient-to-br from-blue-950/80 via-slate-900 to-indigo-950/90 border-2 border-blue-500/50 p-6 sm:p-7 rounded-3xl flex flex-col justify-between gap-5 cursor-pointer transition-all duration-300 group shadow-xl hover:border-blue-400 hover:-translate-y-1 hover:shadow-blue-950/80"
                 >
@@ -1935,14 +1950,14 @@ export default function App() {
               }}
               playAgainLabel={
                 mode === 'reservation'
-                  ? '选择座位进入下一局'
+                  ? (getReservationCycleInfo(getPlayerCarriageIndexProgress('reservation')).canChooseSeat ? '重选座位进入下一局' : '连战模式 · 直接进入下一局')
                   : mode === 'realtime'
                   ? '轮流发牌 · 进入下一局'
                   : '下一局 · 重新发牌'
               }
               quickPlayAgainLabel={
                 mode === 'reservation'
-                  ? '选择座位继续'
+                  ? (getReservationCycleInfo(getPlayerCarriageIndexProgress('reservation')).canChooseSeat ? '选座继续' : '连战继续')
                   : mode === 'realtime'
                   ? '轮换庄家发牌'
                   : '极速再来一局 (自动发牌)'
@@ -2364,6 +2379,7 @@ export default function App() {
         currentUserId={currentAccount.id || 'player_user'}
         onSelectSeat={(seatIndex) => handleSelectReservationSeat(seatIndex, seatModalRound)}
         previousRoundResult={previousRoundResult}
+        onSwitchRound={(newRound) => openReservationSeatSelection(newRound)}
         onAdvanceToNextRound={() => openReservationSeatSelection(seatModalRound + 1)}
       />
 

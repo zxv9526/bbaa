@@ -42,6 +42,59 @@ export interface CarriagePoolStats {
   currentPlayingIndex: number;
 }
 
+// 📅 预约场 10 局周期选座规则：每 10 局只能选一次位置，第 1 局选定后后续 9 局默认保持该位置
+export interface ReservationCycleInfo {
+  cycleBlock: number; // 0: 1-10局, 1: 11-20局, 2: 21-30局...
+  roundIndex: number; // 当前局数
+  roundInCycle: number; // 当前处于该周期的第几局 (1-10)
+  lockedSeatIndex: number | null; // 已锁定的座位 (0-7)
+  canChooseSeat: boolean; // 是否允许选座 (第1局或尚未锁定)
+  remainingRoundsInCycle: number; // 该周期还剩几局 (如第1局剩余9局)
+}
+
+const RESERVATION_CYCLE_KEY = 'thirteen_water_reservation_cycle_seat_v1';
+
+export function getReservationCycleInfo(roundIndex: number): ReservationCycleInfo {
+  const round = Math.max(1, roundIndex);
+  const cycleBlock = Math.floor((round - 1) / 10);
+  const roundInCycle = ((round - 1) % 10) + 1; // 1 to 10
+  const remainingRoundsInCycle = 10 - roundInCycle;
+
+  let lockedSeatIndex: number | null = null;
+  try {
+    const raw = localStorage.getItem(RESERVATION_CYCLE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data && data.cycleBlock === cycleBlock && typeof data.seatIndex === 'number') {
+        lockedSeatIndex = data.seatIndex;
+      }
+    }
+  } catch (e) {}
+
+  return {
+    cycleBlock,
+    roundIndex: round,
+    roundInCycle,
+    lockedSeatIndex,
+    canChooseSeat: roundInCycle === 1 || lockedSeatIndex === null,
+    remainingRoundsInCycle
+  };
+}
+
+export function setReservationCycleSeat(roundIndex: number, seatIndex: number): void {
+  const round = Math.max(1, roundIndex);
+  const cycleBlock = Math.floor((round - 1) / 10);
+  try {
+    localStorage.setItem(
+      RESERVATION_CYCLE_KEY,
+      JSON.stringify({
+        cycleBlock,
+        seatIndex: Math.max(0, Math.min(7, seatIndex))
+      })
+    );
+  } catch (e) {}
+}
+
 const CARRIAGE_STORAGE_KEY_8P = 'thirteen_water_carriage_pool_v3';
 const PLAYER_PROGRESS_KEY_8P = 'thirteen_water_player_carriage_progress_v3';
 
@@ -299,9 +352,30 @@ export function getOrCreateCurrentCarriage(
   const occupiedCount = Object.keys(submissions).length;
   const isFull = occupiedCount >= totalSeats;
 
-  // 如果强制指定位置（例如玩家自主挑选的座位），严格返回该座位的手牌
+  // 确保牌局内 1-8 号席位均拥有专属存储的 13 张手牌
+  if (!carriage.hands || carriage.hands.length < totalSeats) {
+    const deck = createDoubleDeck();
+    const shuffled = shuffle(deck);
+    carriage.hands = [];
+    for (let i = 0; i < totalSeats; i++) {
+      carriage.hands.push({
+        seatIndex: i,
+        cards: shuffled.slice(i * 13, (i + 1) * 13)
+      });
+    }
+    saveCarriageStorage(storage, mode);
+  }
+
+  // 如果是预约场：若没有指定强制位置，检查当前 10 局周期是否已有锁定位置
   let validSeat = Math.max(0, Math.min(maxSeat, preferredSeatIndex));
-  if (!forceExactSeat && submissions[validSeat]) {
+  if (mode === 'reservation') {
+    if (!forceExactSeat) {
+      const cycle = getReservationCycleInfo(playerIndex);
+      if (cycle.lockedSeatIndex !== null) {
+        validSeat = cycle.lockedSeatIndex;
+      }
+    }
+  } else if (!forceExactSeat && submissions[validSeat]) {
     for (let s = 0; s < totalSeats; s++) {
       if (!submissions[s]) {
         validSeat = s;
@@ -431,7 +505,10 @@ export async function submitCarriageHandAndAdvance(params: {
   setPlayerCarriageIndexProgress(nextCarriageIndex, mode);
 
   // 8. 自动拉取下一局
-  const nextCarriageData = getOrCreateCurrentCarriage(seatIndex, mode, nextCarriageIndex);
+  const nextSeat = mode === 'reservation'
+    ? (getReservationCycleInfo(nextCarriageIndex).lockedSeatIndex ?? seatIndex)
+    : seatIndex;
+  const nextCarriageData = getOrCreateCurrentCarriage(nextSeat, mode, nextCarriageIndex);
 
   return {
     completedCarriage: carriage,

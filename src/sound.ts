@@ -282,33 +282,35 @@ class SoundManager {
 
     const now = this.ctx.currentTime;
     
-    // 1. 模拟扑克两叠交错弹拨 (Riffle clicks)
-    const numClicks = 28;
+    // 1. Riffle clicks - more dynamic frequency and pitch variation
+    const numClicks = 32;
     for (let i = 0; i < numClicks; i++) {
-      const clickTime = now + (i * 0.022) + (Math.random() * 0.005);
+      // Accelerate towards the middle, slow down at the end
+      const clickTime = now + (i * 0.02) + (Math.sin(i * 0.1) * 0.005);
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
 
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(320 + Math.random() * 450, clickTime);
-      osc.frequency.exponentialRampToValueAtTime(120, clickTime + 0.028);
+      // Sharp percussive transient
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(800 + Math.random() * 300, clickTime);
+      osc.frequency.exponentialRampToValueAtTime(150, clickTime + 0.015);
 
-      gain.gain.setValueAtTime(0.14, clickTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, clickTime + 0.028);
+      gain.gain.setValueAtTime(0.08, clickTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, clickTime + 0.015);
 
       osc.connect(gain);
       gain.connect(this.ctx.destination);
       osc.start(clickTime);
-      osc.stop(clickTime + 0.028);
+      osc.stop(clickTime + 0.015);
     }
 
-    // 2. 模拟洗牌摩擦沙沙声 (Noise Friction)
+    // 2. Friction noise during the riffle
     try {
-      const bufferSize = Math.floor(this.ctx.sampleRate * 0.65);
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.6);
       const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
       const data = buffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * 0.35;
+        data[i] = (Math.random() * 2 - 1);
       }
 
       const noise = this.ctx.createBufferSource();
@@ -316,13 +318,14 @@ class SoundManager {
 
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(1400, now);
-      filter.frequency.linearRampToValueAtTime(800, now + 0.65);
-      filter.Q.setValueAtTime(3.0, now);
+      filter.frequency.setValueAtTime(2500, now);
+      filter.frequency.linearRampToValueAtTime(1200, now + 0.6);
+      filter.Q.setValueAtTime(1.5, now);
 
       const noiseGain = this.ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.08, now);
-      noiseGain.gain.linearRampToValueAtTime(0.18, now + 0.3);
+      noiseGain.gain.setValueAtTime(0, now);
+      noiseGain.gain.linearRampToValueAtTime(0.06, now + 0.2);
+      noiseGain.gain.linearRampToValueAtTime(0.06, now + 0.5);
       noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
 
       noise.connect(filter);
@@ -335,19 +338,22 @@ class SoundManager {
       // Audio buffer fallback
     }
 
-    // 3. 桥式合拢收牌声 (Bridge Snap)
-    const snapTime = now + 0.68;
+    // 3. Bridge Snap (Cards pushing together)
+    const snapTime = now + 0.75;
     const snapOsc = this.ctx.createOscillator();
     const snapGain = this.ctx.createGain();
-    snapOsc.type = 'triangle';
-    snapOsc.frequency.setValueAtTime(480, snapTime);
-    snapOsc.frequency.exponentialRampToValueAtTime(90, snapTime + 0.12);
-    snapGain.gain.setValueAtTime(0.22, snapTime);
-    snapGain.gain.exponentialRampToValueAtTime(0.001, snapTime + 0.12);
+    
+    snapOsc.type = 'sawtooth';
+    snapOsc.frequency.setValueAtTime(300, snapTime);
+    snapOsc.frequency.exponentialRampToValueAtTime(80, snapTime + 0.15);
+    
+    snapGain.gain.setValueAtTime(0.18, snapTime);
+    snapGain.gain.exponentialRampToValueAtTime(0.001, snapTime + 0.15);
+    
     snapOsc.connect(snapGain);
     snapGain.connect(this.ctx.destination);
     snapOsc.start(snapTime);
-    snapOsc.stop(snapTime + 0.12);
+    snapOsc.stop(snapTime + 0.15);
   }
 
   // 逼真切牌音效 (Cut Deck - Split + Slide + Table Thud)
@@ -358,52 +364,66 @@ class SoundManager {
 
     const now = this.ctx.currentTime;
 
-    // 1. 拔起牌叠摩擦划音 (Packet lift slide)
-    const oscSlide = this.ctx.createOscillator();
-    const gainSlide = this.ctx.createGain();
-    oscSlide.type = 'triangle';
-    oscSlide.frequency.setValueAtTime(350, now);
-    oscSlide.frequency.exponentialRampToValueAtTime(850, now + 0.08);
+    // 1. Lift and Slide (Packet lift friction)
+    try {
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.15);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1);
+      
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+      
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.setValueAtTime(1200, now);
+      
+      const gainSlide = this.ctx.createGain();
+      gainSlide.gain.setValueAtTime(0.05, now);
+      gainSlide.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      
+      noise.connect(filter);
+      filter.connect(gainSlide);
+      gainSlide.connect(this.ctx.destination);
+      noise.start(now);
+      noise.stop(now + 0.15);
+    } catch {
+      // fallback
+    }
 
-    gainSlide.gain.setValueAtTime(0.18, now);
-    gainSlide.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-
-    oscSlide.connect(gainSlide);
-    gainSlide.connect(this.ctx.destination);
-    oscSlide.start(now);
-    oscSlide.stop(now + 0.08);
-
-    // 2. 切牌落地桌板闷响 (Table impact thud)
-    const thudTime = now + 0.09;
+    // 2. Table Thud (Heavy low frequency impact)
+    const thudTime = now + 0.2;
     const oscThud = this.ctx.createOscillator();
     const gainThud = this.ctx.createGain();
+    
     oscThud.type = 'sine';
-    oscThud.frequency.setValueAtTime(180, thudTime);
-    oscThud.frequency.exponentialRampToValueAtTime(45, thudTime + 0.14);
-
-    gainThud.gain.setValueAtTime(0.3, thudTime);
-    gainThud.gain.exponentialRampToValueAtTime(0.001, thudTime + 0.14);
-
+    oscThud.frequency.setValueAtTime(140, thudTime);
+    oscThud.frequency.exponentialRampToValueAtTime(40, thudTime + 0.1);
+    
+    gainThud.gain.setValueAtTime(0.4, thudTime);
+    gainThud.gain.exponentialRampToValueAtTime(0.001, thudTime + 0.15);
+    
     oscThud.connect(gainThud);
     gainThud.connect(this.ctx.destination);
     oscThud.start(thudTime);
-    oscThud.stop(thudTime + 0.14);
+    oscThud.stop(thudTime + 0.15);
 
-    // 3. 牌叠贴合清脆敲击 (Deck tap snap)
-    const snapTime = now + 0.11;
+    // 3. Deck Snap (Top packet hits the bottom packet)
+    const snapTime = now + 0.35;
     const oscSnap = this.ctx.createOscillator();
     const gainSnap = this.ctx.createGain();
+    
     oscSnap.type = 'triangle';
-    oscSnap.frequency.setValueAtTime(620, snapTime);
-    oscSnap.frequency.exponentialRampToValueAtTime(200, snapTime + 0.05);
-
-    gainSnap.gain.setValueAtTime(0.15, snapTime);
-    gainSnap.gain.exponentialRampToValueAtTime(0.001, snapTime + 0.05);
-
+    oscSnap.frequency.setValueAtTime(800, snapTime);
+    oscSnap.frequency.exponentialRampToValueAtTime(150, snapTime + 0.08);
+    
+    gainSnap.gain.setValueAtTime(0.2, snapTime);
+    gainSnap.gain.exponentialRampToValueAtTime(0.001, snapTime + 0.08);
+    
     oscSnap.connect(gainSnap);
     gainSnap.connect(this.ctx.destination);
     oscSnap.start(snapTime);
-    oscSnap.stop(snapTime + 0.05);
+    oscSnap.stop(snapTime + 0.08);
   }
 
   // 连续发牌飞牌声 (Rapid Dealing Sequence)

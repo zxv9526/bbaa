@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Card, Suit, Rank } from '../types';
 import { createDeck, createDoubleDeck, shuffle, cutDeck } from '../gameLogic';
 import { sounds } from '../sound';
@@ -210,6 +211,118 @@ export function RealtimeDealerStage({
     }
   };
 
+  const renderDeckAnimation = () => (
+    <div className="relative w-48 h-32 sm:w-64 sm:h-40 flex items-center justify-center my-2 sm:my-4" style={{ perspective: 1000 }}>
+      <AnimatePresence>
+        {!isDealing && (
+          <>
+            {/* Left Packet (During Shuffle / Base Deck) */}
+            <motion.div
+              className="absolute w-20 h-28 sm:w-24 sm:h-32 rounded-xl bg-gradient-to-br from-blue-900 to-slate-900 border border-amber-500/50 shadow-[0_0_15px_rgba(0,0,0,0.5)] flex items-center justify-center text-2xl z-10"
+              initial={false}
+              animate={
+                isShuffling
+                  ? { x: -45, rotateZ: -12, rotateY: 15, z: 10 }
+                  : isCutting
+                  ? { x: -30, y: 15, rotateZ: -3 }
+                  : { x: 0, y: 0, rotateZ: 0, rotateY: 0, z: 0 }
+              }
+              transition={{ type: "spring", stiffness: 220, damping: 20 }}
+            >
+              <div className="w-full h-full rounded-lg border border-white/10 flex items-center justify-center text-white/30 text-xl font-bold bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMDUiLz4KPC9zdmc+')]">
+                🀄
+              </div>
+            </motion.div>
+
+            {/* Right Packet (During Shuffle / Cut Top Packet) */}
+            <motion.div
+              className="absolute w-20 h-28 sm:w-24 sm:h-32 rounded-xl bg-gradient-to-br from-red-900 to-slate-900 border border-amber-500/50 shadow-[0_0_20px_rgba(0,0,0,0.6)] flex items-center justify-center text-2xl z-20"
+              initial={false}
+              animate={
+                isShuffling
+                  ? { x: 45, rotateZ: 12, rotateY: -15, z: 10 }
+                  : isCutting
+                  ? { x: 40, y: -25, rotateZ: 4, z: 25 }
+                  : { x: 0, y: -3, rotateZ: 1, rotateY: 0, z: 2 }
+              }
+              transition={{ type: "spring", stiffness: 220, damping: 20 }}
+            >
+              <div className="w-full h-full rounded-lg border border-white/10 flex items-center justify-center text-white/30 text-xl font-bold bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMDUiLz4KPC9zdmc+')]">
+                🀄
+              </div>
+            </motion.div>
+            
+            {/* Cascade Riffle Effect Overlay (Only visible during shuffling) */}
+            {isShuffling && (
+              <motion.div
+                className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                {[...Array(12)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    className="absolute w-16 h-24 sm:w-20 sm:h-28 bg-slate-200 border border-slate-400 rounded-lg shadow-sm"
+                    initial={{ y: -50, x: i % 2 === 0 ? -25 : 25, rotateZ: i % 2 === 0 ? -15 : 15, opacity: 0 }}
+                    animate={{ y: 0, x: 0, rotateZ: (Math.random() - 0.5) * 8, opacity: 1 }}
+                    transition={{ delay: i * 0.04, duration: 0.15 }}
+                  />
+                ))}
+              </motion.div>
+            )}
+
+            {/* Revealed Cut Card (If Cut) */}
+            {cutCard && !isShuffling && (
+              <motion.div
+                className="absolute z-40 w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-lg border-2 border-amber-400 shadow-2xl p-1.5 flex flex-col justify-between"
+                initial={{ scale: 0, y: -60, rotateY: -180, opacity: 0 }}
+                animate={{ scale: 1, y: 0, rotateY: 0, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.15 }}
+              >
+                <div className={`text-xs font-black ${getSuitColor(cutCard.suit)}`}>
+                  {getRankDisplay(cutCard.rank)}
+                  {getSuitSymbol(cutCard.suit)}
+                </div>
+                <div className={`text-2xl text-center font-bold ${getSuitColor(cutCard.suit)}`}>
+                  {getSuitSymbol(cutCard.suit)}
+                </div>
+                <div className={`text-xs font-black text-right rotate-180 ${getSuitColor(cutCard.suit)}`}>
+                  {getRankDisplay(cutCard.rank)}
+                  {getSuitSymbol(cutCard.suit)}
+                </div>
+              </motion.div>
+            )}
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Flying Cards Animation During Dealing */}
+      <AnimatePresence>
+        {isDealing && (
+          <motion.div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
+            {[...Array(13)].map((_, i) => (
+              <motion.div
+                key={i}
+                className="absolute w-12 h-16 bg-gradient-to-br from-blue-700 to-indigo-900 border border-amber-300 rounded shadow-xl"
+                initial={{ scale: 1, x: 0, y: 0, opacity: 1 }}
+                animate={{ 
+                  scale: 0.6, 
+                  x: (Math.random() - 0.5) * 350, 
+                  y: (Math.random() - 0.5) * 350, 
+                  opacity: 0,
+                  rotateZ: (Math.random() - 0.5) * 720
+                }}
+                transition={{ duration: 0.5, delay: i * 0.05, ease: "easeOut" }}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+
   return (
     <div className="w-full max-w-5xl mx-auto flex flex-col items-center justify-between gap-4 py-2 px-2 sm:px-4 animate-in fade-in duration-300">
       
@@ -364,69 +477,7 @@ export function RealtimeDealerStage({
               </p>
             </div>
 
-            {/* Visual 3D Deck Animation Area */}
-            <div className="relative w-48 h-32 sm:w-64 sm:h-36 flex items-center justify-center my-2">
-              
-              {/* Left Packet (During Shuffle) */}
-              <div
-                className={`absolute w-20 h-28 sm:w-24 sm:h-32 rounded-xl bg-gradient-to-br from-blue-800 to-indigo-950 border-2 border-amber-300 shadow-2xl flex items-center justify-center text-2xl transition-all duration-500 transform ${
-                  isShuffling
-                    ? '-translate-x-12 -rotate-12 scale-105'
-                    : isCutting
-                    ? '-translate-y-8 -rotate-6'
-                    : 'translate-x-0 rotate-0'
-                }`}
-              >
-                <div className="w-full h-full rounded-lg border border-white/20 flex items-center justify-center text-white/40 text-xl font-bold">
-                  🀄
-                </div>
-              </div>
-
-              {/* Right Packet (During Shuffle) */}
-              <div
-                className={`absolute w-20 h-28 sm:w-24 sm:h-32 rounded-xl bg-gradient-to-br from-red-800 to-rose-950 border-2 border-amber-300 shadow-2xl flex items-center justify-center text-2xl transition-all duration-500 transform ${
-                  isShuffling
-                    ? 'translate-x-12 rotate-12 scale-105'
-                    : isCutting
-                    ? 'translate-y-6 rotate-3'
-                    : 'translate-x-1 rotate-1'
-                }`}
-              >
-                <div className="w-full h-full rounded-lg border border-white/20 flex items-center justify-center text-white/40 text-xl font-bold">
-                  🀄
-                </div>
-              </div>
-
-              {/* Revealed Cut Card (If Cut) */}
-              {cutCard && !isShuffling && (
-                <div className="absolute z-20 w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-lg border-2 border-amber-400 shadow-2xl p-1.5 flex flex-col justify-between animate-in zoom-in-75 duration-300">
-                  <div className={`text-xs font-black ${getSuitColor(cutCard.suit)}`}>
-                    {getRankDisplay(cutCard.rank)}
-                    {getSuitSymbol(cutCard.suit)}
-                  </div>
-                  <div className={`text-2xl text-center font-bold ${getSuitColor(cutCard.suit)}`}>
-                    {getSuitSymbol(cutCard.suit)}
-                  </div>
-                  <div className={`text-xs font-black text-right rotate-180 ${getSuitColor(cutCard.suit)}`}>
-                    {getRankDisplay(cutCard.rank)}
-                    {getSuitSymbol(cutCard.suit)}
-                  </div>
-                </div>
-              )}
-
-              {/* Flying Cards Animation During Dealing */}
-              {isDealing && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  {[...Array(6)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="absolute w-12 h-16 bg-blue-900 border border-amber-300 rounded shadow-lg animate-ping"
-                      style={{ animationDuration: '0.6s', animationDelay: `${i * 0.1}s` }}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+            {renderDeckAnimation()}
 
             {/* Cut Slider Control */}
             <div className="w-full max-w-sm bg-slate-900/80 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2">
@@ -503,16 +554,7 @@ export function RealtimeDealerStage({
               </p>
             </div>
 
-            {/* Visual Deck Animation */}
-            <div className="relative w-44 h-28 flex items-center justify-center my-1">
-              <div
-                className={`w-20 h-28 rounded-xl bg-gradient-to-br from-amber-700 to-red-950 border-2 border-amber-300 shadow-2xl flex items-center justify-center text-2xl transition-all duration-500 transform ${
-                  isShuffling ? 'rotate-12 scale-110' : isCutting ? '-translate-y-4' : ''
-                }`}
-              >
-                <div className="text-white/40 font-bold">🀄</div>
-              </div>
-            </div>
+            {renderDeckAnimation()}
 
             {/* Skip Animation Button */}
             <button
