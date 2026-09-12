@@ -161,14 +161,16 @@ export function CarriageHeaderBar({
             <div
               key={s}
               onClick={() => mode === 'realtime' && isOccupied && onOpenChat()}
-              className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-0.5 px-1 rounded-lg transition-all ${mode === 'realtime' && isOccupied ? 'cursor-pointer group' : ''} ${
-                isUser
-                  ? 'bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold'
+              className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-0.5 px-1 rounded-lg transition-all border ${mode === 'realtime' && isOccupied ? 'cursor-pointer group' : ''} ${
+                isSpeaking
+                  ? 'bg-red-950/60 border-red-500 shadow-md shadow-red-500/30 animate-pulse ring-1 ring-red-400'
+                  : isUser
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 font-bold'
                   : sub
-                  ? 'bg-slate-900/90 border border-emerald-500/30 text-emerald-400'
+                  ? 'bg-slate-900/90 border-emerald-500/30 text-emerald-400'
                   : playerObj
-                  ? 'bg-slate-900/80 border border-blue-500/30 text-blue-300'
-                  : 'bg-slate-950/40 border border-dashed border-slate-800 text-slate-500'
+                  ? 'bg-slate-900/80 border-blue-500/30 text-blue-300'
+                  : 'bg-slate-950/40 border-dashed border-slate-800 text-slate-500'
               }`}
               title={`${s + 1}号位: ${name}`}
             >

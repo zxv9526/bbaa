@@ -132,37 +132,11 @@ export default function App() {
   const [realtimeDealerIndex, setRealtimeDealerIndex] = useState<number>(0);
   const [realtimePlayers, setRealtimePlayers] = useState<RealtimeSeatPlayer[]>(() => {
     const me = getCurrentAccount();
-    const community = getRegisteredCommunityPlayers();
-    const p2 = community[0] || { id: 'u_13900000001', nickname: '闽南雀圣·阿豪', avatar: '🦁' };
-    const p3 = community[1] || { id: 'u_13900000002', nickname: '江城赌王·老陈', avatar: '🐯' };
-    const p4 = community[2] || { id: 'u_13900000003', nickname: '金牌理手·小美', avatar: '🌸' };
-
     return [
       {
         id: 'player_user',
         name: `${me.nickname || '我'} (1号位)`,
         avatar: me.avatar || '😎',
-        isAi: false,
-        score: 0
-      },
-      {
-        id: p2.id || 'u_13900000001',
-        name: `${p2.nickname} (2号位)`,
-        avatar: p2.avatar,
-        isAi: false,
-        score: 0
-      },
-      {
-        id: p3.id || 'u_13900000002',
-        name: `${p3.nickname} (3号位)`,
-        avatar: p3.avatar,
-        isAi: false,
-        score: 0
-      },
-      {
-        id: p4.id || 'u_13900000003',
-        name: `${p4.nickname} (4号位)`,
-        avatar: p4.avatar,
         isAi: false,
         score: 0
       }
@@ -808,18 +782,9 @@ export default function App() {
 
     // 同桌真实牌友互动回复 (纯真人牌局体验)
     if (mode !== 'reservation') {
-      let oppList = playersInMatch
+      const oppList = playersInMatch
         .filter((p) => p.id !== 'player_user' && !p.id.startsWith('seat_'))
         .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar }));
-
-      if (oppList.length === 0) {
-        const community = getRegisteredCommunityPlayers();
-        oppList = community.slice(0, 3).map((u, idx) => ({
-          id: u.id,
-          name: `${u.nickname} (${idx + 2}号位)`,
-          avatar: u.avatar
-        }));
-      }
 
       if (oppList.length > 0) {
         setTimeout(() => {
@@ -1854,7 +1819,7 @@ export default function App() {
                         实时对战场
                       </h2>
                       <p className="text-xs sm:text-sm text-slate-300 mt-1.5 leading-relaxed">
-                        动态开桌 · 轮流做庄 · 至少2人就座触发发牌 · 拟真洗牌切牌与实时语音对讲。
+                        动态开桌 · 轮流做庄 · 至少2人就座触发发牌 · 真实洗牌切牌与实时语音对讲。
                       </p>
                     </div>
 
@@ -1869,7 +1834,7 @@ export default function App() {
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-amber-400 font-bold">✓</span>
-                        <span>拟真牌桌对讲 & 战术语音</span>
+                        <span>真实牌桌对讲 & 战术语音</span>
                       </div>
                     </div>
                   </div>
@@ -1916,6 +1881,11 @@ export default function App() {
             onRemovePlayer={handleRemoveRealtimePlayer}
             onStartDeal={handleRealtimeDealComplete}
             onBackToMenu={() => setGameState('menu')}
+            onSendMessage={handleSendMessage}
+            onOpenFullChat={() => setShowChatDrawer(true)}
+            ttsEnabled={ttsEnabled}
+            onToggleTts={() => setTtsEnabled(!ttsEnabled)}
+            latestMessage={messages[messages.length - 1] || null}
           />
         )}
 

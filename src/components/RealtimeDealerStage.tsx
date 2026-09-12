@@ -19,6 +19,10 @@ import {
   Volume2
 } from 'lucide-react';
 
+import { TableTacticalChatBar } from './TableTacticalChatBar';
+import { ChatMessage } from '../types';
+import { CardView } from './CardView';
+
 export interface RealtimeSeatPlayer {
   id: string;
   name: string;
@@ -36,6 +40,11 @@ interface RealtimeDealerStageProps {
   onRemovePlayer: () => void;
   onStartDeal: (dealtHands: { [playerId: string]: Card[] }, dealerIndex: number) => void;
   onBackToMenu: () => void;
+  onSendMessage?: (type: 'text' | 'voice' | 'quick', content: string, audioUrl?: string, audioDuration?: number) => void;
+  onOpenFullChat?: () => void;
+  ttsEnabled?: boolean;
+  onToggleTts?: () => void;
+  latestMessage?: ChatMessage | null;
 }
 
 export function RealtimeDealerStage({
@@ -46,11 +55,26 @@ export function RealtimeDealerStage({
   onAddPlayer,
   onRemovePlayer,
   onStartDeal,
-  onBackToMenu
+  onBackToMenu,
+  onSendMessage,
+  onOpenFullChat,
+  ttsEnabled = true,
+  onToggleTts,
+  latestMessage = null
 }: RealtimeDealerStageProps) {
   const seatedCount = players.length;
   const currentDealer = players[dealerIndex] || players[0];
   const isHumanDealer = currentDealer?.id === currentUserId;
+
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (latestMessage && Date.now() - latestMessage.timestamp < 5000) {
+      setActiveSpeakerId(latestMessage.senderId);
+      const timer = setTimeout(() => setActiveSpeakerId(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [latestMessage]);
 
   // Shuffle & Cut interactive states
   const [deck, setDeck] = useState<Card[]>(() => {
@@ -275,22 +299,14 @@ export function RealtimeDealerStage({
             {/* Revealed Cut Card (If Cut) */}
             {cutCard && !isShuffling && (
               <motion.div
-                className="absolute z-40 w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-lg border-2 border-amber-400 shadow-2xl p-1.5 flex flex-col justify-between"
+                className="absolute z-40 w-16 h-24 sm:w-20 sm:h-28 shadow-2xl rounded-lg"
                 initial={{ scale: 0, y: -60, rotateY: -180, opacity: 0 }}
                 animate={{ scale: 1, y: 0, rotateY: 0, opacity: 1 }}
                 exit={{ scale: 0, opacity: 0 }}
                 transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.15 }}
               >
-                <div className={`text-xs font-black ${getSuitColor(cutCard.suit)}`}>
-                  {getRankDisplay(cutCard.rank)}
-                  {getSuitSymbol(cutCard.suit)}
-                </div>
-                <div className={`text-2xl text-center font-bold ${getSuitColor(cutCard.suit)}`}>
-                  {getSuitSymbol(cutCard.suit)}
-                </div>
-                <div className={`text-xs font-black text-right rotate-180 ${getSuitColor(cutCard.suit)}`}>
-                  {getRankDisplay(cutCard.rank)}
-                  {getSuitSymbol(cutCard.suit)}
+                <div className="w-full h-full transform scale-[0.6] sm:scale-75 origin-top-left absolute inset-0">
+                   <CardView card={cutCard} className="w-[106px] h-[160px] sm:w-[106px] sm:h-[160px] shadow-2xl shadow-amber-900/50" />
                 </div>
               </motion.div>
             )}
@@ -324,7 +340,7 @@ export function RealtimeDealerStage({
   );
 
   return (
-    <div className="w-full max-w-5xl mx-auto flex flex-col items-center justify-center gap-2 py-1 px-2 sm:px-4 animate-in fade-in duration-300">
+    <div className="w-full h-full flex-1 max-w-5xl mx-auto flex flex-col items-center justify-between gap-2 py-1 px-0 sm:px-2 animate-in fade-in duration-300 min-h-0">
       
       {/* 1. Header Bar: Match Mode & Dealer Rotation Info */}
       <div className="w-full bg-slate-900/90 border border-amber-500/30 rounded-2xl p-2 sm:p-3 backdrop-blur-md shadow-xl flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
@@ -366,13 +382,13 @@ export function RealtimeDealerStage({
       </div>
 
       {/* 2. Seated Players Live Roster (2 - 8 Seats) */}
-      <div className="w-full bg-slate-950/70 border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-col gap-2.5">
-        <div className="flex items-center justify-between text-xs font-bold text-slate-400">
+      <div className="w-full bg-slate-950/70 border border-slate-800 rounded-2xl p-2 sm:p-3 flex flex-col gap-2">
+        <div className="flex items-center justify-between text-xs font-bold text-slate-400 px-1">
           <div className="flex items-center gap-1.5">
             <Users className="w-4 h-4 text-blue-400" />
             <span>当前牌桌席位 ({seatedCount}/8)</span>
             <span className={seatedCount >= 2 ? 'text-emerald-400' : 'text-rose-400 font-bold'}>
-              {seatedCount >= 2 ? '• 满足开局条件 (≥2人)' : '• ⚠️ 至少需2人才能发牌'}
+              {seatedCount >= 2 ? '• 满足开局条件' : '• ⚠️ 至少需2人发牌'}
             </span>
           </div>
 
@@ -381,54 +397,61 @@ export function RealtimeDealerStage({
             <button
               onClick={onRemovePlayer}
               disabled={seatedCount <= 2}
-              className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition cursor-pointer"
-              title="减少一名席位玩家 (最少保留2人)"
+              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition cursor-pointer"
+              title="减少一名席位玩家"
             >
-              <UserMinus className="w-3.5 h-3.5" />
-              <span>减席</span>
+              <UserMinus className="w-3 h-3" />
             </button>
             <button
               onClick={onAddPlayer}
               disabled={seatedCount >= 8}
-              className="px-2.5 py-1 rounded-lg bg-blue-600/30 border border-blue-500/40 text-blue-300 hover:text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition cursor-pointer"
-              title="邀请/匹配真实玩家入座 (最多8人)"
+              className="px-2 py-1 rounded-lg bg-blue-600/30 border border-blue-500/40 text-blue-300 hover:text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition cursor-pointer"
+              title="邀请/匹配真实玩家入座"
             >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>邀请/匹配牌友</span>
+              <UserPlus className="w-3 h-3" />
+              <span className="hidden min-[480px]:inline">匹配牌友</span>
             </button>
           </div>
         </div>
 
-        {/* Seated Avatars Grid */}
-        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-          {players.map((p, idx) => {
-            const isThisDealer = idx === dealerIndex;
-            const isMe = p.id === currentUserId;
+        {/* Seated Avatars Compact Strip */}
+        <div className="w-full bg-slate-950/80 border border-slate-800/80 rounded-xl px-1 sm:px-2 py-1.5 flex items-center justify-between gap-1 overflow-x-auto no-scrollbar shadow-inner">
+          {Array.from({ length: 8 }).map((_, idx) => {
+            const p = players[idx];
+            const isOccupied = !!p;
+            const isThisDealer = isOccupied && idx === dealerIndex;
+            const isMe = isOccupied && p.id === currentUserId;
+            const isSpeaking = isOccupied && activeSpeakerId && p.id === activeSpeakerId;
 
             return (
               <div
-                key={p.id}
-                className={`relative flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
-                  isThisDealer
-                    ? 'bg-amber-950/40 border-amber-500 shadow-md shadow-amber-500/10'
+                key={isOccupied ? p.id : `empty-${idx}`}
+                className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-all border ${
+                  !isOccupied 
+                    ? 'bg-slate-900/30 border-transparent opacity-60'
+                    : isSpeaking
+                    ? 'bg-red-950/60 border-red-500 shadow-md shadow-red-500/30 animate-pulse ring-1 ring-red-400'
+                    : isThisDealer
+                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
                     : isMe
-                    ? 'bg-blue-950/40 border-blue-500/60'
-                    : 'bg-slate-900/60 border-slate-800'
+                    ? 'bg-blue-500/15 border-blue-500/40 text-blue-300'
+                    : 'bg-slate-800/50 border-slate-700/50'
                 }`}
               >
                 {/* Dealer Crown Badge */}
                 {isThisDealer && (
-                  <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full shadow flex items-center gap-0.5 z-10 whitespace-nowrap">
-                    👑 庄家
+                  <span className="absolute -top-1.5 -right-1 text-[10px] leading-none z-10" title="本局庄家">
+                    👑
                   </span>
                 )}
 
-                <div className="text-2xl mt-0.5">{p.avatar}</div>
-                <div className="text-[11px] font-bold text-white mt-1 max-w-[70px] truncate text-center">
-                  {p.name}
+                <div className={`text-lg sm:text-xl ${!isOccupied && 'grayscale opacity-50'} ${isSpeaking && 'animate-bounce'}`}>
+                  {isOccupied ? p.avatar : '🪑'}
                 </div>
-                <div className="text-[10px] text-slate-400">
-                  {idx + 1}号位
+                <div className={`text-[9px] sm:text-[10px] font-bold mt-0.5 w-full truncate text-center ${
+                  !isOccupied ? 'text-slate-500' : isSpeaking ? 'text-red-300' : isThisDealer ? 'text-amber-300' : 'text-slate-300'
+                }`}>
+                  {isOccupied ? p.name.replace(/\(.*\)/, '') : '待入座'}
                 </div>
               </div>
             );
@@ -510,7 +533,7 @@ export function RealtimeDealerStage({
                 className="px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-750 border border-amber-500/40 text-amber-300 hover:text-white font-bold text-sm flex items-center gap-2 shadow-lg transition active:scale-95 disabled:opacity-50 cursor-pointer"
               >
                 <RotateCcw className={`w-4 h-4 ${isShuffling ? 'animate-spin text-amber-400' : ''}`} />
-                <span>{shuffleCount > 0 ? `再次洗牌 (${shuffleCount}次)` : '拟真洗牌'}</span>
+                <span>{shuffleCount > 0 ? `再次洗牌 (${shuffleCount}次)` : '洗牌'}</span>
               </button>
 
               <button
@@ -567,6 +590,19 @@ export function RealtimeDealerStage({
           </div>
         )}
       </div>
+
+      {/* Table Chat Bar Integration for Realtime Dealer Phase */}
+      {onSendMessage && onOpenFullChat && (
+        <div className="w-full max-w-2xl mx-auto shrink-0 px-1 sm:px-2 mt-2">
+          <TableTacticalChatBar
+            onSendMessage={onSendMessage}
+            onOpenFullChat={onOpenFullChat}
+            ttsEnabled={ttsEnabled}
+            onToggleTts={onToggleTts || (() => {})}
+            unreadCount={0}
+          />
+        </div>
+      )}
 
     </div>
   );
