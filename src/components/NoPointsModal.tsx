@@ -1,20 +1,42 @@
-import React from 'react';
-import { X, ShieldAlert, GraduationCap, Coins, ArrowRight, BookOpen, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Coins, ArrowRight, AlertCircle, Gift, Sparkles } from 'lucide-react';
+import { canClaimDailyRelief, claimDailyRelief } from '../lib/accountManager';
+import { triggerHaptic } from '../lib/haptics';
+import confetti from 'canvas-confetti';
 
 interface NoPointsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenPoints: () => void;
   currentPoints: number;
+  onPointsClaimed?: () => void;
 }
 
 export function NoPointsModal({
   isOpen,
   onClose,
   onOpenPoints,
-  currentPoints
+  currentPoints,
+  onPointsClaimed
 }: NoPointsModalProps) {
+  const [reliefMsg, setReliefMsg] = useState<string>('');
   if (!isOpen) return null;
+
+  const eligibleForRelief = canClaimDailyRelief();
+
+  const handleClaim = () => {
+    const res = claimDailyRelief();
+    setReliefMsg(res.message);
+    if (res.success) {
+      triggerHaptic('success');
+      confetti({ particleCount: 90, spread: 70, origin: { y: 0.5 } });
+      if (onPointsClaimed) {
+        onPointsClaimed();
+      }
+    } else {
+      triggerHaptic('error');
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
@@ -51,19 +73,41 @@ export function NoPointsModal({
             </div>
           </div>
 
-          {/* Explanation Alert */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2 text-xs text-slate-300 leading-relaxed">
-            <div className="font-bold text-amber-300 flex items-center gap-1.5 text-xs sm:text-sm">
-              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>补充积分</span>
+          {reliefMsg && (
+            <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold leading-relaxed animate-in fade-in">
+              {reliefMsg}
             </div>
-            <p className="text-slate-300">
-              您的积分不足，需要补充积分才能继续巅峰对决。
-            </p>
-          </div>
-          {/* Solution */}
+          )}
+
+          {/* Daily Relief Option */}
+          {eligibleForRelief && !reliefMsg && (
+            <div
+              onClick={handleClaim}
+              className="bg-gradient-to-r from-emerald-950/60 via-slate-900 to-teal-950/60 border-2 border-emerald-500/50 hover:border-emerald-400 rounded-2xl p-4 flex items-center justify-between gap-3 cursor-pointer transition shadow-lg shadow-emerald-950/40 group active:scale-[0.98]"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl font-bold shrink-0 group-hover:scale-110 transition">
+                  <Gift className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-black text-white flex items-center gap-1.5">
+                    <span>领取今日破产救济金 (+1,000分)</span>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  </div>
+                  <div className="text-xs text-emerald-200/80 mt-0.5">
+                    每日免费 1 次，即刻补充筹码重返巅峰赛场
+                  </div>
+                </div>
+              </div>
+              <button className="px-3.5 py-1.5 rounded-xl bg-emerald-600 group-hover:bg-emerald-500 text-white font-black text-xs transition shadow shrink-0">
+                立即领取
+              </button>
+            </div>
+          )}
+
+          {/* Solutions */}
           <div className="space-y-2.5">
-            <div className="text-xs font-bold text-slate-400">解决方案：</div>
+            <div className="text-xs font-bold text-slate-400">获取更多积分：</div>
 
             <div
               onClick={() => {

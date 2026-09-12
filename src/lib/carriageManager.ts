@@ -385,9 +385,9 @@ export async function submitCarriageHandAndAdvance(params: {
       pointsWon: pointsDelta,
       result: pointsDelta > 0 ? (playerResult.specialHand ? 'SPECIAL_WIN' : 'WIN') : pointsDelta < 0 ? 'LOSE' : 'DRAW',
       specialHand: playerResult.specialHand || null,
-      frontType: playerResult.frontScore.type,
-      midType: playerResult.midScore.type,
-      backType: playerResult.backScore.type,
+      frontType: playerResult.frontScore?.type || 'High Card',
+      midType: playerResult.midScore?.type || 'High Card',
+      backType: playerResult.backScore?.type || 'High Card',
       opponentsSummary: `第 ${carriage.index} 局 • ${seatIndex + 1}号座位 (${mode === 'reservation' ? '预约场' : '8人场'})`
     });
   } catch (e) {

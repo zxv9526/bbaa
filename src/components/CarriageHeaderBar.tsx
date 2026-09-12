@@ -7,6 +7,7 @@ interface CarriageHeaderBarProps {
   mode?: 'vs_ai_8p' | 'realtime' | 'reservation';
   currentCarriageIndex: number;
   seatIndex?: number;
+  dealerIndex?: number;
   submissions?: { [seatIndex: number]: CarriageSubmission };
   onSeatChange?: (seat: number) => void;
   stats?: CarriagePoolStats;
@@ -23,6 +24,7 @@ export function CarriageHeaderBar({
   mode = 'realtime',
   currentCarriageIndex,
   seatIndex = 0,
+  dealerIndex,
   submissions = {},
   onSeatChange,
   stats,
@@ -172,6 +174,12 @@ export function CarriageHeaderBar({
                 <div className="absolute -top-7 z-20 bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap animate-bounce flex items-center gap-1 border border-emerald-300">
                   <span>{speakerSnippet}</span>
                 </div>
+              )}
+
+              {typeof dealerIndex === 'number' && dealerIndex === s && (
+                <span className="absolute -top-1.5 -right-1 text-[10px] leading-none z-10" title="本局庄家 (发牌员)">
+                  👑
+                </span>
               )}
 
               <div className="text-sm sm:text-base leading-none mb-0.5">{avatar}</div>

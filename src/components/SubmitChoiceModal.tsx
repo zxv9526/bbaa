@@ -11,7 +11,7 @@ interface SubmitChoiceModalProps {
   carriageIndex: number;
   seatIndex?: number;
   roundIndex?: number;
-  mode?: 'vs_ai_8p' | 'realtime' | 'reservation';
+  mode?: 'vs_ai_8p' | 'realtime' | 'reservation' | 'practice';
   front: Card[];
   mid: Card[];
   back: Card[];
@@ -276,16 +276,18 @@ export function SubmitChoiceModal({
                 <button
                   id="btn-confirm-submit-and-exit"
                   onClick={handleExit}
-                  className="w-full p-2.5 rounded-2xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-slate-300 font-bold flex items-center justify-between transition active:scale-[0.98] cursor-pointer group"
+                  className="w-full p-3 rounded-2xl bg-slate-800 hover:bg-slate-750 border border-slate-700/80 text-slate-200 font-bold flex items-center justify-between transition active:scale-[0.98] cursor-pointer group hover:border-slate-600"
                 >
                   <div className="flex items-center gap-2.5 text-left">
-                    <div className="w-7 h-7 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 shrink-0">
+                    <div className="w-8 h-8 rounded-xl bg-slate-700/60 flex items-center justify-center text-slate-300 shrink-0 group-hover:bg-slate-600 transition">
                       <Home className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="text-xs font-bold text-slate-300">交牌后结束游戏并返回大厅</div>
+                      <div className="text-xs sm:text-sm font-bold text-white">交牌结算 · 结束游戏返回大厅</div>
+                      <div className="text-[10px] text-slate-400">完成本局比牌计分与历史记录，退出并返回游戏大厅</div>
                     </div>
                   </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-white transition" />
                 </button>
               </>
             )}

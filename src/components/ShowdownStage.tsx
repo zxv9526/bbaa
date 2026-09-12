@@ -18,7 +18,8 @@ import {
   Target,
   Trophy,
   HelpCircle,
-  MessageSquare
+  MessageSquare,
+  Home
 } from 'lucide-react';
 
 interface ShowdownStageProps {
@@ -179,13 +180,22 @@ export function ShowdownStage({
               </button>
               <button
                 onClick={handleSkipAll}
-                className="px-3 py-1.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs font-bold transition flex items-center gap-1"
+                className="px-3 py-1.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
                 title="直接查看最终结算"
               >
                 <FastForward className="w-3.5 h-3.5" /> 跳过
               </button>
             </>
           )}
+
+          <button
+            onClick={onBackToMenu}
+            className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+            title="返回大厅"
+          >
+            <Home className="w-3.5 h-3.5" />
+            <span className="hidden xs:inline">大厅</span>
+          </button>
         </div>
       </div>
 

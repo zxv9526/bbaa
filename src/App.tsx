@@ -103,6 +103,8 @@ import { SubmitChoiceModal } from './components/SubmitChoiceModal';
 import { MatchReplayModal } from './components/MatchReplayModal';
 import { ReservationModal } from './components/ReservationModal';
 import { ReservationSeatModal } from './components/ReservationSeatModal';
+import { ExitMatchModal } from './components/ExitMatchModal';
+import { RealtimeDealerStage, RealtimeSeatPlayer } from './components/RealtimeDealerStage';
 import {
   saveActiveMatchSession,
   loadActiveMatchSession,
@@ -113,14 +115,48 @@ import { saveMatchReplay } from './lib/matchReplay';
 import { triggerHaptic } from './lib/haptics';
 import { ArrowLeftRight, GraduationCap } from 'lucide-react';
 
-type GameMode = 'realtime' | 'reservation' | 'vs_ai_8p';
+type GameMode = 'realtime' | 'reservation' | 'vs_ai_8p' | 'practice';
 
 export default function App() {
   const [currentAccount, setCurrentAccount] = useState<UserAccount>(() => getCurrentAccount());
   const [playerName, setPlayerName] = useState<string>(() => currentAccount.nickname);
 
   const [mode, setMode] = useState<GameMode>('realtime');
-  const [gameState, setGameState] = useState<'menu' | 'arranging' | 'revealing'>('menu');
+  const [gameState, setGameState] = useState<'menu' | 'realtime_dealer' | 'arranging' | 'revealing'>('menu');
+
+  // ⚡ 实时对战场：轮流发牌与牌桌状态 (Live Rotation Dealer Table)
+  const [realtimeRound, setRealtimeRound] = useState<number>(1);
+  const [realtimeDealerIndex, setRealtimeDealerIndex] = useState<number>(0);
+  const [realtimePlayers, setRealtimePlayers] = useState<RealtimeSeatPlayer[]>([
+    {
+      id: 'player_user',
+      name: `${getCurrentAccount().nickname || '我'} (1号位)`,
+      avatar: getCurrentAccount().avatar || '😎',
+      isAi: false,
+      score: 0
+    },
+    {
+      id: 'bot_1',
+      name: '雀圣阿豪 (2号位)',
+      avatar: '🦁',
+      isAi: true,
+      score: 0
+    },
+    {
+      id: 'bot_2',
+      name: '九段棋手 (3号位)',
+      avatar: '🐯',
+      isAi: true,
+      score: 0
+    },
+    {
+      id: 'bot_3',
+      name: '江城赌神 (4号位)',
+      avatar: '🐲',
+      isAi: true,
+      score: 0
+    }
+  ]);
 
   // Carriage Mode State (8-player Async Carriage Flow)
   const [carriageSeatIndex, setCarriageSeatIndex] = useState<number>(0);
@@ -150,6 +186,7 @@ export default function App() {
   const [showSubmitChoiceModal, setShowSubmitChoiceModal] = useState(false);
   const [showReplayModal, setShowReplayModal] = useState(false);
   const [showReservationModal, setShowReservationModal] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
   const [showSeatModal, setShowSeatModal] = useState(false);
   const [seatModalRound, setSeatModalRound] = useState<number>(1);
   const [seatModalCarriage, setSeatModalCarriage] = useState<Carriage | null>(null);
@@ -347,6 +384,182 @@ export default function App() {
     startNewMatch('reservation', seatIndex, roundIndex, true);
   };
 
+  // ⚡ 实时对战场入口：进入轮流发牌与洗牌切牌舞台
+  const startRealtimeMatch = () => {
+    if (currentAccount.points <= 0) {
+      setShowNoPointsModal(true);
+      return;
+    }
+
+    // 检查是否有未完成的真实契约
+    const saved = loadActiveMatchSession(currentAccount.phone);
+    if (saved && saved.originalHand && saved.originalHand.length === 13) {
+      restoreFromSavedSession(saved, '根据游戏契约精神');
+      return;
+    }
+
+    setMode('realtime');
+    setErrorMsg('');
+    setMatchResults(null);
+    setUseSpecialHand(false);
+
+    // 同步玩家信息至席位
+    setRealtimePlayers(prev => {
+      const copy = [...prev];
+      copy[0] = {
+        id: 'player_user',
+        name: `${currentAccount.nickname || playerName || '我'} (1号位)`,
+        avatar: currentAccount.avatar || '😎',
+        isAi: false,
+        score: copy[0]?.score || 0
+      };
+      return copy;
+    });
+
+    setGameState('realtime_dealer');
+  };
+
+  const handleAddRealtimeAi = () => {
+    if (realtimePlayers.length >= 8) return;
+    const nextIdx = realtimePlayers.length;
+    const aiTemplate = AI_NAMES_POOL[nextIdx % AI_NAMES_POOL.length];
+    setRealtimePlayers(prev => [
+      ...prev,
+      {
+        id: `bot_${Date.now()}_${nextIdx}`,
+        name: `${aiTemplate.name} (${nextIdx + 1}号位)`,
+        avatar: aiTemplate.avatar,
+        isAi: true,
+        score: 0
+      }
+    ]);
+  };
+
+  const handleRemoveRealtimeAi = () => {
+    if (realtimePlayers.length <= 2) return;
+    setRealtimePlayers(prev => {
+      const copy = [...prev];
+      copy.pop();
+      if (realtimeDealerIndex >= copy.length) {
+        setRealtimeDealerIndex(0);
+      }
+      return copy;
+    });
+  };
+
+  // ⚡ 庄家发牌完成回调：分发牌张，启动理牌阶段
+  const handleRealtimeDealComplete = (
+    dealtHands: { [playerId: string]: Card[] },
+    dealerIdx: number
+  ) => {
+    setRealtimeDealerIndex(dealerIdx);
+    setCarriageSeatIndex(0);
+    setCarriageIndex(realtimeRound);
+
+    const myHand = sortCards(dealtHands['player_user'] || dealtHands[realtimePlayers[0]?.id] || []);
+    setOriginalHand(myHand);
+    setPool([]);
+    setSelectedCardIds([]);
+    setErrorMsg('');
+    setUseSpecialHand(false);
+
+    // 特殊牌型检测
+    const special = detectSpecialHand(myHand);
+    setSpecialHand(special);
+    if (special) {
+      sounds.playVictory();
+      triggerHaptic('heavy');
+      confetti({ particleCount: 120, spread: 90, origin: { y: 0.35 } });
+    }
+
+    // 智能理牌建议
+    const smartSuggestions = getSuggestedArrangements(myHand);
+    setSuggestions(smartSuggestions);
+    patternChangerRef.current = new PatternChanger(myHand);
+
+    let initialFront: Card[];
+    let initialMid: Card[];
+    let initialBack: Card[];
+
+    if (smartSuggestions.length > 0) {
+      initialFront = smartSuggestions[0].front;
+      initialMid = smartSuggestions[0].middle;
+      initialBack = smartSuggestions[0].back;
+      setFront(initialFront);
+      setMid(initialMid);
+      setBack(initialBack);
+      setPatternInfo({
+        tag: smartSuggestions[0].tag,
+        index: 1,
+        total: smartSuggestions.length
+      });
+    } else {
+      initialFront = myHand.slice(10, 13);
+      initialMid = myHand.slice(5, 10);
+      initialBack = myHand.slice(0, 5);
+      setFront(initialFront);
+      setMid(initialMid);
+      setBack(initialBack);
+    }
+
+    // 构建实时场参战玩家列表
+    const matchPlayersList = realtimePlayers.map((p) => {
+      const pCards = dealtHands[p.id] || [];
+      if (p.id === 'player_user' || !p.isAi) {
+        return {
+          id: 'player_user',
+          name: p.name,
+          isAi: false,
+          avatar: p.avatar,
+          cards: myHand,
+          arrangement: {
+            front: [],
+            middle: [],
+            back: [],
+            specialHand: null,
+            isValid: false,
+            isDaoShui: false
+          }
+        };
+      }
+
+      // AI 对手根据手牌自动生成合法不倒水方案
+      const aiArrangement = aiArrangeCards(pCards);
+      return {
+        id: p.id,
+        name: p.name,
+        isAi: true,
+        avatar: p.avatar,
+        cards: pCards,
+        arrangement: aiArrangement
+      };
+    });
+
+    setPlayersInMatch(matchPlayersList);
+    setGameState('arranging');
+
+    // 🛡️ 严格遵守契约精神：发牌完成后立即保存进行中牌局，不允许退出重置
+    saveActiveMatchSession({
+      phone: currentAccount.phone,
+      mode: 'realtime',
+      carriageId: `realtime_round_${realtimeRound}`,
+      carriageIndex: realtimeRound,
+      carriageSeatIndex: 0,
+      carriageSubmissions: {},
+      carriageStats: null,
+      originalHand: myHand,
+      front: initialFront,
+      mid: initialMid,
+      back: initialBack,
+      pool: [],
+      specialHand,
+      useSpecialHand: false,
+      playersInMatch: matchPlayersList,
+      realtimeDealerIndex: dealerIdx,
+      realtimeRound
+    });
+  };
+
   // Start a new match (8P or 2P)
   const startNewMatch = (
     selectedMode: GameMode = mode,
@@ -357,6 +570,12 @@ export default function App() {
     // 🛡️ 积分门槛限制：没有积分不允许进入真实牌局
     if (currentAccount.points <= 0) {
       setShowNoPointsModal(true);
+      return;
+    }
+
+    // ⚡ 实时场直接路由至轮流发牌模式
+    if (selectedMode === 'realtime') {
+      startRealtimeMatch();
       return;
     }
 
@@ -853,8 +1072,105 @@ export default function App() {
     setErrorMsg('');
   };
 
+  // Exit Match Handlers (Allows seamless exit back to lobby at any point)
+  const handleAutoSubmitAndExit = () => {
+    setShowExitModal(false);
+
+    if (mode === 'realtime') {
+      const sysMsg: ChatMessage = {
+        id: `sys_auto_${Date.now()}`,
+        senderId: 'system',
+        senderName: '系统裁判',
+        senderAvatar: '🤖',
+        isUser: false,
+        content: `玩家【${currentAccount.nickname || playerName}】已委托智能最佳理牌自动交牌结算，牌局正常计分。`,
+        type: 'text',
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, sysMsg]);
+    }
+
+    if (useSpecialHand && specialHand) {
+      settleMatch({
+        front: [],
+        middle: [],
+        back: [],
+        specialHand,
+        isValid: true,
+        isDaoShui: false
+      }, 'exit');
+      return;
+    }
+
+    if (front.length === 3 && mid.length === 5 && back.length === 5 && isValidArrangement(front, mid, back)) {
+      settleMatch({
+        front,
+        middle: mid,
+        back,
+        isValid: true,
+        isDaoShui: false
+      }, 'exit');
+      return;
+    }
+
+    const autoSuggestions = getSuggestedArrangements(originalHand);
+    if (autoSuggestions && autoSuggestions.length > 0) {
+      settleMatch({
+        front: autoSuggestions[0].front,
+        middle: autoSuggestions[0].middle,
+        back: autoSuggestions[0].back,
+        specialHand: null,
+        isValid: true,
+        isDaoShui: false
+      }, 'exit');
+      return;
+    }
+
+    clearActiveMatchSession(currentAccount.phone);
+    setCarriageToast({
+      show: true,
+      msg: '🚪 已退出对局并返回游戏大厅！',
+      pts: 0
+    });
+    setTimeout(() => setCarriageToast(null), 3000);
+    setGameState('menu');
+  };
+
+  const handleSaveAndExit = () => {
+    setShowExitModal(false);
+    // 🛡️ 严格遵守契约精神：保存当前玩家摆牌进度，下次进入强制恢复
+    saveActiveMatchSession({
+      phone: currentAccount.phone,
+      mode,
+      carriageId: mode === 'realtime' ? `realtime_round_${realtimeRound}` : carriageId,
+      carriageIndex: mode === 'realtime' ? realtimeRound : carriageIndex,
+      carriageSeatIndex: mode === 'realtime' ? 0 : carriageSeatIndex,
+      carriageSubmissions,
+      carriageStats,
+      originalHand,
+      front,
+      mid,
+      back,
+      pool,
+      specialHand,
+      useSpecialHand,
+      playersInMatch,
+      realtimeDealerIndex,
+      realtimeRound
+    });
+
+    setCarriageToast({
+      show: true,
+      msg: `💾 第 ${mode === 'realtime' ? realtimeRound : carriageIndex} 局手牌进度已保存，再次进入将继续完成！`,
+      pts: 0
+    });
+    setTimeout(() => setCarriageToast(null), 3000);
+    setGameState('menu');
+  };
+
   // Submit Player Arrangement & Reveal (Opens Choice Modal)
   const handleSubmitArrangement = async () => {
+    setErrorMsg('');
     if (useSpecialHand && specialHand) {
       const userArrangement: PlayerArrangement = {
         front: [],
@@ -864,10 +1180,6 @@ export default function App() {
         isValid: true,
         isDaoShui: false
       };
-      if (mode === 'practice') {
-        settleMatch(userArrangement, 'reveal');
-        return;
-      }
       setPendingArrangement(userArrangement);
       setShowSubmitChoiceModal(true);
       return;
@@ -912,11 +1224,6 @@ export default function App() {
       isDaoShui: false
     };
 
-    if (mode === 'practice') {
-      settleMatch(userArrangement, 'reveal');
-      return;
-    }
-
     setPendingArrangement(userArrangement);
     setShowSubmitChoiceModal(true);
   };
@@ -938,9 +1245,34 @@ export default function App() {
       });
 
       const results = calculateMatchScores(updatedPlayers);
+      const userResult = results.find(r => r.playerId === 'player_user');
+
+      if (action === 'exit') {
+        clearActiveMatchSession(currentAccount.phone);
+        setCarriageToast({
+          show: true,
+          msg: '🎮 练习对局已提交结束，已返回游戏大厅！',
+          pts: userResult ? userResult.finalPoints : 0
+        });
+        setTimeout(() => setCarriageToast(null), 3000);
+        setGameState('menu');
+        return;
+      }
+
+      if (action === 'quick_next') {
+        setCarriageToast({
+          show: true,
+          msg: '🎮 练习对局提交成功，进入下一局！',
+          pts: userResult ? userResult.finalPoints : 0
+        });
+        setTimeout(() => setCarriageToast(null), 3000);
+        startNewMatch('practice');
+        return;
+      }
+
+      // action === 'reveal'
       setMatchResults(results);
 
-      const userResult = results.find(r => r.playerId === 'player_user');
       if (userResult && userResult.finalPoints > 0) {
         sounds.playVictory();
         confetti({ particleCount: 80, spread: 70, origin: { y: 0.5 } });
@@ -951,8 +1283,129 @@ export default function App() {
       setGameState('revealing');
       return;
     }
-    // 🚆 8人模式 / 实时对战场 / 预约场：预发牌异步结算
-    if (mode === 'vs_ai_8p' || mode === 'realtime' || mode === 'reservation') {
+
+    // ⚡ 实时对战场模式：不使用存储牌局，纯动态结算与轮流庄家顺延
+    if (mode === 'realtime') {
+      try {
+        const fullPlayersList = playersInMatch.map(p => {
+          if (p.id === 'player_user' || !p.isAi) {
+            return {
+              ...p,
+              arrangement: userArrangement
+            };
+          }
+          return p;
+        });
+
+        // 动态两两对比算分 (支持2至8人场)
+        const allResults = calculateMatchScores(fullPlayersList);
+        const myResult = allResults.find(r => r.playerId === 'player_user') || allResults[0];
+
+        if (myResult.finalPoints > 0) {
+          sounds.playVictory();
+          confetti({ particleCount: 80, spread: 75, origin: { y: 0.45 } });
+        } else {
+          sounds.playDunWin();
+        }
+
+        const deltaStr = myResult.finalPoints >= 0 ? `+${myResult.finalPoints}` : `${myResult.finalPoints}`;
+
+        // 扣增积分与记录流水
+        if (myResult.finalPoints !== 0) {
+          addPoints(
+            myResult.finalPoints,
+            myResult.finalPoints > 0 ? 'MATCH_WIN' : 'MATCH_LOSS',
+            `实时对战第${realtimeRound}局得失`
+          );
+          const updatedAcc = getCurrentAccount();
+          setCurrentAccount(updatedAcc);
+        }
+
+        // 保存复盘记录
+        try {
+          const replayPlayers = allResults.map(r => ({
+            id: r.playerId,
+            name: r.name,
+            avatar: r.avatar,
+            isAi: r.isAi,
+            isMe: r.playerId === 'player_user',
+            specialHand: r.specialHand,
+            front: r.arrangement?.front || [],
+            mid: r.arrangement?.middle || [],
+            back: r.arrangement?.back || [],
+            frontEval: r.frontScore ? {
+              typeName: HAND_TYPE_CN[r.frontScore.type],
+              desc: r.frontScore.description,
+              bonus: r.frontScore.bonusPoints || 0
+            } : undefined,
+            midEval: r.midScore ? {
+              typeName: HAND_TYPE_CN[r.midScore.type],
+              desc: r.midScore.description,
+              bonus: r.midScore.bonusPoints || 0
+            } : undefined,
+            backEval: r.backScore ? {
+              typeName: HAND_TYPE_CN[r.backScore.type],
+              desc: r.backScore.description,
+              bonus: r.backScore.bonusPoints || 0
+            } : undefined,
+            finalScore: r.finalPoints,
+            isHomeRun: r.isHomeRun
+          }));
+
+          saveMatchReplay(currentAccount.phone, {
+            phone: currentAccount.phone,
+            mode: 'realtime',
+            carriageIndex: realtimeRound,
+            seatNumber: 1,
+            myScore: myResult.finalPoints,
+            players: replayPlayers,
+            summaryText: `实时对战第 ${realtimeRound} 局 • 本局总得失: ${deltaStr} 水`
+          });
+        } catch (e) {
+          console.error('Failed to record realtime replay:', e);
+        }
+
+        clearActiveMatchSession(currentAccount.phone);
+
+        if (action === 'exit') {
+          setCarriageToast({
+            show: true,
+            msg: `🎉 实时对战第 ${realtimeRound} 局提交成功！本局总得失: ${deltaStr} 水！`,
+            pts: myResult.finalPoints
+          });
+          setTimeout(() => setCarriageToast(null), 4000);
+          setGameState('menu');
+          refreshPlayerStats(currentAccount.nickname || playerName);
+          return;
+        }
+
+        if (action === 'quick_next') {
+          setCarriageToast({
+            show: true,
+            msg: `🎉 第 ${realtimeRound} 局结算完成 (${deltaStr} 水)！庄家顺延轮换，准备进入第 ${realtimeRound + 1} 局...`,
+            pts: myResult.finalPoints
+          });
+          setTimeout(() => setCarriageToast(null), 3500);
+
+          setRealtimeRound(r => r + 1);
+          setRealtimeDealerIndex(d => (d + 1) % realtimePlayers.length);
+          setGameState('realtime_dealer');
+          refreshPlayerStats(currentAccount.nickname || playerName);
+          return;
+        }
+
+        // action === 'reveal'
+        setMatchResults(allResults);
+        setGameState('revealing');
+        refreshPlayerStats(currentAccount.nickname || playerName);
+      } catch (err: any) {
+        setErrorMsg(err.message || '理牌提交失败');
+      }
+      return;
+    }
+
+    // 🚆 8人模式 / 预约场：使用包厢存储与牌池系统
+    if (mode === 'vs_ai_8p' || mode === 'reservation') {
       try {
         const res = await submitCarriageHandAndAdvance({
           carriageId,
@@ -1210,6 +1663,7 @@ export default function App() {
   // Available patterns from original hand or unplaced pool
   const availablePatterns = findAvailablePatterns(originalHand);
   const occ8P = getCurrentCarriageOccupancy('vs_ai_8p');
+  const activeSession = loadActiveMatchSession(currentAccount.phone);
 
   return (
     <div className="min-h-screen min-h-[100dvh] w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden relative">
@@ -1254,6 +1708,37 @@ export default function App() {
                   两大特色赛场 · 专注理牌 or 自由社交
                 </p>
               </div>
+
+              {/* 🛡️ 契约精神锁定横幅：存在进行中的牌局时醒目展示 */}
+              {activeSession && activeSession.originalHand && activeSession.originalHand.length === 13 && (
+                <div className="w-full p-4 rounded-3xl bg-gradient-to-r from-amber-950/70 via-slate-900 to-orange-950/70 border-2 border-amber-500/60 shadow-xl shadow-amber-950/50 flex flex-col sm:flex-row items-center justify-between gap-4 animate-in zoom-in-95 duration-200">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 text-2xl font-black shrink-0">
+                      ⚔️
+                    </div>
+                    <div>
+                      <div className="text-sm font-black text-amber-300 flex items-center gap-2">
+                        <span>契约锁定：您有一局正在进行的手牌</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black">
+                          契约精神
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-300 mt-1">
+                        {activeSession.mode === 'reservation' ? '📅 预约场' : activeSession.mode === 'realtime' ? '⚡ 实时对战场' : '八人巅峰场'}
+                        {' · '}第 <span className="font-bold text-amber-400">{activeSession.realtimeRound || activeSession.carriageIndex}</span> 局
+                        {' · '}{activeSession.carriageSeatIndex + 1}号座位 · 严禁弃牌，请继续完成本局！
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => restoreFromSavedSession(activeSession, '响应牌局契约')}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-orange-500/30 transition active:scale-95 cursor-pointer shrink-0"
+                  >
+                    <Sparkles className="w-4 h-4 text-slate-950" />
+                    <span>恢复理牌继续对局</span>
+                  </button>
+                </div>
+              )}
 
               {/* TWO GAME SECTION CARDS */}
               <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
@@ -1323,11 +1808,7 @@ export default function App() {
                       setShowNoPointsModal(true);
                       return;
                     }
-                    if (occ8P.isFull) {
-                      setErrorMsg('实时对战场当前车厢已满座 (0/8)，无法进入！');
-                      return;
-                    }
-                    startNewMatch('realtime');
+                    startRealtimeMatch();
                   }}
                   className="relative bg-gradient-to-br from-red-950/80 via-slate-900 to-amber-950/90 border-2 border-amber-500/50 p-6 sm:p-7 rounded-3xl flex flex-col justify-between gap-5 cursor-pointer transition-all duration-300 group shadow-xl hover:border-amber-400 hover:-translate-y-1 hover:shadow-red-950/80"
                 >
@@ -1336,9 +1817,9 @@ export default function App() {
                       <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-red-600 text-slate-950 flex items-center justify-center text-2xl font-black shadow-lg shadow-red-600/30 group-hover:scale-110 transition">
                         ⚡
                       </div>
-                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 animate-pulse">
-                        <MessageSquare className="w-3 h-3 text-emerald-400" />
-                        集成实时语音对讲与自由文本
+                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                        <Crown className="w-3 h-3 text-amber-400" />
+                        轮流发牌 · 庄家洗牌切牌
                       </span>
                     </div>
 
@@ -1347,30 +1828,30 @@ export default function App() {
                         实时对战场
                       </h2>
                       <p className="text-xs sm:text-sm text-slate-300 mt-1.5 leading-relaxed">
-                        8人同台极速匹配 · 集成实时语音对讲、自由文本输入与动态牌桌对讲。
+                        动态开桌 · 轮流做庄 · 至少2人就座触发发牌 · 拟真洗牌切牌与实时语音对讲。
                       </p>
                     </div>
 
                     <div className="space-y-1.5 text-xs text-slate-400 pt-1">
                       <div className="flex items-center gap-2">
                         <span className="text-amber-400 font-bold">✓</span>
-                        <span>牌桌对讲 & 自由文本打字</span>
+                        <span>庄家特权：交错洗牌 & 滑动切牌</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-amber-400 font-bold">✓</span>
-                        <span>AI 对手真实语音 & 拟真回复</span>
+                        <span>最少2人开局 · 庄家顺延轮换</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-amber-400 font-bold">✓</span>
-                        <span>7枪全垒打狂暴倍率竞技</span>
+                        <span>拟真牌桌对讲 & 战术语音</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between font-bold text-amber-400 group-hover:text-amber-300">
-                    <span className="text-sm">极速匹配进入对局</span>
+                    <span className="text-sm">进入实时发牌赛场</span>
                     <div className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-red-600 text-slate-950 text-xs font-black flex items-center gap-1.5 group-hover:translate-x-1 transition shadow-lg shadow-red-600/30">
-                      <span>立即对战</span>
+                      <span>立即入桌</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </div>
                   </div>
@@ -1398,6 +1879,20 @@ export default function App() {
             </div>
         )}
 
+        {/* 3. Realtime Dealer Stage (Shuffle & Cut Phase) */}
+        {gameState === 'realtime_dealer' && (
+          <RealtimeDealerStage
+            round={realtimeRound}
+            dealerIndex={realtimeDealerIndex}
+            players={realtimePlayers}
+            currentUserId="player_user"
+            onAddAiPlayer={handleAddRealtimeAi}
+            onRemoveAiPlayer={handleRemoveRealtimeAi}
+            onStartDeal={handleRealtimeDealComplete}
+            onBackToMenu={() => setGameState('menu')}
+          />
+        )}
+
         {/* 4. Active Game Table (Arranging / Revealing) */}
         {gameState === 'revealing' && matchResults && (
           <div className="w-full max-w-6xl flex flex-col items-center gap-6 overflow-y-auto pb-safe p-2 sm:p-4">
@@ -1406,12 +1901,28 @@ export default function App() {
               onPlayAgain={() => {
                 if (mode === 'reservation') {
                   openReservationSeatSelection();
+                } else if (mode === 'realtime') {
+                  setRealtimeRound(r => r + 1);
+                  setRealtimeDealerIndex(d => (d + 1) % realtimePlayers.length);
+                  setGameState('realtime_dealer');
                 } else {
                   startNewMatch(mode);
                 }
               }}
-              playAgainLabel={mode === 'reservation' ? '选择座位进入下一局' : '下一局 · 重新发牌'}
-              quickPlayAgainLabel={mode === 'reservation' ? '选择座位继续' : '极速再来一局 (自动发牌)'}
+              playAgainLabel={
+                mode === 'reservation'
+                  ? '选择座位进入下一局'
+                  : mode === 'realtime'
+                  ? '轮流发牌 · 进入下一局'
+                  : '下一局 · 重新发牌'
+              }
+              quickPlayAgainLabel={
+                mode === 'reservation'
+                  ? '选择座位继续'
+                  : mode === 'realtime'
+                  ? '轮换庄家发牌'
+                  : '极速再来一局 (自动发牌)'
+              }
               onBackToMenu={() => {
                 setGameState('menu');
               }}
@@ -1424,19 +1935,22 @@ export default function App() {
             {/* 🚆 Compact Carriage Header Bar with Live Seating & Chat */}
             <CarriageHeaderBar
               mode={mode}
-              currentCarriageIndex={carriageIndex}
+              currentCarriageIndex={mode === 'realtime' ? realtimeRound : carriageIndex}
               seatIndex={carriageSeatIndex}
+              dealerIndex={mode === 'realtime' ? realtimeDealerIndex : undefined}
               submissions={carriageSubmissions}
               onSeatChange={newSeat => {
-                setCarriageSeatIndex(newSeat);
-                startNewMatch(mode, newSeat);
+                if (mode !== 'realtime') {
+                  setCarriageSeatIndex(newSeat);
+                  startNewMatch(mode, newSeat);
+                }
               }}
               stats={carriageStats}
               onOpenHub={() => setShowCarriageHubModal(true)}
               points={currentAccount.points}
               onOpenChat={() => mode !== 'reservation' && setShowChatDrawer(true)}
               latestMessage={messages[messages.length - 1] || null}
-              onExit={() => setGameState('menu')}
+              onExit={() => setShowExitModal(true)}
               players={playersInMatch}
             />
 
@@ -1708,16 +2222,20 @@ export default function App() {
                 <button
                   id="btn-submit-arrangement"
                   onClick={handleSubmitArrangement}
-                  disabled={isCurrentDaoShui || (front.length + mid.length + back.length !== 13)}
+                  disabled={!useSpecialHand && (isCurrentDaoShui || (front.length + mid.length + back.length !== 13))}
                   className={`flex-1 py-2.5 sm:py-3.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl text-xs sm:text-base font-black flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg transition active:scale-95 cursor-pointer ${
-                    isCurrentDaoShui || (front.length + mid.length + back.length !== 13)
+                    !useSpecialHand && (isCurrentDaoShui || (front.length + mid.length + back.length !== 13))
                       ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
                       : 'bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-600/30'
                   }`}
                   title="提交牌型"
                 >
                   <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                  <span>提交牌型 ({front.length + mid.length + back.length}/13)</span>
+                  <span>
+                    {useSpecialHand && specialHand
+                      ? `🌟 特殊牌型提交 (+${SPECIAL_HAND_CN[specialHand].points}水)`
+                      : `提交牌型 (${front.length + mid.length + back.length}/13)`}
+                  </span>
                 </button>
               </div>
             </div>
@@ -1749,6 +2267,7 @@ export default function App() {
         onClose={() => setShowNoPointsModal(false)}
         onOpenPoints={() => setShowPointsModal(true)}
         currentPoints={currentAccount.points}
+        onPointsClaimed={() => refreshPlayerStats(currentAccount.nickname || playerName)}
       />
 
       <RuleModal isOpen={showRuleModal} onClose={() => setShowRuleModal(false)} />
@@ -1822,6 +2341,16 @@ export default function App() {
         onSelectSeat={(seatIndex) => handleSelectReservationSeat(seatIndex, seatModalRound)}
         previousRoundResult={previousRoundResult}
         onAdvanceToNextRound={() => openReservationSeatSelection(seatModalRound + 1)}
+      />
+
+      <ExitMatchModal
+        isOpen={showExitModal}
+        onClose={() => setShowExitModal(false)}
+        roundIndex={mode === 'realtime' ? realtimeRound : carriageIndex}
+        seatNumber={mode === 'realtime' ? 1 : carriageSeatIndex + 1}
+        mode={mode}
+        onAutoSubmitAndExit={handleAutoSubmitAndExit}
+        onSaveAndExit={handleSaveAndExit}
       />
 
       {/* 💬 Floating Chat Widget (仅在实时对战场显示) */}

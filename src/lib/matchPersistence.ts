@@ -7,14 +7,14 @@ export interface ActiveMatchSession {
   carriageId: string;
   carriageIndex: number;
   carriageSeatIndex: number;
-  carriageSubmissions: { [seatIndex: number]: CarriageSubmission };
-  carriageStats: CarriagePoolStats;
+  carriageSubmissions?: { [seatIndex: number]: CarriageSubmission };
+  carriageStats?: CarriagePoolStats | null;
   originalHand: Card[];
   front: Card[];
   mid: Card[];
   back: Card[];
-  pool: Card[];
-  selectedCardIds: string[];
+  pool?: Card[];
+  selectedCardIds?: string[];
   playersInMatch: {
     id: string;
     name: string;
@@ -23,9 +23,11 @@ export interface ActiveMatchSession {
     cards: Card[];
     arrangement: PlayerArrangement;
   }[];
-  specialHand: SpecialHandType | null;
-  useSpecialHand: boolean;
-  timestamp: number;
+  specialHand?: SpecialHandType | null;
+  useSpecialHand?: boolean;
+  realtimeDealerIndex?: number;
+  realtimeRound?: number;
+  timestamp?: number;
 }
 
 const ACTIVE_MATCH_STORAGE_KEY_PREFIX = 'thirteen_active_match_';

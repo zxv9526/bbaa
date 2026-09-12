@@ -639,6 +639,52 @@ export function addPoints(amount: number, type: PointsTransaction['type'], title
   return account.points;
 }
 
+// 🛡️ 破产救济金：积分归零时每日可领取一次应急救济金 (1000 积分)
+const RELIEF_KEY_PREFIX = 'thirteen_daily_relief_date_';
+
+export function canClaimDailyRelief(phone?: string): boolean {
+  const targetPhone = phone || getCurrentAccount().phone;
+  const account = getCurrentAccount();
+  if (account.points > 0) return false;
+  const lastDate = localStorage.getItem(`${RELIEF_KEY_PREFIX}${targetPhone}`);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  return lastDate !== todayStr;
+}
+
+export function claimDailyRelief(phone?: string): { success: boolean; amount: number; message: string } {
+  const targetPhone = phone || getCurrentAccount().phone;
+  const account = getCurrentAccount();
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  if (account.points > 0) {
+    return { success: false, amount: 0, message: '当前账户尚有积分，无需领取破产救济金' };
+  }
+
+  const lastDate = localStorage.getItem(`${RELIEF_KEY_PREFIX}${targetPhone}`);
+  if (lastDate === todayStr) {
+    return { success: false, amount: 0, message: '今日已领取过破产救济金，请明日再来或通过好友赠送获取积分' };
+  }
+
+  const reliefAmount = 1000;
+  account.points += reliefAmount;
+  saveAccount(account);
+  localStorage.setItem(`${RELIEF_KEY_PREFIX}${targetPhone}`, todayStr);
+
+  addPointsTransaction(
+    targetPhone,
+    'REGISTER_BONUS',
+    '领取每日破产救济礼包',
+    reliefAmount,
+    account.points
+  );
+
+  return {
+    success: true,
+    amount: reliefAmount,
+    message: `🎉 成功领取 ${reliefAmount.toLocaleString()} 积分破产救济金！祝您旗开得胜！`
+  };
+}
+
 // 积分流水明细
 export function getPointsTransactions(phone?: string): PointsTransaction[] {
   const targetPhone = phone || getCurrentAccount().phone;
