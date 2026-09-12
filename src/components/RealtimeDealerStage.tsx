@@ -324,10 +324,10 @@ export function RealtimeDealerStage({
   );
 
   return (
-    <div className="w-full max-w-5xl mx-auto flex flex-col items-center justify-between gap-4 py-2 px-2 sm:px-4 animate-in fade-in duration-300">
+    <div className="w-full max-w-5xl mx-auto flex flex-col items-center justify-center gap-2 py-1 px-2 sm:px-4 animate-in fade-in duration-300">
       
       {/* 1. Header Bar: Match Mode & Dealer Rotation Info */}
-      <div className="w-full bg-slate-900/90 border border-amber-500/30 rounded-2xl p-3 sm:p-4 backdrop-blur-md shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="w-full bg-slate-900/90 border border-amber-500/30 rounded-2xl p-2 sm:p-3 backdrop-blur-md shadow-xl flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-red-600 flex items-center justify-center text-xl font-black shadow-md text-slate-950">
             ⚡
@@ -437,18 +437,18 @@ export function RealtimeDealerStage({
       </div>
 
       {/* 3. Interactive Felt Table Center Stage */}
-      <div className="w-full relative min-h-[300px] sm:min-h-[350px] bg-gradient-to-b from-emerald-950 via-slate-900 to-emerald-950 border-2 border-emerald-700/50 rounded-3xl p-5 sm:p-8 flex flex-col items-center justify-center shadow-2xl overflow-hidden">
+      <div className="w-full relative min-h-[260px] sm:min-h-[300px] flex-1 bg-gradient-to-b from-emerald-950 via-slate-900 to-emerald-950 border-2 border-emerald-700/50 rounded-3xl p-3 sm:p-5 flex flex-col items-center justify-center shadow-2xl overflow-hidden shrink-0">
         {/* Table Felt Decorative Oval */}
         <div className="absolute inset-4 rounded-2xl border border-emerald-600/20 pointer-events-none" />
         <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-32 bg-emerald-500/5 blur-3xl pointer-events-none" />
 
         {/* CASE A: Insufficient Players (<2) */}
         {seatedCount < 2 ? (
-          <div className="flex flex-col items-center text-center gap-3 z-10 animate-fade-in">
-            <div className="w-16 h-16 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-3xl">
+          <div className="flex flex-col items-center text-center gap-2 z-10 animate-fade-in">
+            <div className="w-14 h-14 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-2xl">
               👥
             </div>
-            <h3 className="text-lg font-black text-rose-300">
+            <h3 className="text-base font-black text-rose-300">
               至少需要 2 位玩家就座才能发牌
             </h3>
             <p className="text-xs text-slate-400 max-w-sm">
@@ -456,7 +456,7 @@ export function RealtimeDealerStage({
             </p>
             <button
               onClick={onAddPlayer}
-              className="mt-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
+              className="mt-1 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm shadow-xl shadow-blue-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
             >
               <UserPlus className="w-4 h-4" />
               <span>匹配真实牌友 (立即入座)</span>
@@ -464,7 +464,7 @@ export function RealtimeDealerStage({
           </div>
         ) : isHumanDealer ? (
           /* CASE B: Human Player is Dealer -> Full Interactive Controls */
-          <div className="w-full flex flex-col items-center justify-center gap-5 z-10 animate-fade-in">
+          <div className="w-full flex flex-col items-center justify-center gap-3 z-10 animate-fade-in">
             
             {/* Dealer Prompt */}
             <div className="flex flex-col items-center text-center">

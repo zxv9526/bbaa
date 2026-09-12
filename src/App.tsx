@@ -1705,7 +1705,7 @@ export default function App() {
   const activeSession = loadActiveMatchSession(currentAccount.phone);
 
   return (
-    <div className="min-h-screen min-h-[100dvh] w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden relative">
+    <div className="h-screen h-[100dvh] w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden relative">
       {/* 1. Header Bar: Minimalist */}
       {gameState === 'menu' && (
         <header className="w-full shrink-0 z-30 px-4 sm:px-8 pt-4 pb-2 flex items-center justify-between">
@@ -1732,25 +1732,12 @@ export default function App() {
       )}
 
       {/* 2. Main Body Content: Minimalist & Clean Two Arena Blocks */}
-      <main className="flex-1 w-full max-w-5xl mx-auto px-2 sm:px-6 py-2 flex flex-col items-center justify-start overflow-y-auto no-scrollbar">
+      <main className="flex-1 w-full max-w-5xl mx-auto px-2 sm:px-6 py-0 flex flex-col items-center justify-center overflow-hidden">
         {gameState === 'menu' && (
-          <div className="w-full max-w-4xl flex flex-col items-center justify-center gap-6 py-4 sm:py-8 my-auto animate-fade-in-up">
-              {/* Hero Banner Area */}
-              <div className="flex flex-col items-center gap-1.5 text-center">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-600 flex items-center justify-center text-3xl sm:text-4xl font-black shadow-xl shadow-red-600/30 ring-4 ring-slate-950 ring-offset-2 ring-offset-amber-500/20 transform hover:scale-105 transition-transform">
-                  🀄
-                </div>
-                <h1 className="text-3xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-400 to-orange-500 tracking-tight mt-2 drop-shadow">
-                  十三水巅峰对决
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-400 font-medium tracking-wide">
-                  两大特色赛场 · 专注理牌 or 自由社交
-                </p>
-              </div>
-
+          <div className="w-full max-w-4xl flex flex-col items-center justify-center gap-4 sm:gap-6 py-2 sm:py-4 my-auto animate-fade-in-up">
               {/* 🛡️ 契约精神锁定横幅：存在进行中的牌局时醒目展示 */}
               {activeSession && activeSession.originalHand && activeSession.originalHand.length === 13 && (
-                <div className="w-full p-4 rounded-3xl bg-gradient-to-r from-amber-950/70 via-slate-900 to-orange-950/70 border-2 border-amber-500/60 shadow-xl shadow-amber-950/50 flex flex-col sm:flex-row items-center justify-between gap-4 animate-in zoom-in-95 duration-200">
+                <div className="w-full p-3 sm:p-4 rounded-3xl bg-gradient-to-r from-amber-950/70 via-slate-900 to-orange-950/70 border-2 border-amber-500/60 shadow-xl shadow-amber-950/50 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 animate-in zoom-in-95 duration-200">
                   <div className="flex items-center gap-3.5">
                     <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 text-2xl font-black shrink-0">
                       ⚔️
@@ -1792,11 +1779,11 @@ export default function App() {
                     }
                     openReservationSeatSelection();
                   }}
-                  className="relative bg-gradient-to-br from-blue-950/80 via-slate-900 to-indigo-950/90 border-2 border-blue-500/50 p-6 sm:p-7 rounded-3xl flex flex-col justify-between gap-5 cursor-pointer transition-all duration-300 group shadow-xl hover:border-blue-400 hover:-translate-y-1 hover:shadow-blue-950/80"
+                  className="relative bg-gradient-to-br from-blue-950/80 via-slate-900 to-indigo-950/90 border-2 border-blue-500/50 p-4 sm:p-5 rounded-3xl flex flex-col justify-between gap-3 sm:gap-4 cursor-pointer transition-all duration-300 group shadow-xl hover:border-blue-400 hover:-translate-y-1 hover:shadow-blue-950/80"
                 >
-                  <div className="space-y-4">
+                  <div className="space-y-2 sm:space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/40 text-blue-400 flex items-center justify-center text-2xl font-black shadow-inner group-hover:scale-110 transition">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-blue-600/20 border border-blue-500/40 text-blue-400 flex items-center justify-center text-xl sm:text-2xl font-black shadow-inner group-hover:scale-110 transition">
                         📅
                       </div>
                       <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center gap-1">
@@ -1814,23 +1801,23 @@ export default function App() {
                       </p>
                     </div>
 
-                    <div className="space-y-1.5 text-xs text-slate-400 pt-1">
-                      <div className="flex items-center gap-2">
+                    <div className="space-y-1 text-[11px] sm:text-xs text-slate-400">
+                      <div className="flex items-center gap-1.5">
                         <span className="text-blue-400 font-bold">✓</span>
                         <span>定时定场 & 赛事组房</span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <span className="text-blue-400 font-bold">✓</span>
                         <span>无语音文本干扰静音专区</span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <span className="text-blue-400 font-bold">✓</span>
                         <span>支持契约恢复与倒水校验</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between font-bold text-blue-300 group-hover:text-blue-200">
+                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between font-bold text-blue-300 group-hover:text-blue-200">
                     <span className="text-sm">进入预约场</span>
                     <div className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-black flex items-center gap-1.5 group-hover:translate-x-1 transition shadow-lg shadow-blue-600/30">
                       <span>进入预约</span>
@@ -1849,11 +1836,11 @@ export default function App() {
                     }
                     startRealtimeMatch();
                   }}
-                  className="relative bg-gradient-to-br from-red-950/80 via-slate-900 to-amber-950/90 border-2 border-amber-500/50 p-6 sm:p-7 rounded-3xl flex flex-col justify-between gap-5 cursor-pointer transition-all duration-300 group shadow-xl hover:border-amber-400 hover:-translate-y-1 hover:shadow-red-950/80"
+                  className="relative bg-gradient-to-br from-red-950/80 via-slate-900 to-amber-950/90 border-2 border-amber-500/50 p-4 sm:p-5 rounded-3xl flex flex-col justify-between gap-3 sm:gap-4 cursor-pointer transition-all duration-300 group shadow-xl hover:border-amber-400 hover:-translate-y-1 hover:shadow-red-950/80"
                 >
-                  <div className="space-y-4">
+                  <div className="space-y-2 sm:space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-red-600 text-slate-950 flex items-center justify-center text-2xl font-black shadow-lg shadow-red-600/30 group-hover:scale-110 transition">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-red-600 text-slate-950 flex items-center justify-center text-xl sm:text-2xl font-black shadow-lg shadow-red-600/30 group-hover:scale-110 transition">
                         ⚡
                       </div>
                       <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
@@ -1871,23 +1858,23 @@ export default function App() {
                       </p>
                     </div>
 
-                    <div className="space-y-1.5 text-xs text-slate-400 pt-1">
-                      <div className="flex items-center gap-2">
+                    <div className="space-y-1 text-[11px] sm:text-xs text-slate-400">
+                      <div className="flex items-center gap-1.5">
                         <span className="text-amber-400 font-bold">✓</span>
                         <span>庄家特权：交错洗牌 & 滑动切牌</span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <span className="text-amber-400 font-bold">✓</span>
                         <span>最少2人开局 · 庄家顺延轮换</span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <span className="text-amber-400 font-bold">✓</span>
                         <span>拟真牌桌对讲 & 战术语音</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between font-bold text-amber-400 group-hover:text-amber-300">
+                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between font-bold text-amber-400 group-hover:text-amber-300">
                     <span className="text-sm">进入实时发牌赛场</span>
                     <div className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-red-600 text-slate-950 text-xs font-black flex items-center gap-1.5 group-hover:translate-x-1 transition shadow-lg shadow-red-600/30">
                       <span>立即入桌</span>
@@ -1899,19 +1886,19 @@ export default function App() {
               </div>
 
               {/* Lobby Quick Tool Shelf */}
-              <div className="w-full flex flex-wrap items-center justify-center gap-3 sm:gap-4 pt-3 border-t border-slate-800/50">
+              <div className="w-full flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2 border-t border-slate-800/50">
                 <button
                   onClick={() => setShowRuleModal(true)}
-                  className="px-5 py-2.5 rounded-full bg-slate-900/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-white text-sm font-bold flex items-center gap-2.5 transition-all shadow-sm cursor-pointer"
+                  className="px-4 py-2 sm:px-5 sm:py-2.5 rounded-full bg-slate-900/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm cursor-pointer"
                 >
-                  <BookOpen className="w-4 h-4 text-indigo-400" />
+                  <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
                   <span>玩法规则</span>
                 </button>
                 <button
                   onClick={() => setShowReplayModal(true)}
-                  className="px-5 py-2.5 rounded-full bg-slate-900/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-white text-sm font-bold flex items-center gap-2.5 transition-all shadow-sm cursor-pointer"
+                  className="px-4 py-2 sm:px-5 sm:py-2.5 rounded-full bg-slate-900/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm cursor-pointer"
                 >
-                  <History className="w-4 h-4 text-amber-400" />
+                  <History className="w-3.5 h-3.5 text-amber-400" />
                   <span>我的战绩</span>
                 </button>
               </div>
@@ -1987,7 +1974,7 @@ export default function App() {
               stats={carriageStats}
               onOpenHub={() => setShowCarriageHubModal(true)}
               points={currentAccount.points}
-              onOpenChat={() => mode !== 'reservation' && setShowChatDrawer(true)}
+              onOpenChat={() => mode === 'realtime' && setShowChatDrawer(true)}
               latestMessage={messages[messages.length - 1] || null}
               onExit={() => setShowExitModal(true)}
               players={playersInMatch}
@@ -2197,7 +2184,7 @@ export default function App() {
             </div>
 
             {/* 💬 Tactical Table Chat Bar (仅在实时对战场提供语音与文本聊天功能) */}
-            {mode !== 'reservation' ? (
+            {mode === 'realtime' ? (
               <div className="w-full max-w-2xl mx-auto shrink-0 px-1 sm:px-2">
                 <TableTacticalChatBar
                   onSendMessage={handleSendMessage}
@@ -2393,8 +2380,8 @@ export default function App() {
         onSaveAndExit={handleSaveAndExit}
       />
 
-      {/* 💬 Floating Chat Widget (仅在实时对战场显示) */}
-      {mode !== 'reservation' && (
+      {/* 💬 Floating Chat Widget (仅在实时对战场显示，不在主界面显示) */}
+      {gameState !== 'menu' && mode === 'realtime' && (
         <ChatFloatingWidget
           activeMessages={messages}
           unreadCount={0}
@@ -2403,7 +2390,7 @@ export default function App() {
       )}
 
       {/* 💬 Full Voice & Text Chat Drawer (仅在实时对战场显示) */}
-      {mode !== 'reservation' && (
+      {mode === 'realtime' && (
         <ChatDrawer
           isOpen={showChatDrawer}
           onClose={() => setShowChatDrawer(false)}

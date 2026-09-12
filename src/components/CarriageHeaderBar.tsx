@@ -130,7 +130,7 @@ export function CarriageHeaderBar({
             </span>
           </div>
 
-          {!isReservation && (
+          {mode === 'realtime' && (
             <button
               onClick={onOpenChat}
               className="px-2.5 py-1 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
@@ -151,7 +151,7 @@ export function CarriageHeaderBar({
           const isOccupied = isUser || !!sub || !!playerObj;
           const avatar = isUser ? '😎' : sub ? sub.avatar : playerObj ? playerObj.avatar : '🪑';
           const name = isUser ? '我' : sub ? sub.playerName : playerObj ? playerObj.name : '待入座';
-          const isSpeaking = !isReservation && activeSpeakerId && (
+          const isSpeaking = mode === 'realtime' && activeSpeakerId && (
             (isUser && activeSpeakerId.includes('player_user')) ||
             (!isUser && playerObj && playerObj.id === activeSpeakerId) ||
             (!isUser && sub && sub.playerId === activeSpeakerId)
@@ -160,8 +160,8 @@ export function CarriageHeaderBar({
           return (
             <div
               key={s}
-              onClick={() => !isReservation && isOccupied && onOpenChat()}
-              className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-0.5 px-1 rounded-lg transition-all ${!isReservation && isOccupied ? 'cursor-pointer group' : ''} ${
+              onClick={() => mode === 'realtime' && isOccupied && onOpenChat()}
+              className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-0.5 px-1 rounded-lg transition-all ${mode === 'realtime' && isOccupied ? 'cursor-pointer group' : ''} ${
                 isUser
                   ? 'bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold'
                   : sub
