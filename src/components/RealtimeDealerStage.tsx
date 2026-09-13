@@ -600,6 +600,7 @@ export function RealtimeDealerStage({
             ttsEnabled={ttsEnabled}
             onToggleTts={onToggleTts || (() => {})}
             unreadCount={0}
+            latestMessage={latestMessage}
           />
         </div>
       )}

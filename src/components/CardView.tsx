@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import { Card } from '../types';
 import { cn } from '../lib/utils';
 import {
@@ -21,6 +22,8 @@ interface CardViewProps {
   size?: 'sm' | 'md' | 'lg';
   className?: string;
   badge?: string;
+  animateEntry?: boolean;
+  index?: number;
 }
 
 export function CardView({
@@ -32,7 +35,9 @@ export function CardView({
   highlight = false,
   size = 'md',
   className,
-  badge
+  badge,
+  animateEntry = false,
+  index = 0
 }: CardViewProps) {
   const [, setSkinVersion] = useState(0);
   const [imgErrorIndex, setImgErrorIndex] = useState(0);
@@ -170,10 +175,17 @@ export function CardView({
 
   if (!card) return null;
 
+  const motionProps = animateEntry ? {
+    initial: { opacity: 0, scale: 0.75, y: -22 },
+    animate: { opacity: 1, scale: 1, y: 0 },
+    transition: { type: 'spring' as const, stiffness: 380, damping: 26, delay: (index ?? 0) * 0.035 }
+  } : {};
+
   // Custom Raw SVG String
   if (asset?.isSvgText) {
     return (
-      <div
+      <motion.div
+        {...motionProps}
         onClick={handleClick}
         className={cn(
           sizeClasses,
@@ -196,14 +208,15 @@ export function CardView({
           className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>svg]:rounded-lg sm:[&>svg]:rounded-xl [&>svg]:border-0 [&>svg]:block"
           dangerouslySetInnerHTML={{ __html: asset.isSvgText }}
         />
-      </div>
+      </motion.div>
     );
   }
 
   // Custom Image URL
   if (!hasFallbackToDefault && currentImgUrl) {
     return (
-      <div
+      <motion.div
+        {...motionProps}
         onClick={handleClick}
         className={cn(
           sizeClasses,
@@ -230,7 +243,7 @@ export function CardView({
           className="w-full h-full object-fill rounded-lg sm:rounded-xl select-none pointer-events-none block border-0"
           loading="eager"
         />
-      </div>
+      </motion.div>
     );
   }
 
@@ -254,7 +267,8 @@ export function CardView({
         }[card.rank];
 
   return (
-    <div
+    <motion.div
+      {...motionProps}
       onClick={handleClick}
       className={cn(
         sizeClasses,
@@ -291,6 +305,6 @@ export function CardView({
         <span className="font-black text-base sm:text-lg tracking-tighter">{rankStr}</span>
         <span className="text-base sm:text-lg leading-none">{suitSymbol}</span>
       </div>
-    </div>
+    </motion.div>
   );
 }

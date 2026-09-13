@@ -35,7 +35,13 @@ import { ChatDrawer } from './components/ChatDrawer';
 import { ChatFloatingWidget } from './components/ChatFloatingWidget';
 import { TableTacticalChatBar } from './components/TableTacticalChatBar';
 import { ChatMessage, ChatMessageType } from './types';
-import { getAiReplyForMessage, speakTextMessage, AI_NAMES_POOL, createSimulatedVoiceAudioUrl } from './lib/chatManager';
+import {
+  getAiReplyForMessage,
+  speakTextMessage,
+  AI_NAMES_POOL,
+  createSimulatedVoiceAudioUrl,
+  playIncomingRadioBeep
+} from './lib/chatManager';
 import { SpecialHandLabModal } from './components/SpecialHandLabModal';
 import { initCardSkins } from './lib/cardSkin';
 import {
@@ -779,6 +785,9 @@ export default function App() {
       timestamp: Date.now()
     };
     setMessages((prev) => [...prev, userMsg]);
+    if (ttsEnabled && (type === 'quick' || type === 'text')) {
+      speakTextMessage(content);
+    }
 
     // 同桌真实牌友互动回复 (纯真人牌局体验)
     if (mode !== 'reservation') {
@@ -807,6 +816,7 @@ export default function App() {
             };
             setMessages((prev) => [...prev, playerMsg]);
             if (ttsEnabled && tableReply.replyType !== 'emoji') {
+              playIncomingRadioBeep();
               speakTextMessage(tableReply.replyContent);
             }
           }
@@ -2022,6 +2032,8 @@ export default function App() {
                         key={c.id}
                         card={c}
                         size="md"
+                        animateEntry
+                        index={idx}
                         className={idx > 0 ? '-ml-12 min-[375px]:-ml-14 min-[414px]:-ml-16 sm:-ml-20 md:-ml-23' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
@@ -2082,6 +2094,8 @@ export default function App() {
                         key={c.id}
                         card={c}
                         size="md"
+                        animateEntry
+                        index={idx + 3}
                         className={idx > 0 ? '-ml-12 min-[375px]:-ml-14 min-[414px]:-ml-16 sm:-ml-20 md:-ml-23' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
@@ -2142,6 +2156,8 @@ export default function App() {
                         key={c.id}
                         card={c}
                         size="md"
+                        animateEntry
+                        index={idx + 8}
                         className={idx > 0 ? '-ml-12 min-[375px]:-ml-14 min-[414px]:-ml-16 sm:-ml-20 md:-ml-23' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
@@ -2162,6 +2178,7 @@ export default function App() {
                   ttsEnabled={ttsEnabled}
                   onToggleTts={() => setTtsEnabled(!ttsEnabled)}
                   unreadCount={0}
+                  latestMessage={messages[messages.length - 1] || null}
                 />
               </div>
             ) : (
