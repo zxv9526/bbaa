@@ -217,6 +217,7 @@ export default function App() {
   }[]>([]);
 
   const [matchResults, setMatchResults] = useState<PlayerScoreDetail[] | null>(null);
+  const [userIsSpeaking, setUserIsSpeaking] = useState<boolean>(false);
 
   // Current Player Stats for Lobby
   const [myStats, setMyStats] = useState<PlayerStats | null>(null);
@@ -1896,6 +1897,7 @@ export default function App() {
             ttsEnabled={ttsEnabled}
             onToggleTts={() => setTtsEnabled(!ttsEnabled)}
             latestMessage={messages[messages.length - 1] || null}
+            onUserSpeakingChange={setUserIsSpeaking}
           />
         )}
 
@@ -1956,6 +1958,7 @@ export default function App() {
               points={currentAccount.points}
               onOpenChat={() => mode === 'realtime' && setShowChatDrawer(true)}
               latestMessage={messages[messages.length - 1] || null}
+              activeSpeakerId={userIsSpeaking ? 'player_user' : undefined}
               onExit={() => setShowExitModal(true)}
               players={playersInMatch}
             />
@@ -2179,6 +2182,7 @@ export default function App() {
                   onToggleTts={() => setTtsEnabled(!ttsEnabled)}
                   unreadCount={0}
                   latestMessage={messages[messages.length - 1] || null}
+                  onUserSpeakingChange={setUserIsSpeaking}
                 />
               </div>
             ) : (

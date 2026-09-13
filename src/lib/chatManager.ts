@@ -233,7 +233,7 @@ export function speakTextMessage(text: string) {
 }
 
 /**
- * Simple Audio Recorder for Voice Messages with Simulated Fallback
+ * Simple Audio Recorder for Voice Messages with Simulated Fallback & Real-time Volume Meter
  */
 export class VoiceRecorder {
   private mediaRecorder: MediaRecorder | null = null;
@@ -241,6 +241,10 @@ export class VoiceRecorder {
   private startTime: number = 0;
   private stream: MediaStream | null = null;
   private isSimulated: boolean = false;
+  private audioCtx: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private animFrameId: number | null = null;
+  public onVolume?: (vol: number) => void;
 
   async start(): Promise<void> {
     this.audioChunks = [];
@@ -249,7 +253,29 @@ export class VoiceRecorder {
 
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
-        this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+
+        // Initialize AudioContext Analyser for real-time VU meter
+        try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            this.audioCtx = new AudioContextClass();
+            const source = this.audioCtx.createMediaStreamSource(this.stream);
+            this.analyser = this.audioCtx.createAnalyser();
+            this.analyser.fftSize = 256;
+            source.connect(this.analyser);
+            this.monitorVolume();
+          }
+        } catch (e) {
+          console.warn('Volume meter initialization note:', e);
+        }
+
         let mimeType = 'audio/webm';
         if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
           mimeType = 'audio/webm;codecs=opus';
@@ -274,9 +300,57 @@ export class VoiceRecorder {
 
     // Fallback to simulated microphone recording
     this.isSimulated = true;
+    this.simulateVolumePulse();
+  }
+
+  private monitorVolume() {
+    if (!this.analyser) return;
+    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    const check = () => {
+      if (!this.analyser) return;
+      this.analyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const avg = sum / dataArray.length;
+      const normalizedVol = Math.min(100, Math.round((avg / 128) * 100));
+      if (this.onVolume) {
+        this.onVolume(normalizedVol);
+      }
+      this.animFrameId = requestAnimationFrame(check);
+    };
+    this.animFrameId = requestAnimationFrame(check);
+  }
+
+  private simulateVolumePulse() {
+    const pulse = () => {
+      if (!this.isSimulated) return;
+      const simVol = Math.floor(Math.random() * 40) + 20;
+      if (this.onVolume) {
+        this.onVolume(simVol);
+      }
+      this.animFrameId = requestAnimationFrame(pulse);
+    };
+    this.animFrameId = requestAnimationFrame(pulse);
+  }
+
+  private cleanupAudioCtx() {
+    if (this.animFrameId) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+    }
+    if (this.audioCtx && this.audioCtx.state !== 'closed') {
+      try {
+        this.audioCtx.close();
+      } catch {}
+      this.audioCtx = null;
+    }
+    this.analyser = null;
   }
 
   stop(): Promise<{ audioBlob: Blob | null; audioUrl: string; duration: number }> {
+    this.cleanupAudioCtx();
     return new Promise((resolve) => {
       const duration = Math.max(1, Math.round((Date.now() - this.startTime) / 1000));
 
@@ -308,18 +382,187 @@ export class VoiceRecorder {
   }
 
   cancel(): void {
+    this.cleanupAudioCtx();
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
       try {
         this.mediaRecorder.stop();
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
     if (this.stream) {
       this.stream.getTracks().forEach((track) => track.stop());
       this.stream = null;
     }
     this.audioChunks = [];
+  }
+}
+
+/**
+ * Real-time Open Mic (自由麦) Controller with Live Voice Activity Detection (VAD)
+ */
+export class OpenMicListener {
+  private stream: MediaStream | null = null;
+  private audioCtx: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private animFrameId: number | null = null;
+  private isMuted: boolean = false;
+  private isSpeaking: boolean = false;
+  private silenceTimeout: any = null;
+  private mediaRecorder: MediaRecorder | null = null;
+  private recordedChunks: Blob[] = [];
+  private recordingStartTime: number = 0;
+
+  public onVolume?: (vol: number) => void;
+  public onSpeakingChange?: (speaking: boolean) => void;
+  public onVoiceSnippet?: (audioUrl: string, duration: number) => void;
+
+  async start(): Promise<boolean> {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return false;
+    }
+
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        this.audioCtx = new AudioContextClass();
+        const source = this.audioCtx.createMediaStreamSource(this.stream);
+        this.analyser = this.audioCtx.createAnalyser();
+        this.analyser.fftSize = 256;
+        source.connect(this.analyser);
+        this.loop();
+      }
+      return true;
+    } catch (err) {
+      console.warn('OpenMic permission or device error:', err);
+      return false;
+    }
+  }
+
+  setMuted(muted: boolean) {
+    this.isMuted = muted;
+    if (this.stream) {
+      this.stream.getAudioTracks().forEach(track => {
+        track.enabled = !muted;
+      });
+    }
+    if (muted && this.isSpeaking) {
+      this.isSpeaking = false;
+      if (this.onSpeakingChange) this.onSpeakingChange(false);
+    }
+  }
+
+  private loop() {
+    if (!this.analyser || this.isMuted) {
+      this.animFrameId = requestAnimationFrame(() => this.loop());
+      return;
+    }
+
+    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    this.analyser.getByteFrequencyData(dataArray);
+
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      sum += dataArray[i];
+    }
+    const avg = sum / dataArray.length;
+    const normalizedVol = Math.min(100, Math.round((avg / 128) * 100));
+
+    if (this.onVolume) {
+      this.onVolume(normalizedVol);
+    }
+
+    // Voice Activity Detection (VAD) Threshold
+    const SPEECH_THRESHOLD = 14;
+
+    if (normalizedVol >= SPEECH_THRESHOLD) {
+      if (!this.isSpeaking) {
+        this.isSpeaking = true;
+        if (this.onSpeakingChange) this.onSpeakingChange(true);
+        this.startSnippetRecord();
+      }
+      if (this.silenceTimeout) {
+        clearTimeout(this.silenceTimeout);
+        this.silenceTimeout = null;
+      }
+    } else if (this.isSpeaking && !this.silenceTimeout) {
+      // 1.2 seconds of silence before finishing speech
+      this.silenceTimeout = setTimeout(() => {
+        this.isSpeaking = false;
+        if (this.onSpeakingChange) this.onSpeakingChange(false);
+        this.finishSnippetRecord();
+        this.silenceTimeout = null;
+      }, 1200);
+    }
+
+    this.animFrameId = requestAnimationFrame(() => this.loop());
+  }
+
+  private startSnippetRecord() {
+    if (!this.stream) return;
+    this.recordedChunks = [];
+    this.recordingStartTime = Date.now();
+    try {
+      let mimeType = 'audio/webm';
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        mimeType = 'audio/webm;codecs=opus';
+      }
+      this.mediaRecorder = new MediaRecorder(this.stream, { mimeType });
+      this.mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) this.recordedChunks.push(e.data);
+      };
+      this.mediaRecorder.start(100);
+    } catch {}
+  }
+
+  private finishSnippetRecord() {
+    if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') return;
+    try {
+      this.mediaRecorder.onstop = () => {
+        const duration = Math.max(1, Math.round((Date.now() - this.recordingStartTime) / 1000));
+        if (duration >= 1 && this.recordedChunks.length > 0) {
+          const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder?.mimeType || 'audio/webm' });
+          const url = URL.createObjectURL(blob);
+          if (this.onVoiceSnippet) {
+            this.onVoiceSnippet(url, duration);
+          }
+        }
+      };
+      this.mediaRecorder.stop();
+    } catch {}
+  }
+
+  stop() {
+    if (this.animFrameId) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+    }
+    if (this.silenceTimeout) {
+      clearTimeout(this.silenceTimeout);
+      this.silenceTimeout = null;
+    }
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      try {
+        this.mediaRecorder.stop();
+      } catch {}
+    }
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
+    }
+    if (this.audioCtx && this.audioCtx.state !== 'closed') {
+      try {
+        this.audioCtx.close();
+      } catch {}
+      this.audioCtx = null;
+    }
+    this.isSpeaking = false;
   }
 }
 

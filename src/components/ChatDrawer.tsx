@@ -53,6 +53,7 @@ export function ChatDrawer({
   const [isRecording, setIsRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [recordError, setRecordError] = useState<string | null>(null);
+  const [drawerVolume, setDrawerVolume] = useState<number>(0);
   const voiceRecorderRef = useRef<VoiceRecorder | null>(null);
   const recordTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -114,6 +115,7 @@ export function ChatDrawer({
     setRecordError(null);
     try {
       const recorder = new VoiceRecorder();
+      recorder.onVolume = (vol) => setDrawerVolume(vol);
       voiceRecorderRef.current = recorder;
       await recorder.start();
       setIsRecording(true);
@@ -363,7 +365,7 @@ export function ChatDrawer({
                         {msg.type === 'voice' ? (
                           <button
                             onClick={() => handlePlayVoice(msg)}
-                            className={`px-4 py-2 rounded-2xl font-bold text-xs flex items-center gap-2 cursor-pointer shadow transition active:scale-95 ${
+                            className={`px-3.5 py-2 rounded-2xl font-bold text-xs flex items-center gap-2 cursor-pointer shadow transition active:scale-95 ${
                               isMe
                                 ? 'bg-emerald-600 text-white hover:bg-emerald-500'
                                 : 'bg-slate-800 text-emerald-300 border border-emerald-500/30 hover:bg-slate-750'
@@ -375,7 +377,17 @@ export function ChatDrawer({
                               <Play className="w-3.5 h-3.5 fill-current text-white" />
                             )}
                             <span>语音 {msg.audioDuration || 2}"</span>
-                            <span className="text-xs">🔊</span>
+                            {/* Animated Audio Equalizer when playing */}
+                            {playingAudioId === msg.id ? (
+                              <div className="flex items-end gap-0.5 h-3.5 ml-1">
+                                <span className="w-0.5 h-2 bg-white animate-pulse" />
+                                <span className="w-0.5 h-3.5 bg-white animate-bounce" />
+                                <span className="w-0.5 h-1.5 bg-white animate-pulse" />
+                                <span className="w-0.5 h-3 bg-white animate-bounce" />
+                              </div>
+                            ) : (
+                              <span className="text-xs opacity-75">🔊</span>
+                            )}
                           </button>
                         ) : msg.type === 'emoji' ? (
                           <div className="text-3xl p-1 animate-in zoom-in-50">{msg.content}</div>
@@ -400,23 +412,38 @@ export function ChatDrawer({
           )}
         </div>
 
-        {/* Recording Overlay / Audio Controller */}
+        {/* Recording Overlay / Audio Controller with Live VU Meter */}
         {isRecording && (
           <div className="p-4 bg-rose-950/60 border-t border-rose-500/40 flex items-center justify-between gap-4 animate-in fade-in">
             <div className="flex items-center gap-3">
               <div className="w-3.5 h-3.5 rounded-full bg-rose-500 animate-ping" />
               <div>
-                <div className="text-xs font-black text-rose-200">
-                  正在录音... <span className="font-mono text-white text-sm">{recordSeconds}s</span> / 10s
+                <div className="text-xs font-black text-rose-200 flex items-center gap-2">
+                  <span>正在录音...</span>
+                  <span className="font-mono text-white text-sm">{recordSeconds}s</span>
+                  <span className="text-rose-300/80">/ 10s</span>
+                  {/* Dynamic 5-bar VU meter */}
+                  <div className="flex items-end gap-0.5 h-3 ml-1.5">
+                    {[1, 2, 3, 4, 5].map((lvl) => (
+                      <span
+                        key={lvl}
+                        className={`w-0.5 rounded-full transition-all duration-75 ${
+                          drawerVolume >= lvl * 18
+                            ? lvl > 3 ? 'bg-amber-400 h-3' : 'bg-emerald-400 h-2.5'
+                            : 'bg-white/20 h-1'
+                        }`}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div className="text-[10px] text-rose-300">松开或点击停止即可发送语音</div>
+                <div className="text-[10px] text-rose-300">松开或点击停止即可发送实时语音</div>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 onClick={handleCancelRecord}
-                className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition"
+                className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition cursor-pointer"
               >
                 取消
               </button>

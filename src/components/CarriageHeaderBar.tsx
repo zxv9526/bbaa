@@ -16,6 +16,7 @@ interface CarriageHeaderBarProps {
   onOpenChat: () => void;
   unreadChatCount?: number;
   latestMessage?: ChatMessage | null;
+  activeSpeakerId?: string | null;
   onExit?: () => void;
   players?: { id: string; name: string; avatar: string; isAi: boolean }[];
 }
@@ -33,6 +34,7 @@ export function CarriageHeaderBar({
   onOpenChat,
   unreadChatCount = 0,
   latestMessage,
+  activeSpeakerId: externalSpeakerId,
   onExit,
   players = []
 }: CarriageHeaderBarProps) {
@@ -151,10 +153,11 @@ export function CarriageHeaderBar({
           const isOccupied = isUser || !!sub || !!playerObj;
           const avatar = isUser ? '😎' : sub ? sub.avatar : playerObj ? playerObj.avatar : '🪑';
           const name = isUser ? '我' : sub ? sub.playerName : playerObj ? playerObj.name : '待入座';
-          const isSpeaking = mode === 'realtime' && activeSpeakerId && (
-            (isUser && activeSpeakerId.includes('player_user')) ||
-            (!isUser && playerObj && playerObj.id === activeSpeakerId) ||
-            (!isUser && sub && sub.playerId === activeSpeakerId)
+          const effectiveSpeakerId = externalSpeakerId || activeSpeakerId;
+          const isSpeaking = mode === 'realtime' && effectiveSpeakerId && (
+            (isUser && effectiveSpeakerId.includes('player_user')) ||
+            (!isUser && playerObj && playerObj.id === effectiveSpeakerId) ||
+            (!isUser && sub && sub.playerId === effectiveSpeakerId)
           );
 
           return (
@@ -163,7 +166,7 @@ export function CarriageHeaderBar({
               onClick={() => mode === 'realtime' && isOccupied && onOpenChat()}
               className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-0.5 px-1 rounded-lg transition-all border ${mode === 'realtime' && isOccupied ? 'cursor-pointer group' : ''} ${
                 isSpeaking
-                  ? 'bg-red-950/60 border-red-500 shadow-md shadow-red-500/30 animate-pulse ring-1 ring-red-400'
+                  ? 'bg-emerald-950/70 border-emerald-400 shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400/80'
                   : isUser
                   ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 font-bold'
                   : sub
@@ -175,9 +178,9 @@ export function CarriageHeaderBar({
               title={`${s + 1}号位: ${name}`}
             >
               {/* Floating speech bubble over active speaker */}
-              {isSpeaking && speakerSnippet && (
+              {isSpeaking && (speakerSnippet || isUser) && (
                 <div className="absolute -top-7 z-20 bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap animate-bounce flex items-center gap-1 border border-emerald-300">
-                  <span>{speakerSnippet}</span>
+                  <span>{isUser ? '🎙️ 发言中' : speakerSnippet}</span>
                 </div>
               )}
 

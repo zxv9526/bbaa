@@ -45,6 +45,7 @@ interface RealtimeDealerStageProps {
   ttsEnabled?: boolean;
   onToggleTts?: () => void;
   latestMessage?: ChatMessage | null;
+  onUserSpeakingChange?: (speaking: boolean) => void;
 }
 
 export function RealtimeDealerStage({
@@ -60,7 +61,8 @@ export function RealtimeDealerStage({
   onOpenFullChat,
   ttsEnabled = true,
   onToggleTts,
-  latestMessage = null
+  latestMessage = null,
+  onUserSpeakingChange
 }: RealtimeDealerStageProps) {
   const seatedCount = players.length;
   const currentDealer = players[dealerIndex] || players[0];
@@ -601,6 +603,7 @@ export function RealtimeDealerStage({
             onToggleTts={onToggleTts || (() => {})}
             unreadCount={0}
             latestMessage={latestMessage}
+            onUserSpeakingChange={onUserSpeakingChange}
           />
         </div>
       )}
