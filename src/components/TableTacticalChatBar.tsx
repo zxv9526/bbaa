@@ -11,7 +11,8 @@ import {
   X,
   Sparkles,
   Headphones,
-  Sliders
+  Sliders,
+  Smile
 } from 'lucide-react';
 import {
   VoiceRecorder,
@@ -19,13 +20,14 @@ import {
   playRadioChirpStart,
   playRadioChirpEnd,
   createSimulatedVoiceAudioUrl,
-  QUICK_PHRASE_GROUPS
+  QUICK_PHRASE_GROUPS,
+  CHAT_EMOJIS
 } from '../lib/chatManager';
 import { triggerHaptic } from '../lib/haptics';
 import { ChatMessage } from '../types';
 
 interface TableTacticalChatBarProps {
-  onSendMessage: (type: 'text' | 'voice' | 'quick', content: string, audioUrl?: string, audioDuration?: number) => void;
+  onSendMessage: (type: 'text' | 'voice' | 'quick' | 'emoji', content: string, audioUrl?: string, audioDuration?: number) => void;
   onOpenFullChat: () => void;
   ttsEnabled: boolean;
   onToggleTts: () => void;
@@ -49,6 +51,7 @@ export function TableTacticalChatBar({
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [showQuickVoice, setShowQuickVoice] = useState(false);
+  const [showQuickEmoji, setShowQuickEmoji] = useState(false);
   const [currentVolume, setCurrentVolume] = useState<number>(0);
   const [voiceMode, setVoiceMode] = useState<'ptt' | 'openMic'>('ptt');
   const [isOpenMicActive, setIsOpenMicActive] = useState(false);
@@ -61,6 +64,8 @@ export function TableTacticalChatBar({
     avatar: string;
     text: string;
     isVoice: boolean;
+    seatBadge?: string;
+    dealerBadge?: boolean;
   } | null>(null);
 
   const recorderRef = useRef<VoiceRecorder | null>(null);
@@ -77,16 +82,22 @@ export function TableTacticalChatBar({
       if (isRecent) {
         if (speakerTimerRef.current) clearTimeout(speakerTimerRef.current);
         
+        const seatBadge = typeof latestMessage.seatIndex === 'number'
+          ? `${latestMessage.seatIndex + 1}号位`
+          : undefined;
+
         setActiveSpeaker({
           id: latestMessage.senderId,
           name: latestMessage.senderName,
           avatar: latestMessage.senderAvatar || '👤',
           text: latestMessage.type === 'voice' 
             ? '正在语音对讲中...' 
-            : latestMessage.content.length > 10 
-            ? latestMessage.content.slice(0, 10) + '...' 
+            : latestMessage.content.length > 14 
+            ? latestMessage.content.slice(0, 14) + '...' 
             : latestMessage.content,
-          isVoice: latestMessage.type === 'voice'
+          isVoice: latestMessage.type === 'voice',
+          seatBadge,
+          dealerBadge: latestMessage.isDealer
         });
 
         speakerTimerRef.current = setTimeout(() => {
@@ -275,6 +286,12 @@ export function TableTacticalChatBar({
     onSendMessage('voice', phrase, audioUrl, 2);
   };
 
+  const handleSendQuickEmoji = (emoji: string) => {
+    triggerHaptic('light');
+    setShowQuickEmoji(false);
+    onSendMessage('emoji', emoji);
+  };
+
   // Calculate live volume LED bar active count (1 to 5)
   const volumeLevel = Math.min(5, Math.ceil(currentVolume / 18));
 
@@ -286,7 +303,7 @@ export function TableTacticalChatBar({
           <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800">
             <div className="flex items-center gap-1.5 text-xs font-black text-amber-300">
               <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-              <span>战术快捷语音 (真人无线电电波)</span>
+              <span>战术快捷语音 (电台播报)</span>
             </div>
             <button
               onClick={() => setShowQuickVoice(false)}
@@ -297,7 +314,7 @@ export function TableTacticalChatBar({
           </div>
 
           <div className="grid grid-cols-1 gap-1 max-h-52 overflow-y-auto no-scrollbar">
-            {QUICK_PHRASE_GROUPS.flatMap(g => g.phrases).slice(0, 10).map((phrase, idx) => (
+            {QUICK_PHRASE_GROUPS.flatMap(g => g.phrases).slice(0, 12).map((phrase, idx) => (
               <button
                 key={idx}
                 onClick={() => handleSendQuickVoicePhrase(phrase)}
@@ -305,6 +322,36 @@ export function TableTacticalChatBar({
               >
                 <span className="truncate">{phrase}</span>
                 <span className="text-[10px] text-indigo-300 opacity-0 group-hover:opacity-100 transition shrink-0 ml-1">🔊 广播</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 😀 Quick Emoji Reaction Popover */}
+      {showQuickEmoji && (
+        <div className="absolute bottom-full left-12 sm:left-24 mb-2 w-64 bg-slate-900/95 border border-amber-500/50 rounded-2xl p-2.5 shadow-2xl backdrop-blur-md z-50 animate-in slide-in-from-bottom-2 fade-in">
+          <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-slate-800">
+            <div className="flex items-center gap-1.5 text-xs font-black text-amber-300">
+              <Smile className="w-3.5 h-3.5 text-amber-400" />
+              <span>快速表情反应</span>
+            </div>
+            <button
+              onClick={() => setShowQuickEmoji(false)}
+              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-6 gap-1.5 max-h-44 overflow-y-auto no-scrollbar">
+            {CHAT_EMOJIS.slice(0, 18).map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => handleSendQuickEmoji(emoji)}
+                className="h-9 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 flex items-center justify-center text-lg hover:scale-125 active:scale-90 transition cursor-pointer"
+              >
+                {emoji}
               </button>
             ))}
           </div>
@@ -418,7 +465,10 @@ export function TableTacticalChatBar({
 
               {/* ⚡ Quick Voice Tactical Phrases Button */}
               <button
-                onClick={() => setShowQuickVoice(!showQuickVoice)}
+                onClick={() => {
+                  setShowQuickVoice(!showQuickVoice);
+                  setShowQuickEmoji(false);
+                }}
                 className={`px-2 py-1 rounded-xl border text-xs font-bold flex items-center gap-1 transition active:scale-95 shadow cursor-pointer ${
                   showQuickVoice
                     ? 'bg-amber-500/20 border-amber-400 text-amber-300'
@@ -428,6 +478,22 @@ export function TableTacticalChatBar({
               >
                 <Zap className="w-3.5 h-3.5 fill-current" />
                 <span className="hidden sm:inline">快捷</span>
+              </button>
+
+              {/* 😀 Quick Emoji Button */}
+              <button
+                onClick={() => {
+                  setShowQuickEmoji(!showQuickEmoji);
+                  setShowQuickVoice(false);
+                }}
+                className={`px-1.5 py-1 rounded-xl border text-xs font-bold flex items-center gap-1 transition active:scale-95 shadow cursor-pointer ${
+                  showQuickEmoji
+                    ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                    : 'bg-slate-800/80 hover:bg-slate-750 border-slate-700 text-amber-400/90 hover:text-amber-300'
+                }`}
+                title="表情反应"
+              >
+                <Smile className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
@@ -462,8 +528,18 @@ export function TableTacticalChatBar({
 
             {/* Speaker identity & content */}
             <div className="flex-1 min-w-0 flex items-center justify-between gap-1">
-              <div className="flex items-center gap-1 truncate">
-                <span className="text-xs font-black text-amber-300 truncate max-w-[70px] sm:max-w-[100px]">
+              <div className="flex items-center gap-1.5 truncate">
+                {activeSpeaker.seatBadge && (
+                  <span className="px-1 py-0.2 rounded text-[9px] font-black bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 shrink-0">
+                    {activeSpeaker.seatBadge}
+                  </span>
+                )}
+                {activeSpeaker.dealerBadge && (
+                  <span className="px-1 py-0.2 rounded text-[9px] font-black bg-amber-500/30 text-amber-200 border border-amber-400/40 shrink-0">
+                    👑庄
+                  </span>
+                )}
+                <span className="text-xs font-black text-amber-300 truncate max-w-[65px] sm:max-w-[90px]">
                   {activeSpeaker.name}
                 </span>
                 <span className="text-[11px] text-emerald-200/90 truncate">
@@ -511,7 +587,9 @@ export function TableTacticalChatBar({
             <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
             <span className="hidden sm:inline">聊天</span>
             {unreadCount > 0 && (
-              <span className="w-2 h-2 rounded-full bg-rose-500 absolute -top-0.5 -right-0.5" />
+              <span className="px-1.5 py-0.2 min-w-[16px] text-center rounded-full bg-rose-500 text-white text-[9px] font-black absolute -top-1 -right-1 shadow-md animate-pulse">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
             )}
           </button>
         </div>

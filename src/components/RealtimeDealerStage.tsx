@@ -13,9 +13,8 @@ import {
   Crown,
   ChevronRight,
   ShieldCheck,
-  UserPlus,
-  UserMinus,
-  FastForward,
+  Radio,
+  ExternalLink,
   Volume2
 } from 'lucide-react';
 
@@ -36,11 +35,11 @@ interface RealtimeDealerStageProps {
   dealerIndex: number;
   players: RealtimeSeatPlayer[];
   currentUserId: string;
-  onAddPlayer: () => void;
-  onRemovePlayer: () => void;
+  onAddPlayer?: () => void;
+  onRemovePlayer?: () => void;
   onStartDeal: (dealtHands: { [playerId: string]: Card[] }, dealerIndex: number) => void;
   onBackToMenu: () => void;
-  onSendMessage?: (type: 'text' | 'voice' | 'quick', content: string, audioUrl?: string, audioDuration?: number) => void;
+  onSendMessage?: (type: 'text' | 'voice' | 'quick' | 'emoji', content: string, audioUrl?: string, audioDuration?: number) => void;
   onOpenFullChat?: () => void;
   ttsEnabled?: boolean;
   onToggleTts?: () => void;
@@ -54,6 +53,7 @@ interface RealtimeDealerStageProps {
   onDealerCut?: (pos: number, card: Card) => void;
   onDealerDeal?: (dealtHands: { [playerId: string]: Card[] }, dealerIndex: number) => void;
   onRotateDealer?: (newDealerIndex: number) => void;
+  unreadCount?: number;
 }
 
 export function RealtimeDealerStage({
@@ -78,7 +78,8 @@ export function RealtimeDealerStage({
   onDealerShuffle,
   onDealerCut,
   onDealerDeal,
-  onRotateDealer
+  onRotateDealer,
+  unreadCount = 0
 }: RealtimeDealerStageProps) {
   const seatedCount = players.length;
   const currentDealer = players[dealerIndex] || players[0];
@@ -160,50 +161,6 @@ export function RealtimeDealerStage({
     }
   }, [syncedIsDealing, isHumanDealer, seatedCount]);
 
-  // Seated AI Player Dealer routine (ONLY runs when the dealer is a simulated/AI bot)
-  useEffect(() => {
-    if (!isHumanDealer && currentDealer?.isAi && seatedCount >= 2) {
-      setDealerStep('shuffling');
-      setIsShuffling(true);
-      sounds.playShuffle();
-      triggerHaptic('medium');
-
-      const timer1 = setTimeout(() => {
-        setIsShuffling(false);
-        setShuffleCount(1);
-        setDealerStep('cutting');
-        setIsCutting(true);
-        sounds.playCut();
-        triggerHaptic('heavy');
-
-        const cutIdx = Math.floor(deck.length * (0.35 + Math.random() * 0.3));
-        const { deck: cutResult, cutCard: cCard } = cutDeck(shuffle(deck), cutIdx);
-        setDeck(cutResult);
-        setCutCard(cCard);
-
-        const timer2 = setTimeout(() => {
-          setIsCutting(false);
-          setDealerStep('dealing');
-          setIsDealing(true);
-          sounds.playDealSequence(seatedCount);
-
-          const timer3 = setTimeout(() => {
-            executeFinalDeal(cutResult);
-          }, 900);
-          animationTimerRef.current = timer3;
-        }, 800);
-        animationTimerRef.current = timer2;
-      }, 1300);
-      animationTimerRef.current = timer1;
-    }
-
-    return () => {
-      if (animationTimerRef.current) {
-        clearTimeout(animationTimerRef.current);
-      }
-    };
-  }, [dealerIndex, isHumanDealer, currentDealer?.isAi, seatedCount]);
-
   // Manual Shuffle Trigger (Dealer only)
   const handleManualShuffle = () => {
     if (!isHumanDealer || isShuffling || isDealing) return;
@@ -273,14 +230,6 @@ export function RealtimeDealerStage({
     setTimeout(() => {
       executeFinalDeal(deck);
     }, 850);
-  };
-
-  const handleSkipAiAnimation = () => {
-    if (animationTimerRef.current) {
-      clearTimeout(animationTimerRef.current);
-    }
-    const finalShuffled = shuffle(deck);
-    executeFinalDeal(finalShuffled);
   };
 
   // Tactical Urge Dealer (Non-dealer feature)
@@ -505,25 +454,13 @@ export function RealtimeDealerStage({
             </span>
           </div>
 
-          {/* Add / Remove Player Controls (Simulate players joining/leaving without manual seat picking) */}
+          {/* Live Pure Human Status */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={onRemovePlayer}
-              disabled={seatedCount <= 1}
-              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition cursor-pointer"
-              title="减少一名席位玩家"
-            >
-              <UserMinus className="w-3 h-3" />
-            </button>
-            <button
-              onClick={onAddPlayer}
-              disabled={seatedCount >= 8}
-              className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/50 text-emerald-300 hover:text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition cursor-pointer shadow-sm"
-              title="邀请/匹配牌友顺序入座"
-            >
-              <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
-              <span>匹配牌友加入</span>
-            </button>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>纯真人联机局</span>
+              <span className="text-slate-500 font-normal">· 无人机补位</span>
+            </div>
           </div>
         </div>
 
@@ -625,13 +562,22 @@ export function RealtimeDealerStage({
               </p>
             </div>
 
-            <button
-              onClick={onAddPlayer}
-              className="mt-1 px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm shadow-xl shadow-emerald-600/30 flex items-center gap-2 transition active:scale-95 cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>匹配牌友加入 (立即开启发牌)</span>
-            </button>
+            <div className="flex flex-col sm:flex-row items-center gap-2 mt-2 w-full justify-center">
+              <button
+                onClick={() => {
+                  try {
+                    window.open(window.location.href, '_blank');
+                  } catch (e) {
+                    console.log(e);
+                  }
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+                title="在另一个浏览器标签页打开游戏，使用不同手机号/账号进入实时场体验真实多人对战"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>新标签页联机对战 (多账号同桌)</span>
+              </button>
+            </div>
           </div>
         ) : isHumanDealer ? (
           /* CASE B: Human Player is Dealer -> Full Interactive Controls */
@@ -777,24 +723,14 @@ export function RealtimeDealerStage({
                 <span>战术催促发牌</span>
               </button>
 
-              {currentDealer?.isAi ? (
-                <button
-                  onClick={handleSkipAiAnimation}
-                  className="px-4 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-600 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow"
-                >
-                  <FastForward className="w-3.5 h-3.5 text-amber-400" />
-                  <span>跳过动画 · 直接理牌</span>
-                </button>
-              ) : (
-                <button
-                  onClick={handleClaimDealerRole}
-                  className="px-4 py-2 rounded-xl bg-blue-900/40 hover:bg-blue-800/60 border border-blue-500/40 text-blue-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow"
-                  title="庄家若暂未操作，可申请换我当庄"
-                >
-                  <Crown className="w-3.5 h-3.5 text-amber-400" />
-                  <span>申请换我当庄</span>
-                </button>
-              )}
+              <button
+                onClick={handleClaimDealerRole}
+                className="px-4 py-2 rounded-xl bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow"
+                title="庄家若暂未操作，可申请由我发牌"
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span>申请换我发牌</span>
+              </button>
             </div>
           </div>
         )}
@@ -824,7 +760,7 @@ export function RealtimeDealerStage({
                 onOpenFullChat={onOpenFullChat}
                 ttsEnabled={ttsEnabled}
                 onToggleTts={onToggleTts || (() => {})}
-                unreadCount={0}
+                unreadCount={unreadCount}
                 latestMessage={latestMessage}
                 onUserSpeakingChange={onUserSpeakingChange}
               />

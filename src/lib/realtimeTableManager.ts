@@ -1,4 +1,4 @@
-import { Card } from '../types';
+import { Card, ChatMessage } from '../types';
 import { createDeck, createDoubleDeck, shuffle } from '../gameLogic';
 
 export interface RealtimeSeatPlayer {
@@ -37,9 +37,11 @@ export type RealtimeTableEvent =
   | { type: 'DEALER_CUT'; cutSliderPos: number; cutCard: Card; timestamp: number }
   | { type: 'DEALER_DEAL'; dealtHands: { [playerId: string]: Card[] }; dealerIndex: number; timestamp: number }
   | { type: 'NEXT_ROUND'; round: number; dealerIndex: number; dealerId: string; state: RealtimeTableState }
-  | { type: 'RESET_TABLE'; state: RealtimeTableState };
+  | { type: 'RESET_TABLE'; state: RealtimeTableState }
+  | { type: 'CHAT_MESSAGE'; message: ChatMessage };
 
 const TABLE_STORAGE_KEY = 'thirteen_realtime_arena_active_table';
+const TABLE_CHAT_STORAGE_KEY = 'thirteen_realtime_arena_chat_messages';
 const CHANNEL_NAME = 'thirteen_realtime_table_sync_channel';
 
 // Singleton BroadcastChannel for cross-tab and cross-window sync
@@ -57,6 +59,36 @@ function getChannel(): BroadcastChannel | null {
     }
   }
   return channel;
+}
+
+// Read table chat messages from localStorage
+export function getRealtimeChatMessages(): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem(TABLE_CHAT_STORAGE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as ChatMessage[];
+  } catch {
+    return [];
+  }
+}
+
+// Save chat message & broadcast to table
+export function saveAndBroadcastChatMessage(msg: ChatMessage): void {
+  try {
+    const existing = getRealtimeChatMessages();
+    const updated = [...existing.slice(-49), msg]; // Keep latest 50 messages
+    localStorage.setItem(TABLE_CHAT_STORAGE_KEY, JSON.stringify(updated));
+  } catch {
+    // ignore
+  }
+  broadcastEvent({ type: 'CHAT_MESSAGE', message: msg });
+}
+
+// Clear table chat messages
+export function clearRealtimeChatMessages(): void {
+  try {
+    localStorage.removeItem(TABLE_CHAT_STORAGE_KEY);
+  } catch {}
 }
 
 // Read table from localStorage
@@ -90,6 +122,7 @@ export function saveRealtimeTable(state: RealtimeTableState): void {
 export function clearRealtimeTable(): void {
   try {
     localStorage.removeItem(TABLE_STORAGE_KEY);
+    localStorage.removeItem(TABLE_CHAT_STORAGE_KEY);
     const ch = getChannel();
     if (ch) {
       ch.postMessage({ type: 'RESET_TABLE', state: null });
@@ -108,11 +141,11 @@ export function joinOrCreateRealtimeTable(currentUser: {
   const existing = getSavedRealtimeTable();
   const userId = currentUser.id;
 
-  // Stale or AI-only cleanup: if table only has AI or inactive for > 5 min, reset cleanly
-  const hasOtherRealHuman = existing?.seats?.some(s => s.id !== userId && !s.isAi);
+  // Stale cleanup: if inactive for > 5 min, reset cleanly
+  const hasOtherPlayer = existing?.seats?.some(s => s.id !== userId);
   const isStale = existing ? (Date.now() - (existing.lastUpdated || 0) > 5 * 60 * 1000) : true;
 
-  if (existing && existing.seats && existing.seats.length > 0 && hasOtherRealHuman && !isStale) {
+  if (existing && existing.seats && existing.seats.length > 0 && hasOtherPlayer && !isStale) {
     // 1. Check if currentUser is already in the seats
     const seatIdx = existing.seats.findIndex(s => s.id === userId);
     if (seatIdx !== -1) {

@@ -18,6 +18,17 @@ export const QUICK_PHRASE_GROUPS: QuickPhraseCategory[] = [
     ]
   },
   {
+    category: '出牌交锋',
+    icon: '🃏',
+    phrases: [
+      '三清同花顺，免摆直接起飞！',
+      '这把庄家发得好牌，准备看枪！',
+      '倒水可就直接全赔了哦，谨慎摆牌！',
+      '乌龙就别硬撑了，速速投降！',
+      '全垒打通杀八方，承让了！'
+    ]
+  },
+  {
     category: '气势攻心',
     icon: '🔥',
     phrases: [
@@ -54,7 +65,9 @@ export const CHAT_EMOJIS = [
   '😆', '😎', '🤣', '😭', 
   '😡', '😱', '🔥', '👏', 
   '💣', '🍗', '🍻', '💯', 
-  '👍', '🙏', '🎉', '😈'
+  '👍', '🙏', '🎉', '😈',
+  '🤡', '🤑', '🤐', '👀',
+  '🃏', '👑', '🍵', '⚡'
 ];
 
 export const AI_NAMES_POOL = [

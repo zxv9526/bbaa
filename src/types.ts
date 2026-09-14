@@ -146,6 +146,8 @@ export interface ChatMessage {
   audioUrl?: string; // Voice recording playback URL
   audioDuration?: number; // Duration in seconds
   timestamp: number;
+  seatIndex?: number; // 0-based seat index on the table (0 = 1号位, 1 = 2号位...)
+  isDealer?: boolean; // Whether sender is the current dealer
 }
 
 

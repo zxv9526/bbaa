@@ -36,10 +36,8 @@ import { ChatFloatingWidget } from './components/ChatFloatingWidget';
 import { TableTacticalChatBar } from './components/TableTacticalChatBar';
 import { ChatMessage, ChatMessageType } from './types';
 import {
-  getAiReplyForMessage,
   speakTextMessage,
   AI_NAMES_POOL,
-  createSimulatedVoiceAudioUrl,
   playIncomingRadioBeep
 } from './lib/chatManager';
 import { SpecialHandLabModal } from './components/SpecialHandLabModal';
@@ -125,6 +123,9 @@ import {
   getSavedRealtimeTable,
   saveRealtimeTable,
   broadcastEvent,
+  getRealtimeChatMessages,
+  saveAndBroadcastChatMessage,
+  clearRealtimeChatMessages,
   RealtimeTableEvent
 } from './lib/realtimeTableManager';
 import {
@@ -182,7 +183,13 @@ export default function App() {
   // Chat & Voice State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [showChatDrawer, setShowChatDrawer] = useState<boolean>(false);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
   const [ttsEnabled, setTtsEnabled] = useState<boolean>(true);
+
+  const handleOpenChatDrawer = () => {
+    setShowChatDrawer(true);
+    setUnreadCount(0);
+  };
 
   // Modals
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -369,13 +376,29 @@ export default function App() {
         setSyncedCutCard(null);
         setSyncedIsDealing(false);
         setGameState('realtime_dealer');
+      } else if (event.type === 'CHAT_MESSAGE') {
+        const incoming = event.message;
+        setMessages((prev) => {
+          if (prev.some(m => m.id === incoming.id)) return prev;
+          return [...prev, incoming];
+        });
+        const myId = currentAccount.phone || currentAccount.id || 'player_user';
+        if (incoming.senderId !== myId) {
+          playIncomingRadioBeep();
+          if (!showChatDrawer) {
+            setUnreadCount(c => c + 1);
+          }
+          if (ttsEnabled && incoming.type !== 'voice') {
+            speakTextMessage(incoming.content);
+          }
+        }
       }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [mode, gameState, currentAccount.phone]);
+  }, [mode, gameState, currentAccount.phone, currentAccount.id, showChatDrawer, ttsEnabled]);
 
   const refreshPlayerStats = async (name: string) => {
     try {
@@ -478,58 +501,13 @@ export default function App() {
     setRealtimePlayers(table.seats);
     setRealtimeRound(table.round);
     setRealtimeDealerIndex(table.dealerIndex);
+
+    // 加载并同步实时对战场聊天对讲历史
+    const savedChat = getRealtimeChatMessages();
+    setMessages(savedChat);
+    setUnreadCount(0);
+
     setGameState('realtime_dealer');
-  };
-
-  const handleAddRealtimePlayer = () => {
-    if (realtimePlayers.length >= 8) return;
-    const nextIdx = realtimePlayers.length;
-    const community = getRegisteredCommunityPlayers();
-    const existingIds = new Set(realtimePlayers.map(p => p.id));
-    const available = community.filter(c => !existingIds.has(c.id));
-    const nextUser = available[0] || community[nextIdx % community.length];
-
-    const newPlayer: RealtimeSeatPlayer = {
-      id: nextUser?.phone || nextUser?.id || `user_${Date.now()}_${nextIdx}`,
-      name: `${nextUser?.nickname || `牌友${nextIdx + 1}`} (${nextIdx + 1}号位)`,
-      avatar: nextUser?.avatar || '🦁',
-      isAi: true,
-      score: 0
-    };
-
-    setRealtimePlayers(prev => {
-      const updated = [...prev, newPlayer];
-      const currentTable = getSavedRealtimeTable();
-      if (currentTable) {
-        currentTable.seats = updated;
-        saveRealtimeTable(currentTable);
-        broadcastEvent({ type: 'PLAYER_JOIN', player: newPlayer, state: currentTable });
-      }
-      return updated;
-    });
-  };
-
-  const handleRemoveRealtimePlayer = () => {
-    if (realtimePlayers.length <= 2) return;
-    setRealtimePlayers(prev => {
-      const copy = [...prev];
-      const removed = copy.pop();
-      let nextDealer = realtimeDealerIndex;
-      if (nextDealer >= copy.length) {
-        nextDealer = 0;
-      }
-      setRealtimeDealerIndex(nextDealer);
-
-      const currentTable = getSavedRealtimeTable();
-      if (currentTable) {
-        currentTable.seats = copy;
-        currentTable.dealerIndex = nextDealer;
-        currentTable.dealerId = copy[nextDealer]?.id || copy[0]?.id;
-        saveRealtimeTable(currentTable);
-        broadcastEvent({ type: 'PLAYER_LEAVE', playerId: removed?.id || '', state: currentTable });
-      }
-      return copy;
-    });
   };
 
   // ⚡ 庄家发牌完成回调：分发牌张，启动理牌阶段
@@ -844,16 +822,28 @@ export default function App() {
     });
   };
 
-  // 💬 Chat & Voice Message Dispatcher
+  // 💬 Chat & Voice Message Dispatcher (纯真人对战：实时广播，严禁人机回复)
   const handleSendMessage = (
     type: ChatMessageType,
     content: string,
     audioUrl?: string,
     audioDuration?: number
   ) => {
+    let seatIndex: number | undefined = undefined;
+    let isDealer: boolean | undefined = undefined;
+
+    if (mode === 'realtime') {
+      const myId = currentAccount.phone || currentAccount.id || 'player_user';
+      const myIdx = realtimePlayers.findIndex(p => p.id === myId);
+      if (myIdx !== -1) {
+        seatIndex = myIdx;
+        isDealer = myIdx === realtimeDealerIndex;
+      }
+    }
+
     const userMsg: ChatMessage = {
       id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-      senderId: currentAccount.id || 'player_user',
+      senderId: currentAccount.phone || currentAccount.id || 'player_user',
       senderName: currentAccount.nickname || playerName || '我',
       senderAvatar: currentAccount.avatar || '😎',
       isUser: true,
@@ -861,46 +851,19 @@ export default function App() {
       content,
       audioUrl,
       audioDuration,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      seatIndex,
+      isDealer
     };
+
     setMessages((prev) => [...prev, userMsg]);
     if (ttsEnabled && (type === 'quick' || type === 'text')) {
       speakTextMessage(content);
     }
 
-    // 同桌真实牌友互动回复 (纯真人牌局体验)
-    if (mode !== 'reservation') {
-      const oppList = playersInMatch
-        .filter((p) => p.id !== 'player_user' && !p.id.startsWith('seat_'))
-        .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar }));
-
-      if (oppList.length > 0) {
-        setTimeout(() => {
-          const tableReply = getAiReplyForMessage(content, type, oppList);
-          if (tableReply) {
-            const isVoice = type === 'voice' || Math.random() < 0.25;
-            const audioUrl = isVoice ? createSimulatedVoiceAudioUrl(2, 320 + Math.random() * 120) : undefined;
-            
-            const playerMsg: ChatMessage = {
-              id: 'msg_p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-              senderId: tableReply.opponent.id,
-              senderName: tableReply.opponent.name,
-              senderAvatar: tableReply.opponent.avatar,
-              isUser: false,
-              type: isVoice ? 'voice' : tableReply.replyType,
-              content: isVoice ? `[对讲回复] ${tableReply.replyContent}` : tableReply.replyContent,
-              audioUrl,
-              audioDuration: isVoice ? 2 : undefined,
-              timestamp: Date.now()
-            };
-            setMessages((prev) => [...prev, playerMsg]);
-            if (ttsEnabled && tableReply.replyType !== 'emoji') {
-              playIncomingRadioBeep();
-              speakTextMessage(tableReply.replyContent);
-            }
-          }
-        }, 1200 + Math.random() * 800);
-      }
+    // 在实时场向全桌真人玩家广播消息并持久化
+    if (mode === 'realtime') {
+      saveAndBroadcastChatMessage(userMsg);
     }
   };
 
@@ -1966,15 +1929,14 @@ export default function App() {
             dealerIndex={realtimeDealerIndex}
             players={realtimePlayers}
             currentUserId={currentAccount.phone || currentAccount.id || 'player_user'}
-            onAddPlayer={handleAddRealtimePlayer}
-            onRemovePlayer={handleRemoveRealtimePlayer}
             onStartDeal={handleRealtimeDealComplete}
             onBackToMenu={() => {
               leaveRealtimeTable(currentAccount.phone || currentAccount.id || 'player_user');
               setGameState('menu');
             }}
             onSendMessage={handleSendMessage}
-            onOpenFullChat={() => setShowChatDrawer(true)}
+            onOpenFullChat={handleOpenChatDrawer}
+            unreadCount={unreadCount}
             ttsEnabled={ttsEnabled}
             onToggleTts={() => setTtsEnabled(!ttsEnabled)}
             latestMessage={messages[messages.length - 1] || null}
@@ -2047,7 +2009,7 @@ export default function App() {
               onBackToMenu={() => {
                 setGameState('menu');
               }}
-              onOpenChat={() => setShowChatDrawer(true)}
+              onOpenChat={handleOpenChatDrawer}
             />
           </div>
         )}
@@ -2290,10 +2252,10 @@ export default function App() {
               <div className="w-full max-w-2xl mx-auto shrink-0 px-1 sm:px-2">
                 <TableTacticalChatBar
                   onSendMessage={handleSendMessage}
-                  onOpenFullChat={() => setShowChatDrawer(true)}
+                  onOpenFullChat={handleOpenChatDrawer}
                   ttsEnabled={ttsEnabled}
                   onToggleTts={() => setTtsEnabled(!ttsEnabled)}
-                  unreadCount={0}
+                  unreadCount={unreadCount}
                   latestMessage={messages[messages.length - 1] || null}
                   onUserSpeakingChange={setUserIsSpeaking}
                 />
@@ -2488,8 +2450,8 @@ export default function App() {
       {gameState !== 'menu' && mode === 'realtime' && (
         <ChatFloatingWidget
           activeMessages={messages}
-          unreadCount={0}
-          onOpenChat={() => setShowChatDrawer(true)}
+          unreadCount={unreadCount}
+          onOpenChat={handleOpenChatDrawer}
         />
       )}
 
@@ -2500,6 +2462,10 @@ export default function App() {
           onClose={() => setShowChatDrawer(false)}
           messages={messages}
           onSendMessage={handleSendMessage}
+          onClearMessages={() => {
+            setMessages([]);
+            clearRealtimeChatMessages();
+          }}
           currentUserId={currentAccount.id || currentAccount.phone || 'player_user'}
           currentUserName={currentAccount.nickname || playerName || '我'}
           currentUserAvatar={currentAccount.avatar || '😎'}

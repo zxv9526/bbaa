@@ -11,7 +11,8 @@ import {
   Play,
   Square,
   Sparkles,
-  Radio
+  Radio,
+  Trash2
 } from 'lucide-react';
 import { ChatMessage, ChatMessageType } from '../types';
 import {
@@ -26,6 +27,7 @@ interface ChatDrawerProps {
   onClose: () => void;
   messages: ChatMessage[];
   onSendMessage: (type: ChatMessageType, content: string, audioUrl?: string, audioDuration?: number) => void;
+  onClearMessages?: () => void;
   currentUserId: string;
   currentUserName: string;
   currentUserAvatar: string;
@@ -40,6 +42,7 @@ export function ChatDrawer({
   onClose,
   messages,
   onSendMessage,
+  onClearMessages,
   currentUserId,
   currentUserName,
   currentUserAvatar,
@@ -340,27 +343,77 @@ export function ChatDrawer({
           {/* TAB 3: Message History */}
           {activeTab === 'history' && (
             <div className="space-y-3">
+              {messages.length > 0 && onClearMessages && (
+                <div className="flex items-center justify-between px-1 pb-1 border-b border-slate-800 text-[11px] text-slate-400">
+                  <span>共 {messages.length} 条对讲记录</span>
+                  <button
+                    onClick={onClearMessages}
+                    className="flex items-center gap-1 text-slate-500 hover:text-rose-400 transition cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>清空记录</span>
+                  </button>
+                </div>
+              )}
+
               {messages.length === 0 ? (
                 <div className="text-center py-12 text-slate-500 text-xs">
-                  暂无聊天记录，说句话打破沉默吧~
+                  暂无对讲记录，点击快捷战术或语音与全桌玩家互动吧~
                 </div>
               ) : (
                 messages.map((msg) => {
+                  if (msg.senderId === 'system') {
+                    return (
+                      <div key={msg.id} className="flex justify-center my-1.5 animate-in fade-in">
+                        <span className="px-3 py-1 rounded-full bg-slate-800/90 border border-slate-700/60 text-slate-300 text-[11px] font-medium flex items-center gap-1.5 shadow-sm">
+                          <span>{msg.senderAvatar || '📢'}</span>
+                          <span>{msg.content}</span>
+                        </span>
+                      </div>
+                    );
+                  }
+
                   const isMe = msg.senderId === currentUserId;
+                  const seatBadge = typeof msg.seatIndex === 'number'
+                    ? `${msg.seatIndex + 1}号位`
+                    : '';
+                  const timeStr = msg.timestamp
+                    ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                    : '';
+
                   return (
                     <div
                       key={msg.id}
-                      className={`flex items-start gap-2.5 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
+                      className={`flex items-start gap-2.5 ${isMe ? 'flex-row-reverse' : 'flex-row'} animate-in fade-in`}
                     >
-                      <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-sm shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-sm shrink-0 shadow">
                         {msg.senderAvatar || '👤'}
                       </div>
                       <div
-                        className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[75%]`}
+                        className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[80%]`}
                       >
-                        <span className="text-[10px] text-slate-400 px-1 mb-0.5">
-                          {msg.senderName}
-                        </span>
+                        <div className={`flex items-center gap-1 text-[10px] text-slate-400 px-1 mb-0.5 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                          <span className="font-bold text-slate-200">
+                            {isMe ? '我' : msg.senderName}
+                          </span>
+                          {seatBadge && (
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                              isMe
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                            }`}>
+                              {seatBadge}
+                            </span>
+                          )}
+                          {msg.isDealer && (
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              👑庄家
+                            </span>
+                          )}
+                          {timeStr && (
+                            <span className="text-slate-500 font-mono text-[9px]">{timeStr}</span>
+                          )}
+                        </div>
 
                         {msg.type === 'voice' ? (
                           <button
