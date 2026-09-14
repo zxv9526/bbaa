@@ -115,6 +115,19 @@ import { ReservationSeatModal } from './components/ReservationSeatModal';
 import { ExitMatchModal } from './components/ExitMatchModal';
 import { RealtimeDealerStage, RealtimeSeatPlayer } from './components/RealtimeDealerStage';
 import {
+  joinOrCreateRealtimeTable,
+  leaveRealtimeTable,
+  broadcastDealerShuffle,
+  broadcastDealerCut,
+  broadcastDealerDeal,
+  advanceToNextRealtimeRound,
+  subscribeRealtimeTable,
+  getSavedRealtimeTable,
+  saveRealtimeTable,
+  broadcastEvent,
+  RealtimeTableEvent
+} from './lib/realtimeTableManager';
+import {
   saveActiveMatchSession,
   loadActiveMatchSession,
   clearActiveMatchSession,
@@ -138,9 +151,10 @@ export default function App() {
   const [realtimeDealerIndex, setRealtimeDealerIndex] = useState<number>(0);
   const [realtimePlayers, setRealtimePlayers] = useState<RealtimeSeatPlayer[]>(() => {
     const me = getCurrentAccount();
+    const myId = me.phone || me.id || 'player_user';
     return [
       {
-        id: 'player_user',
+        id: myId,
         name: `${me.nickname || '我'} (1号位)`,
         avatar: me.avatar || '😎',
         isAi: false,
@@ -148,6 +162,10 @@ export default function App() {
       }
     ];
   });
+  const [syncedShuffleCount, setSyncedShuffleCount] = useState<number>(0);
+  const [syncedCutPos, setSyncedCutPos] = useState<number>(50);
+  const [syncedCutCard, setSyncedCutCard] = useState<Card | null>(null);
+  const [syncedIsDealing, setSyncedIsDealing] = useState<boolean>(false);
 
   // Carriage Mode State (8-player Async Carriage Flow)
   const [carriageSeatIndex, setCarriageSeatIndex] = useState<number>(0);
@@ -323,6 +341,42 @@ export default function App() {
     });
   }, []);
 
+  // ⚡ 订阅实时多人桌跨页面/跨账号事件同步 (Cross-Tab / Multi-Player Live Arena Table Sync)
+  useEffect(() => {
+    const unsubscribe = subscribeRealtimeTable((event: RealtimeTableEvent) => {
+      if (mode !== 'realtime' && gameState !== 'realtime_dealer' && gameState !== 'arranging' && gameState !== 'revealing') {
+        return;
+      }
+
+      if (event.type === 'SYNC_STATE' || event.type === 'PLAYER_JOIN' || event.type === 'PLAYER_LEAVE') {
+        if (event.state && event.state.seats) {
+          setRealtimePlayers(event.state.seats);
+          setRealtimeDealerIndex(event.state.dealerIndex);
+          setRealtimeRound(event.state.round);
+        }
+      } else if (event.type === 'DEALER_SHUFFLE') {
+        setSyncedShuffleCount(event.shuffleCount);
+      } else if (event.type === 'DEALER_CUT') {
+        setSyncedCutPos(event.cutSliderPos);
+        setSyncedCutCard(event.cutCard);
+      } else if (event.type === 'DEALER_DEAL') {
+        setSyncedIsDealing(true);
+        handleRealtimeDealComplete(event.dealtHands, event.dealerIndex);
+      } else if (event.type === 'NEXT_ROUND') {
+        setRealtimeRound(event.round);
+        setRealtimeDealerIndex(event.dealerIndex);
+        setSyncedShuffleCount(0);
+        setSyncedCutCard(null);
+        setSyncedIsDealing(false);
+        setGameState('realtime_dealer');
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [mode, gameState, currentAccount.phone]);
+
   const refreshPlayerStats = async (name: string) => {
     try {
       const statsRes = await ApiClient.getStats();
@@ -395,6 +449,10 @@ export default function App() {
       return;
     }
 
+    const myId = currentAccount.phone || currentAccount.id || 'player_user';
+    const myName = currentAccount.nickname || playerName || '我';
+    const myAvatar = currentAccount.avatar || '😎';
+
     // 检查是否有未完成的真实契约
     const saved = loadActiveMatchSession(currentAccount.phone);
     if (saved && saved.originalHand && saved.originalHand.length === 13) {
@@ -406,20 +464,20 @@ export default function App() {
     setErrorMsg('');
     setMatchResults(null);
     setUseSpecialHand(false);
+    setSyncedShuffleCount(0);
+    setSyncedCutCard(null);
+    setSyncedIsDealing(false);
 
-    // 同步玩家信息至席位
-    setRealtimePlayers(prev => {
-      const copy = [...prev];
-      copy[0] = {
-        id: 'player_user',
-        name: `${currentAccount.nickname || playerName || '我'} (1号位)`,
-        avatar: currentAccount.avatar || '😎',
-        isAi: false,
-        score: copy[0]?.score || 0
-      };
-      return copy;
+    // 加入或创建多人实时牌桌
+    const { table } = joinOrCreateRealtimeTable({
+      id: myId,
+      name: myName,
+      avatar: myAvatar
     });
 
+    setRealtimePlayers(table.seats);
+    setRealtimeRound(table.round);
+    setRealtimeDealerIndex(table.dealerIndex);
     setGameState('realtime_dealer');
   };
 
@@ -431,25 +489,44 @@ export default function App() {
     const available = community.filter(c => !existingIds.has(c.id));
     const nextUser = available[0] || community[nextIdx % community.length];
 
-    setRealtimePlayers(prev => [
-      ...prev,
-      {
-        id: nextUser?.id || `user_${Date.now()}_${nextIdx}`,
-        name: `${nextUser?.nickname || `牌友${nextIdx + 1}`} (${nextIdx + 1}号位)`,
-        avatar: nextUser?.avatar || '🦁',
-        isAi: false,
-        score: 0
+    const newPlayer: RealtimeSeatPlayer = {
+      id: nextUser?.phone || nextUser?.id || `user_${Date.now()}_${nextIdx}`,
+      name: `${nextUser?.nickname || `牌友${nextIdx + 1}`} (${nextIdx + 1}号位)`,
+      avatar: nextUser?.avatar || '🦁',
+      isAi: true,
+      score: 0
+    };
+
+    setRealtimePlayers(prev => {
+      const updated = [...prev, newPlayer];
+      const currentTable = getSavedRealtimeTable();
+      if (currentTable) {
+        currentTable.seats = updated;
+        saveRealtimeTable(currentTable);
+        broadcastEvent({ type: 'PLAYER_JOIN', player: newPlayer, state: currentTable });
       }
-    ]);
+      return updated;
+    });
   };
 
   const handleRemoveRealtimePlayer = () => {
     if (realtimePlayers.length <= 2) return;
     setRealtimePlayers(prev => {
       const copy = [...prev];
-      copy.pop();
-      if (realtimeDealerIndex >= copy.length) {
-        setRealtimeDealerIndex(0);
+      const removed = copy.pop();
+      let nextDealer = realtimeDealerIndex;
+      if (nextDealer >= copy.length) {
+        nextDealer = 0;
+      }
+      setRealtimeDealerIndex(nextDealer);
+
+      const currentTable = getSavedRealtimeTable();
+      if (currentTable) {
+        currentTable.seats = copy;
+        currentTable.dealerIndex = nextDealer;
+        currentTable.dealerId = copy[nextDealer]?.id || copy[0]?.id;
+        saveRealtimeTable(currentTable);
+        broadcastEvent({ type: 'PLAYER_LEAVE', playerId: removed?.id || '', state: currentTable });
       }
       return copy;
     });
@@ -464,7 +541,8 @@ export default function App() {
     setCarriageSeatIndex(0);
     setCarriageIndex(realtimeRound);
 
-    const myHand = sortCards(dealtHands['player_user'] || dealtHands[realtimePlayers[0]?.id] || []);
+    const myId = currentAccount.phone || currentAccount.id || 'player_user';
+    const myHand = sortCards(dealtHands[myId] || dealtHands['player_user'] || dealtHands[realtimePlayers[0]?.id] || []);
     setOriginalHand(myHand);
     setPool([]);
     setSelectedCardIds([]);
@@ -513,9 +591,9 @@ export default function App() {
     // 构建实时场参战玩家列表（全员真实选手，无AI补位）
     const matchPlayersList = realtimePlayers.map((p) => {
       const pCards = dealtHands[p.id] || [];
-      if (p.id === 'player_user') {
+      if (p.id === myId || p.id === 'player_user') {
         return {
-          id: 'player_user',
+          id: myId,
           name: p.name,
           isAi: false,
           avatar: p.avatar,
@@ -1887,17 +1965,43 @@ export default function App() {
             round={realtimeRound}
             dealerIndex={realtimeDealerIndex}
             players={realtimePlayers}
-            currentUserId="player_user"
+            currentUserId={currentAccount.phone || currentAccount.id || 'player_user'}
             onAddPlayer={handleAddRealtimePlayer}
             onRemovePlayer={handleRemoveRealtimePlayer}
             onStartDeal={handleRealtimeDealComplete}
-            onBackToMenu={() => setGameState('menu')}
+            onBackToMenu={() => {
+              leaveRealtimeTable(currentAccount.phone || currentAccount.id || 'player_user');
+              setGameState('menu');
+            }}
             onSendMessage={handleSendMessage}
             onOpenFullChat={() => setShowChatDrawer(true)}
             ttsEnabled={ttsEnabled}
             onToggleTts={() => setTtsEnabled(!ttsEnabled)}
             latestMessage={messages[messages.length - 1] || null}
             onUserSpeakingChange={setUserIsSpeaking}
+            syncedShuffleCount={syncedShuffleCount}
+            syncedCutPos={syncedCutPos}
+            syncedCutCard={syncedCutCard}
+            syncedIsDealing={syncedIsDealing}
+            onDealerShuffle={(count) => {
+              broadcastDealerShuffle(count, currentAccount.phone || currentAccount.id || 'player_user');
+            }}
+            onDealerCut={(pos, card) => {
+              broadcastDealerCut(pos, card, currentAccount.phone || currentAccount.id || 'player_user');
+            }}
+            onDealerDeal={(hands, dIdx) => {
+              broadcastDealerDeal(hands, dIdx, currentAccount.phone || currentAccount.id || 'player_user');
+            }}
+            onRotateDealer={(newDIdx) => {
+              setRealtimeDealerIndex(newDIdx);
+              const currentTable = getSavedRealtimeTable();
+              if (currentTable) {
+                currentTable.dealerIndex = newDIdx;
+                currentTable.dealerId = currentTable.seats[newDIdx]?.id || currentTable.dealerId;
+                saveRealtimeTable(currentTable);
+                broadcastEvent({ type: 'SYNC_STATE', state: currentTable });
+              }
+            }}
           />
         )}
 
@@ -1910,8 +2014,17 @@ export default function App() {
                 if (mode === 'reservation') {
                   openReservationSeatSelection();
                 } else if (mode === 'realtime') {
-                  setRealtimeRound(r => r + 1);
-                  setRealtimeDealerIndex(d => (d + 1) % realtimePlayers.length);
+                  const updatedTable = advanceToNextRealtimeRound();
+                  if (updatedTable) {
+                    setRealtimeRound(updatedTable.round);
+                    setRealtimeDealerIndex(updatedTable.dealerIndex);
+                  } else {
+                    setRealtimeRound(r => r + 1);
+                    setRealtimeDealerIndex(d => (d + 1) % realtimePlayers.length);
+                  }
+                  setSyncedShuffleCount(0);
+                  setSyncedCutCard(null);
+                  setSyncedIsDealing(false);
                   setGameState('realtime_dealer');
                 } else {
                   startNewMatch(mode);
@@ -1944,7 +2057,7 @@ export default function App() {
             <CarriageHeaderBar
               mode={mode}
               currentCarriageIndex={mode === 'realtime' ? realtimeRound : carriageIndex}
-              seatIndex={carriageSeatIndex}
+              seatIndex={mode === 'realtime' ? Math.max(0, realtimePlayers.findIndex(p => p.id === (currentAccount.phone || currentAccount.id || 'player_user'))) : carriageSeatIndex}
               dealerIndex={mode === 'realtime' ? realtimeDealerIndex : undefined}
               submissions={carriageSubmissions}
               onSeatChange={newSeat => {
@@ -1958,7 +2071,7 @@ export default function App() {
               points={currentAccount.points}
               onOpenChat={() => mode === 'realtime' && setShowChatDrawer(true)}
               latestMessage={messages[messages.length - 1] || null}
-              activeSpeakerId={userIsSpeaking ? 'player_user' : undefined}
+              activeSpeakerId={userIsSpeaking ? (currentAccount.phone || currentAccount.id || 'player_user') : undefined}
               onExit={() => setShowExitModal(true)}
               players={playersInMatch}
             />

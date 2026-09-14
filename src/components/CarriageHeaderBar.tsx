@@ -92,10 +92,18 @@ export function CarriageHeaderBar({
             {isReservation ? '📅' : '⚡'}
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap">
               {isReservation ? '预约场' : '实时对战场'} · 第<span className="text-amber-400 font-mono px-0.5">{currentCarriageIndex}</span>局
             </span>
+
+            {/* 👑 Realtime dealer rotation label */}
+            {mode === 'realtime' && typeof dealerIndex === 'number' && (
+              <span className="flex items-center gap-1 text-[10px] sm:text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                <span>👑</span>
+                <span>当前由 {dealerIndex + 1}号位 发牌</span>
+              </span>
+            )}
             
             {/* Mode badge */}
             {isReservation ? (
@@ -106,7 +114,7 @@ export function CarriageHeaderBar({
             ) : (
               <span className="hidden xs:flex items-center gap-1 text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse">
                 <Radio className="w-3 h-3 text-emerald-400" />
-                <span>语音对讲中</span>
+                <span>对讲已启动</span>
               </span>
             )}
 
@@ -166,7 +174,9 @@ export function CarriageHeaderBar({
               onClick={() => mode === 'realtime' && isOccupied && onOpenChat()}
               className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-0.5 px-1 rounded-lg transition-all border ${mode === 'realtime' && isOccupied ? 'cursor-pointer group' : ''} ${
                 isSpeaking
-                  ? 'bg-emerald-950/70 border-emerald-400 shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400/80'
+                  ? 'bg-emerald-950/90 border-2 border-red-500 shadow-md shadow-red-500/40 ring-2 ring-red-400/80'
+                  : mode === 'realtime' && isOccupied
+                  ? 'bg-emerald-950/80 border border-emerald-400 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.25)] font-bold'
                   : isUser
                   ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 font-bold'
                   : sub
@@ -190,8 +200,19 @@ export function CarriageHeaderBar({
                 </span>
               )}
 
-              <div className="text-sm sm:text-base leading-none mb-0.5">{avatar}</div>
-              <div className="text-[10px] truncate max-w-full font-medium">
+              {/* Realtime Seat Number Tag */}
+              {mode === 'realtime' && (
+                <span className={`text-[8px] font-black px-1 rounded leading-tight ${
+                  isOccupied ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {s + 1}号
+                </span>
+              )}
+
+              <div className="text-sm sm:text-base leading-none mb-0.5 mt-0.5">{avatar}</div>
+              <div className={`text-[10px] truncate max-w-full font-medium ${
+                mode === 'realtime' && isOccupied ? 'text-emerald-200' : ''
+              }`}>
                 {isUser ? '我' : name}
               </div>
             </div>
