@@ -126,7 +126,8 @@ import {
   getRealtimeChatMessages,
   saveAndBroadcastChatMessage,
   clearRealtimeChatMessages,
-  RealtimeTableEvent
+  RealtimeTableEvent,
+  getTabSessionId
 } from './lib/realtimeTableManager';
 import {
   saveActiveMatchSession,
@@ -137,6 +138,7 @@ import {
 import { saveMatchReplay } from './lib/matchReplay';
 import { triggerHaptic } from './lib/haptics';
 import { ArrowLeftRight, GraduationCap } from 'lucide-react';
+import { TripleVoiceEngine } from './lib/tripleVoiceEngine';
 
 type GameMode = 'realtime' | 'reservation' | 'vs_ai_8p' | 'practice';
 
@@ -148,6 +150,7 @@ export default function App() {
   const [gameState, setGameState] = useState<'menu' | 'realtime_dealer' | 'arranging' | 'revealing'>('menu');
 
   // ⚡ 实时对战场：轮流发牌与牌桌状态 (Live Rotation Dealer Table)
+  const [realtimeUserId, setRealtimeUserId] = useState<string>('');
   const [realtimeRound, setRealtimeRound] = useState<number>(1);
   const [realtimeDealerIndex, setRealtimeDealerIndex] = useState<number>(0);
   const [realtimePlayers, setRealtimePlayers] = useState<RealtimeSeatPlayer[]>(() => {
@@ -289,7 +292,32 @@ export default function App() {
     if (saved && saved.originalHand && saved.originalHand.length === 13) {
       restoreFromSavedSession(saved, '欢迎回来');
     }
+
+    // ⚡ 检查 URL 是否带 ?mode=realtime，方便多标签页一键联机入座下个席位
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('mode') === 'realtime') {
+        setTimeout(() => {
+          startRealtimeMatch();
+        }, 150);
+      }
+    }
   }, []);
+
+  // ⚡ 标签页关闭或离开时自动释放实时对战席位与语音传输链路
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (mode === 'realtime') {
+        const tabSessionId = getTabSessionId();
+        leaveRealtimeTable(tabSessionId);
+        TripleVoiceEngine.getInstance().leave();
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [mode]);
 
   // 🔄 牌局进行中实时自动持久化 (防止掉线/刷新丢失，真实场次强制保存)
   useEffect(() => {
@@ -382,8 +410,10 @@ export default function App() {
           if (prev.some(m => m.id === incoming.id)) return prev;
           return [...prev, incoming];
         });
-        const myId = currentAccount.phone || currentAccount.id || 'player_user';
-        if (incoming.senderId !== myId) {
+        const effectiveId = (mode === 'realtime' && realtimeUserId) 
+          ? realtimeUserId 
+          : (currentAccount.phone || currentAccount.id || 'player_user');
+        if (incoming.senderId !== effectiveId) {
           playIncomingRadioBeep();
           if (!showChatDrawer) {
             setUnreadCount(c => c + 1);
@@ -399,6 +429,51 @@ export default function App() {
       unsubscribe();
     };
   }, [mode, gameState, currentAccount.phone, currentAccount.id, showChatDrawer, ttsEnabled]);
+
+  // ⚡ 三重语音传输引擎 (WebRTC P2P + WebSocket 高速广播 + HTTP 轮询保底) 语音接收监听
+  useEffect(() => {
+    if (mode !== 'realtime') return;
+    const engine = TripleVoiceEngine.getInstance();
+    engine.onIncomingVoice = (voice) => {
+      const effectiveUserId = (mode === 'realtime' && realtimeUserId) 
+        ? realtimeUserId 
+        : (currentAccount.phone || currentAccount.id || 'player_user');
+      
+      if (voice.senderId !== effectiveUserId) {
+        setUserIsSpeaking(true);
+        setTimeout(() => setUserIsSpeaking(false), Math.max(1600, (voice.duration || 2) * 1000));
+        playIncomingRadioBeep();
+        
+        if (!showChatDrawer) {
+          setUnreadCount(c => c + 1);
+        }
+
+        if (voice.phrase && ttsEnabled) {
+          speakTextMessage(voice.phrase);
+        }
+
+        // 将对端传输过来的语音包/战术常用语录入当前聊天流
+        const incomingMsg: ChatMessage = {
+          id: voice.id || ('voice_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
+          senderId: voice.senderId,
+          senderName: voice.senderName,
+          senderAvatar: voice.senderAvatar || '👤',
+          isUser: false,
+          type: 'voice',
+          content: voice.phrase || `[实时语音 ${voice.duration || 2}秒]`,
+          audioUrl: voice.audioUrl,
+          audioDuration: voice.duration,
+          timestamp: voice.timestamp || Date.now(),
+          seatIndex: voice.seatIndex
+        };
+
+        setMessages(prev => {
+          if (prev.some(m => m.id === incomingMsg.id)) return prev;
+          return [...prev, incomingMsg];
+        });
+      }
+    };
+  }, [mode, realtimeUserId, showChatDrawer, ttsEnabled]);
 
   const refreshPlayerStats = async (name: string) => {
     try {
@@ -492,12 +567,15 @@ export default function App() {
     setSyncedIsDealing(false);
 
     // 加入或创建多人实时牌桌
-    const { table } = joinOrCreateRealtimeTable({
+    const tabSessionId = getTabSessionId();
+    const { table, assignedUser } = joinOrCreateRealtimeTable({
       id: myId,
       name: myName,
-      avatar: myAvatar
+      avatar: myAvatar,
+      tabSessionId
     });
 
+    setRealtimeUserId(assignedUser.id);
     setRealtimePlayers(table.seats);
     setRealtimeRound(table.round);
     setRealtimeDealerIndex(table.dealerIndex);
@@ -506,6 +584,16 @@ export default function App() {
     const savedChat = getRealtimeChatMessages();
     setMessages(savedChat);
     setUnreadCount(0);
+
+    // 🚀 初始化三重语音架构引擎 (WebRTC P2P + WebSocket高速广播 + HTTP轮询保底)
+    const mySeat = table.seats.findIndex(p => p.id === assignedUser.id);
+    TripleVoiceEngine.getInstance().init({
+      roomId: 'realtime_arena_room',
+      userId: assignedUser.id,
+      name: assignedUser.name,
+      avatar: assignedUser.avatar,
+      seatIndex: Math.max(0, mySeat)
+    });
 
     setGameState('realtime_dealer');
   };
@@ -519,8 +607,10 @@ export default function App() {
     setCarriageSeatIndex(0);
     setCarriageIndex(realtimeRound);
 
-    const myId = currentAccount.phone || currentAccount.id || 'player_user';
-    const myHand = sortCards(dealtHands[myId] || dealtHands['player_user'] || dealtHands[realtimePlayers[0]?.id] || []);
+    const effectiveUserId = (mode === 'realtime' && realtimeUserId) 
+      ? realtimeUserId 
+      : (currentAccount.phone || currentAccount.id || 'player_user');
+    const myHand = sortCards(dealtHands[effectiveUserId] || dealtHands['player_user'] || dealtHands[realtimePlayers[0]?.id] || []);
     setOriginalHand(myHand);
     setPool([]);
     setSelectedCardIds([]);
@@ -569,9 +659,9 @@ export default function App() {
     // 构建实时场参战玩家列表（全员真实选手，无AI补位）
     const matchPlayersList = realtimePlayers.map((p) => {
       const pCards = dealtHands[p.id] || [];
-      if (p.id === myId || p.id === 'player_user') {
+      if (p.id === effectiveUserId || p.id === 'player_user') {
         return {
-          id: myId,
+          id: effectiveUserId,
           name: p.name,
           isAi: false,
           avatar: p.avatar,
@@ -831,21 +921,28 @@ export default function App() {
   ) => {
     let seatIndex: number | undefined = undefined;
     let isDealer: boolean | undefined = undefined;
+    const effectiveUserId = (mode === 'realtime' && realtimeUserId) 
+      ? realtimeUserId 
+      : (currentAccount.phone || currentAccount.id || 'player_user');
+
+    let senderName = currentAccount.nickname || playerName || '我';
+    let senderAvatar = currentAccount.avatar || '😎';
 
     if (mode === 'realtime') {
-      const myId = currentAccount.phone || currentAccount.id || 'player_user';
-      const myIdx = realtimePlayers.findIndex(p => p.id === myId);
+      const myIdx = realtimePlayers.findIndex(p => p.id === effectiveUserId);
       if (myIdx !== -1) {
         seatIndex = myIdx;
         isDealer = myIdx === realtimeDealerIndex;
+        senderName = realtimePlayers[myIdx].name;
+        senderAvatar = realtimePlayers[myIdx].avatar;
       }
     }
 
     const userMsg: ChatMessage = {
       id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-      senderId: currentAccount.phone || currentAccount.id || 'player_user',
-      senderName: currentAccount.nickname || playerName || '我',
-      senderAvatar: currentAccount.avatar || '😎',
+      senderId: effectiveUserId,
+      senderName,
+      senderAvatar,
       isUser: true,
       type,
       content,
@@ -864,6 +961,8 @@ export default function App() {
     // 在实时场向全桌真人玩家广播消息并持久化
     if (mode === 'realtime') {
       saveAndBroadcastChatMessage(userMsg);
+      // 🚀 同时通过 TripleVoiceEngine 三重架构 (WebRTC P2P + WebSocket广播 + HTTP保底) 极速广播文本与战术语音
+      TripleVoiceEngine.getInstance().sendVoicePhrase(content, senderName, senderAvatar);
     }
   };
 
@@ -1928,10 +2027,11 @@ export default function App() {
             round={realtimeRound}
             dealerIndex={realtimeDealerIndex}
             players={realtimePlayers}
-            currentUserId={currentAccount.phone || currentAccount.id || 'player_user'}
+            currentUserId={(mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')}
             onStartDeal={handleRealtimeDealComplete}
             onBackToMenu={() => {
-              leaveRealtimeTable(currentAccount.phone || currentAccount.id || 'player_user');
+              const tabSessionId = getTabSessionId();
+              leaveRealtimeTable(tabSessionId);
               setGameState('menu');
             }}
             onSendMessage={handleSendMessage}
@@ -1946,13 +2046,16 @@ export default function App() {
             syncedCutCard={syncedCutCard}
             syncedIsDealing={syncedIsDealing}
             onDealerShuffle={(count) => {
-              broadcastDealerShuffle(count, currentAccount.phone || currentAccount.id || 'player_user');
+              const uid = (mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user');
+              broadcastDealerShuffle(count, uid);
             }}
             onDealerCut={(pos, card) => {
-              broadcastDealerCut(pos, card, currentAccount.phone || currentAccount.id || 'player_user');
+              const uid = (mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user');
+              broadcastDealerCut(pos, card, uid);
             }}
             onDealerDeal={(hands, dIdx) => {
-              broadcastDealerDeal(hands, dIdx, currentAccount.phone || currentAccount.id || 'player_user');
+              const uid = (mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user');
+              broadcastDealerDeal(hands, dIdx, uid);
             }}
             onRotateDealer={(newDIdx) => {
               setRealtimeDealerIndex(newDIdx);

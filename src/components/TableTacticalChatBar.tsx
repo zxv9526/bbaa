@@ -12,7 +12,9 @@ import {
   Sparkles,
   Headphones,
   Sliders,
-  Smile
+  Smile,
+  Layers,
+  Activity
 } from 'lucide-react';
 import {
   VoiceRecorder,
@@ -25,6 +27,11 @@ import {
 } from '../lib/chatManager';
 import { triggerHaptic } from '../lib/haptics';
 import { ChatMessage } from '../types';
+import {
+  TripleVoiceEngine,
+  VoiceEngineStats
+} from '../lib/tripleVoiceEngine';
+import { TripleVoiceDiagnosticsModal } from './TripleVoiceDiagnosticsModal';
 
 interface TableTacticalChatBarProps {
   onSendMessage: (type: 'text' | 'voice' | 'quick' | 'emoji', content: string, audioUrl?: string, audioDuration?: number) => void;
@@ -57,6 +64,24 @@ export function TableTacticalChatBar({
   const [isOpenMicActive, setIsOpenMicActive] = useState(false);
   const [isOpenMicMuted, setIsOpenMicMuted] = useState(false);
   const [isSlideCancel, setIsSlideCancel] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>(QUICK_PHRASE_GROUPS[0].category);
+  const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
+  const engine = TripleVoiceEngine.getInstance();
+  const [voiceStats, setVoiceStats] = useState<VoiceEngineStats>(() => engine.getStats());
+
+  useEffect(() => {
+    setVoiceStats(engine.getStats());
+    const handleStats = (st: VoiceEngineStats) => {
+      setVoiceStats(st);
+    };
+    engine.onStatsChange = handleStats;
+    const interval = setInterval(() => {
+      setVoiceStats(engine.getStats());
+    }, 1200);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [engine]);
 
   const [activeSpeaker, setActiveSpeaker] = useState<{
     id: string;
@@ -171,6 +196,14 @@ export function TableTacticalChatBar({
       if (duration < 0.4) {
         return;
       }
+      // Broadcast voice frame across Triple-Tier Architecture (WebRTC P2P / WebSocket / HTTP)
+      try {
+        const resp = await fetch(audioUrl);
+        const blob = await resp.blob();
+        engine.dispatchVoiceBlob(blob, Math.max(1, Math.round(duration)));
+      } catch (err) {
+        console.warn('TripleVoice dispatch error:', err);
+      }
       onSendMessage('voice', `[对讲语音 ${Math.max(1, Math.round(duration))}秒]`, audioUrl, Math.max(1, Math.round(duration)));
     } catch (err) {
       console.error('Stop voice error:', err);
@@ -235,6 +268,11 @@ export function TableTacticalChatBar({
         if (onUserSpeakingChange) onUserSpeakingChange(speaking);
       };
       listener.onVoiceSnippet = (audioUrl, duration) => {
+        try {
+          fetch(audioUrl).then(res => res.blob()).then(blob => {
+            engine.dispatchVoiceBlob(blob, duration);
+          });
+        } catch {}
         onSendMessage('voice', `[自由麦语音 ${duration}秒]`, audioUrl, duration);
       };
       const ok = await listener.start();
@@ -283,6 +321,8 @@ export function TableTacticalChatBar({
     triggerHaptic('medium');
     setShowQuickVoice(false);
     const audioUrl = createSimulatedVoiceAudioUrl(2, 340 + Math.random() * 80);
+    // 🚀 三重语音传输架构：向全桌真人玩家高速广播常用语音播报
+    engine.sendVoicePhrase(phrase);
     onSendMessage('voice', phrase, audioUrl, 2);
   };
 
@@ -295,15 +335,18 @@ export function TableTacticalChatBar({
   // Calculate live volume LED bar active count (1 to 5)
   const volumeLevel = Math.min(5, Math.ceil(currentVolume / 18));
 
+  // Get current active group phrases
+  const currentGroup = QUICK_PHRASE_GROUPS.find(g => g.category === selectedCategory) || QUICK_PHRASE_GROUPS[0];
+
   return (
     <div className="relative w-full select-none">
       {/* 🚀 Quick Voice Tactical Phrases Popover */}
       {showQuickVoice && (
-        <div className="absolute bottom-full left-0 mb-2 w-72 sm:w-80 bg-slate-900/95 border border-indigo-500/50 rounded-2xl p-2.5 shadow-2xl backdrop-blur-md z-50 animate-in slide-in-from-bottom-2 fade-in">
-          <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800">
+        <div className="absolute bottom-full left-0 mb-2 w-80 sm:w-96 bg-slate-900/98 border border-amber-500/50 rounded-2xl p-3 shadow-2xl backdrop-blur-md z-50 animate-in slide-in-from-bottom-2 fade-in">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
             <div className="flex items-center gap-1.5 text-xs font-black text-amber-300">
               <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-              <span>战术快捷语音 (电台播报)</span>
+              <span>常用战术语音播报 (三重架构广播)</span>
             </div>
             <button
               onClick={() => setShowQuickVoice(false)}
@@ -313,15 +356,36 @@ export function TableTacticalChatBar({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-1 max-h-52 overflow-y-auto no-scrollbar">
-            {QUICK_PHRASE_GROUPS.flatMap(g => g.phrases).slice(0, 12).map((phrase, idx) => (
+          {/* Category Tabs */}
+          <div className="flex items-center gap-1 mb-2 overflow-x-auto no-scrollbar pb-1">
+            {QUICK_PHRASE_GROUPS.map((group) => (
+              <button
+                key={group.category}
+                onClick={() => setSelectedCategory(group.category)}
+                className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1 border ${
+                  selectedCategory === group.category
+                    ? 'bg-amber-500/25 text-amber-300 border-amber-500/50 shadow-sm'
+                    : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 border-slate-700/60'
+                }`}
+              >
+                <span>{group.icon}</span>
+                <span>{group.category}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Phrases under selected category */}
+          <div className="grid grid-cols-1 gap-1.5 max-h-52 overflow-y-auto no-scrollbar">
+            {currentGroup.phrases.map((phrase, idx) => (
               <button
                 key={idx}
                 onClick={() => handleSendQuickVoicePhrase(phrase)}
-                className="text-left px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-indigo-600/30 hover:border-indigo-400/50 border border-slate-700/60 text-slate-200 hover:text-white text-xs font-medium transition flex items-center justify-between group active:scale-98 cursor-pointer"
+                className="text-left px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-amber-600/20 hover:border-amber-400/50 border border-slate-700/60 text-slate-200 hover:text-white text-xs font-medium transition flex items-center justify-between group active:scale-98 cursor-pointer"
               >
                 <span className="truncate">{phrase}</span>
-                <span className="text-[10px] text-indigo-300 opacity-0 group-hover:opacity-100 transition shrink-0 ml-1">🔊 广播</span>
+                <span className="text-[10px] text-amber-300 opacity-0 group-hover:opacity-100 transition shrink-0 ml-2 font-bold">
+                  🔊 播报
+                </span>
               </button>
             ))}
           </div>
@@ -577,8 +641,38 @@ export function TableTacticalChatBar({
           </form>
         )}
 
-        {/* 3. Open Full Chat Drawer Button */}
-        <div className="flex items-center shrink-0">
+        {/* 3. Open Full Chat Drawer Button & Triple-Tier Voice Diagnostic Pill */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Triple-Voice Transmission Status Pill */}
+          <button
+            id="btn-voice-tier-indicator"
+            onClick={() => setShowDiagnosticsModal(true)}
+            className={`px-2 py-1 rounded-xl border text-[10px] sm:text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow active:scale-95 ${
+              voiceStats.activeTier === 'webrtc'
+                ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900/80'
+                : voiceStats.activeTier === 'websocket'
+                ? 'bg-blue-950/80 border-blue-500/60 text-blue-300 hover:bg-blue-900/80'
+                : 'bg-amber-950/80 border-amber-500/60 text-amber-300 hover:bg-amber-900/80'
+            }`}
+            title="三重语音传输架构：WebRTC P2P + WebSocket高速广播 + HTTP轮询保底 (点击查看实时诊断与链路测试)"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                voiceStats.activeTier === 'webrtc'
+                  ? 'bg-emerald-400 animate-pulse'
+                  : voiceStats.activeTier === 'websocket'
+                  ? 'bg-blue-400 animate-pulse'
+                  : 'bg-amber-400'
+              }`}
+            />
+            <span className="hidden min-[480px]:inline">
+              {voiceStats.activeTier === 'webrtc' && 'P2P直连'}
+              {voiceStats.activeTier === 'websocket' && 'WS广播'}
+              {voiceStats.activeTier === 'http' && 'HTTP保底'}
+            </span>
+            <span className="font-mono text-[10px] opacity-90">{voiceStats.latencyMs}ms</span>
+          </button>
+
           <button
             onClick={onOpenFullChat}
             className="relative px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center gap-1 active:scale-95 cursor-pointer shadow"
@@ -594,6 +688,12 @@ export function TableTacticalChatBar({
           </button>
         </div>
       </div>
+
+      {/* Triple Voice Diagnostics & Settings Modal */}
+      <TripleVoiceDiagnosticsModal
+        isOpen={showDiagnosticsModal}
+        onClose={() => setShowDiagnosticsModal(false)}
+      />
     </div>
   );
 }

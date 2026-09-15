@@ -542,7 +542,7 @@ export function RealtimeDealerStage({
                 👥
               </div>
               <span className="absolute -bottom-1 -right-1 text-sm bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded-full font-black">
-                1/8
+                {seatedCount}/8
               </span>
             </div>
 
@@ -557,7 +557,7 @@ export function RealtimeDealerStage({
                 ⚠️ 规则要求：至少需要 2 位玩家就座才能触发发牌与聊天功能
               </p>
               <p className="text-[11px] text-slate-300 leading-relaxed">
-                你已成功入座 <strong className="text-emerald-400">1号位 (绿色 🟢)</strong>。当前轮流发牌由 <strong className="text-amber-400">1号位 ({players[0]?.name})</strong> 发牌。<br />
+                你已成功入座 <strong className="text-emerald-400">{mySeatIndex !== -1 ? `${mySeatIndex + 1}号位` : '1号位'} (绿色 🟢)</strong>。当前轮流发牌由 <strong className="text-amber-400">{dealerIndex + 1}号位 ({players[dealerIndex]?.name || '庄家'})</strong> 发牌。<br />
                 其他玩家进入后将按顺序自动排入 2~8 号位并同样亮起绿灯。
               </p>
             </div>
@@ -566,16 +566,16 @@ export function RealtimeDealerStage({
               <button
                 onClick={() => {
                   try {
-                    window.open(window.location.href, '_blank');
+                    window.open(window.location.origin + window.location.pathname + '?mode=realtime', '_blank');
                   } catch (e) {
                     console.log(e);
                   }
                 }}
                 className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
-                title="在另一个浏览器标签页打开游戏，使用不同手机号/账号进入实时场体验真实多人对战"
+                title="在另一个浏览器标签页打开游戏，自动作为新玩家入座 2号位 体验真实多人对战"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                <span>新标签页联机对战 (多账号同桌)</span>
+                <span>新标签页联机对战 (自动排入下个席位)</span>
               </button>
             </div>
           </div>
@@ -736,36 +736,33 @@ export function RealtimeDealerStage({
         )}
       </div>
 
-      {/* Table Chat Bar Integration for Realtime Dealer Phase (Only activated when seatedCount >= 2) */}
+      {/* Table Chat Bar Integration for Realtime Dealer Phase */}
       {onSendMessage && onOpenFullChat && (
         <div className="w-full max-w-2xl mx-auto shrink-0 px-1 sm:px-2 mt-2">
-          {seatedCount < 2 ? (
-            <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl py-2.5 px-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 shadow-inner">
-              <span className="text-amber-400 text-sm">🔒</span>
-              <span>战术语音对讲与即时聊天未启动 · 至少需要 2 位玩家就座后自动启动</span>
-            </div>
-          ) : (
-            <div className="animate-fade-in flex flex-col gap-1">
-              <div className="flex items-center justify-between text-[11px] font-bold text-emerald-400 px-2">
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span>战术电台已启动 · 支持语音对讲与快捷战术</span>
+          <div className="animate-fade-in flex flex-col gap-1">
+            <div className="flex items-center justify-between text-[11px] font-bold px-2">
+              <span className={`flex items-center gap-1.5 ${seatedCount >= 2 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                <span className={`w-2 h-2 rounded-full ${seatedCount >= 2 ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400 animate-pulse'}`} />
+                <span>
+                  {seatedCount >= 2 
+                    ? '战术电台已启动 · 支持实时语音对讲与常用语音播报' 
+                    : '三重语音引擎已就绪 · 等待其他真人玩家入座 (支持麦克风测试与电台试听)'}
                 </span>
-                <span className="text-slate-500 font-mono text-[10px]">
-                  全桌 {seatedCount} 位玩家在线
-                </span>
-              </div>
-              <TableTacticalChatBar
-                onSendMessage={onSendMessage}
-                onOpenFullChat={onOpenFullChat}
-                ttsEnabled={ttsEnabled}
-                onToggleTts={onToggleTts || (() => {})}
-                unreadCount={unreadCount}
-                latestMessage={latestMessage}
-                onUserSpeakingChange={onUserSpeakingChange}
-              />
+              </span>
+              <span className="text-slate-400 font-mono text-[10px]">
+                全桌 {seatedCount}/8 位玩家
+              </span>
             </div>
-          )}
+            <TableTacticalChatBar
+              onSendMessage={onSendMessage}
+              onOpenFullChat={onOpenFullChat}
+              ttsEnabled={ttsEnabled}
+              onToggleTts={onToggleTts || (() => {})}
+              unreadCount={unreadCount}
+              latestMessage={latestMessage}
+              onUserSpeakingChange={onUserSpeakingChange}
+            />
+          </div>
         </div>
       )}
 

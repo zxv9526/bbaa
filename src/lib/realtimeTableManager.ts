@@ -1,8 +1,10 @@
 import { Card, ChatMessage } from '../types';
 import { createDeck, createDoubleDeck, shuffle } from '../gameLogic';
+import { getRegisteredCommunityPlayers } from './accountManager';
 
 export interface RealtimeSeatPlayer {
   id: string; // phone or unique player id
+  tabSessionId?: string; // unique browser tab / window session id
   name: string;
   avatar: string;
   isAi: boolean;
@@ -59,6 +61,17 @@ function getChannel(): BroadcastChannel | null {
     }
   }
   return channel;
+}
+
+// Get or generate a tab/session unique identifier (survives page refresh within the same tab, unique per tab)
+export function getTabSessionId(): string {
+  if (typeof window === 'undefined') return 'session_default';
+  let tabId = sessionStorage.getItem('thirteen_realtime_tab_session_id');
+  if (!tabId) {
+    tabId = 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    sessionStorage.setItem('thirteen_realtime_tab_session_id', tabId);
+  }
+  return tabId;
 }
 
 // Read table chat messages from localStorage
@@ -137,33 +150,62 @@ export function joinOrCreateRealtimeTable(currentUser: {
   id: string;
   name: string;
   avatar: string;
-}): { table: RealtimeTableState; isNewTable: boolean; seatIndex: number } {
+  tabSessionId?: string;
+}): {
+  table: RealtimeTableState;
+  isNewTable: boolean;
+  seatIndex: number;
+  assignedUser: { id: string; name: string; avatar: string };
+} {
+  const tabSessionId = currentUser.tabSessionId || getTabSessionId();
   const existing = getSavedRealtimeTable();
-  const userId = currentUser.id;
+  const isStale = existing ? (Date.now() - (existing.lastUpdated || 0) > 15 * 60 * 1000) : true;
 
-  // Stale cleanup: if inactive for > 5 min, reset cleanly
-  const hasOtherPlayer = existing?.seats?.some(s => s.id !== userId);
-  const isStale = existing ? (Date.now() - (existing.lastUpdated || 0) > 5 * 60 * 1000) : true;
-
-  if (existing && existing.seats && existing.seats.length > 0 && hasOtherPlayer && !isStale) {
-    // 1. Check if currentUser is already in the seats
-    const seatIdx = existing.seats.findIndex(s => s.id === userId);
-    if (seatIdx !== -1) {
-      // Update info in existing seat
-      existing.seats[seatIdx].name = currentUser.name;
-      existing.seats[seatIdx].avatar = currentUser.avatar;
+  // 1. If an active table exists and is not stale, join or restore seat
+  if (existing && Array.isArray(existing.seats) && existing.seats.length > 0 && !isStale) {
+    // Check if this specific tab already occupies a seat (e.g. page refresh)
+    const seatByTab = existing.seats.findIndex(s => s.tabSessionId === tabSessionId);
+    if (seatByTab !== -1) {
+      const seatedPlayer = existing.seats[seatByTab];
+      existing.lastUpdated = Date.now();
       saveRealtimeTable(existing);
-      broadcastEvent({ type: 'SYNC_STATE', state: existing });
-      return { table: existing, isNewTable: false, seatIndex: seatIdx };
+      return {
+        table: existing,
+        isNewTable: false,
+        seatIndex: seatByTab,
+        assignedUser: { id: seatedPlayer.id, name: seatedPlayer.name, avatar: seatedPlayer.avatar }
+      };
     }
 
-    // 2. If table is not full (< 8 players), add as the next seated player in order
+    // New player joining existing table (< 8 players allowed)
     if (existing.seats.length < 8) {
+      const occupiedIds = new Set(existing.seats.map(s => s.id));
+      let assignedId = currentUser.id;
+      let assignedName = currentUser.name;
+      let assignedAvatar = currentUser.avatar;
+
+      // If the current account ID is already occupied by an earlier tab/player, assign distinct profile
+      if (occupiedIds.has(assignedId)) {
+        const community = getRegisteredCommunityPlayers();
+        const nextAvailable = community.find(c => !occupiedIds.has(c.phone) && !occupiedIds.has(c.id));
+        if (nextAvailable) {
+          assignedId = nextAvailable.phone || nextAvailable.id;
+          assignedName = nextAvailable.nickname;
+          assignedAvatar = nextAvailable.avatar;
+        } else {
+          const seatNum = existing.seats.length + 1;
+          assignedId = `player_${seatNum}_${tabSessionId.slice(-4)}`;
+          assignedName = `牌友${seatNum}`;
+          assignedAvatar = '🦁';
+        }
+      }
+
       const newSeatIndex = existing.seats.length;
       const newPlayer: RealtimeSeatPlayer = {
-        id: userId,
-        name: currentUser.name,
-        avatar: currentUser.avatar,
+        id: assignedId,
+        tabSessionId,
+        name: `${assignedName.replace(/\(\d+号位\)/g, '').trim()} (${newSeatIndex + 1}号位)`,
+        avatar: assignedAvatar,
         isAi: false,
         score: 0
       };
@@ -171,40 +213,47 @@ export function joinOrCreateRealtimeTable(currentUser: {
       existing.seats.push(newPlayer);
       existing.lastAction = {
         type: 'join',
-        playerId: userId,
-        text: `牌友【${currentUser.name}】已入座第 ${newSeatIndex + 1} 席！`,
+        playerId: assignedId,
+        text: `玩家【${assignedName}】入座第 ${newSeatIndex + 1} 席 (绿色 🟢)！`,
         timestamp: Date.now()
       };
+      existing.lastUpdated = Date.now();
 
       saveRealtimeTable(existing);
       broadcastEvent({ type: 'PLAYER_JOIN', player: newPlayer, state: existing });
-      return { table: existing, isNewTable: false, seatIndex: newSeatIndex };
+      return {
+        table: existing,
+        isNewTable: false,
+        seatIndex: newSeatIndex,
+        assignedUser: { id: assignedId, name: assignedName, avatar: assignedAvatar }
+      };
     }
   }
 
-  // 3. Otherwise, create a clean brand new table with currentUser as Seat 1 and Dealer
+  // 2. Otherwise create a clean brand new table with currentUser as Seat 1 and Dealer
+  const firstPlayer: RealtimeSeatPlayer = {
+    id: currentUser.id,
+    tabSessionId,
+    name: `${currentUser.name.replace(/\(\d+号位\)/g, '').trim()} (1号位)`,
+    avatar: currentUser.avatar,
+    isAi: false,
+    score: 0
+  };
+
   const newTable: RealtimeTableState = {
     tableId: `table_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     round: 1,
     dealerIndex: 0,
-    dealerId: userId,
+    dealerId: currentUser.id,
     status: 'waiting',
-    seats: [
-      {
-        id: userId,
-        name: currentUser.name,
-        avatar: currentUser.avatar,
-        isAi: false,
-        score: 0
-      }
-    ],
+    seats: [firstPlayer],
     shuffleCount: 0,
     cutSliderPos: 50,
     cutCard: null,
     lastAction: {
       type: 'join',
-      playerId: userId,
-      text: `玩家【${currentUser.name}】入座 1号位，等待其他玩家加入！`,
+      playerId: currentUser.id,
+      text: `玩家【${currentUser.name}】进入实时场锁定 1号位 (庄家)，等待其他玩家加入！`,
       timestamp: Date.now()
     },
     lastUpdated: Date.now()
@@ -212,17 +261,23 @@ export function joinOrCreateRealtimeTable(currentUser: {
 
   saveRealtimeTable(newTable);
   broadcastEvent({ type: 'SYNC_STATE', state: newTable });
-  return { table: newTable, isNewTable: true, seatIndex: 0 };
+  return {
+    table: newTable,
+    isNewTable: true,
+    seatIndex: 0,
+    assignedUser: { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar }
+  };
 }
 
 // Leave table
-export function leaveRealtimeTable(userId: string): RealtimeTableState | null {
+export function leaveRealtimeTable(identifier: string): RealtimeTableState | null {
   const current = getSavedRealtimeTable();
-  if (!current) return null;
+  if (!current || !current.seats) return null;
 
-  const idx = current.seats.findIndex(s => s.id === userId);
+  const idx = current.seats.findIndex(s => s.id === identifier || s.tabSessionId === identifier);
   if (idx === -1) return current;
 
+  const leavingPlayer = current.seats[idx];
   current.seats.splice(idx, 1);
 
   if (current.seats.length === 0) {
@@ -230,21 +285,22 @@ export function leaveRealtimeTable(userId: string): RealtimeTableState | null {
     return null;
   }
 
-  // If the leaving player was the dealer, rotate to next available seated player
-  if (current.dealerIndex >= current.seats.length || current.dealerId === userId) {
+  // If the leaving player was the dealer, rotate to seat 0
+  if (current.dealerIndex >= current.seats.length || current.dealerId === leavingPlayer.id) {
     current.dealerIndex = 0;
-    current.dealerId = current.seats[0].id;
+    current.dealerId = current.seats[0]?.id || '';
   }
 
   current.lastAction = {
     type: 'leave',
-    playerId: userId,
-    text: `玩家已离开席位`,
+    playerId: leavingPlayer.id,
+    text: `玩家【${leavingPlayer.name}】已离开牌桌`,
     timestamp: Date.now()
   };
+  current.lastUpdated = Date.now();
 
   saveRealtimeTable(current);
-  broadcastEvent({ type: 'PLAYER_LEAVE', playerId: userId, state: current });
+  broadcastEvent({ type: 'PLAYER_LEAVE', playerId: leavingPlayer.id, state: current });
   return current;
 }
 
