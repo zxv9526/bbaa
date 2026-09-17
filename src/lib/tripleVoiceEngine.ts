@@ -8,11 +8,13 @@
 import {
   playRadioChirpStart,
   playRadioChirpEnd,
-  speakTextMessage
+  speakTextMessage,
+  setRadioChirpSoundEnabled
 } from './chatManager';
 
 export type TransmissionTier = 'webrtc' | 'websocket' | 'http';
 export type TierPreference = 'auto' | 'webrtc' | 'websocket' | 'http';
+export type VadSensitivity = 'low' | 'medium' | 'high';
 
 export interface PeerVoiceState {
   userId: string;
@@ -41,6 +43,12 @@ export interface VoiceEngineStats {
   totalPeersCount: number;
   isMicActive: boolean;
   isMuted: boolean;
+  // Master Audio Preferences
+  outputVolume: number; // 0.0 - 1.0 (default 1.0)
+  isDeafened: boolean; // 静音所有接收语音 (default false)
+  autoPlayVoice: boolean; // 收到对讲语音自动播放 (default true)
+  radioChirpEnabled: boolean; // 对讲机无线电提示音 (default true)
+  vadSensitivity: VadSensitivity; // 自由麦拾音灵敏度 (default 'medium')
 }
 
 export interface QuickVoicePhrase {
@@ -110,6 +118,13 @@ export class TripleVoiceEngine {
   // Peer states
   private peers = new Map<string, PeerVoiceState>();
 
+  // Master Audio Preferences (Persisted)
+  private outputVolume: number = 1.0;
+  private isDeafened: boolean = false;
+  private autoPlayVoice: boolean = true;
+  private radioChirpEnabled: boolean = true;
+  private vadSensitivity: VadSensitivity = 'medium';
+
   // Event Callbacks
   public onStatsChange?: (stats: VoiceEngineStats) => void;
   public onPeersChange?: (peers: PeerVoiceState[]) => void;
@@ -127,6 +142,47 @@ export class TripleVoiceEngine {
     timestamp?: number;
     tier: TransmissionTier;
   }) => void;
+
+  constructor() {
+    this.loadSettings();
+  }
+
+  private loadSettings() {
+    try {
+      if (typeof window === 'undefined') return;
+      const raw = localStorage.getItem('triple_voice_settings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.outputVolume === 'number') this.outputVolume = Math.max(0, Math.min(1, parsed.outputVolume));
+        if (typeof parsed.isDeafened === 'boolean') this.isDeafened = parsed.isDeafened;
+        if (typeof parsed.autoPlayVoice === 'boolean') this.autoPlayVoice = parsed.autoPlayVoice;
+        if (typeof parsed.radioChirpEnabled === 'boolean') {
+          this.radioChirpEnabled = parsed.radioChirpEnabled;
+          setRadioChirpSoundEnabled(parsed.radioChirpEnabled);
+        }
+        if (parsed.vadSensitivity === 'low' || parsed.vadSensitivity === 'medium' || parsed.vadSensitivity === 'high') {
+          this.vadSensitivity = parsed.vadSensitivity;
+        }
+        if (parsed.tierPreference) {
+          this.tierPreference = parsed.tierPreference;
+        }
+      }
+    } catch {}
+  }
+
+  private saveSettings() {
+    try {
+      if (typeof window === 'undefined') return;
+      localStorage.setItem('triple_voice_settings', JSON.stringify({
+        outputVolume: this.outputVolume,
+        isDeafened: this.isDeafened,
+        autoPlayVoice: this.autoPlayVoice,
+        radioChirpEnabled: this.radioChirpEnabled,
+        vadSensitivity: this.vadSensitivity,
+        tierPreference: this.tierPreference
+      }));
+    } catch {}
+  }
 
   public static getInstance(): TripleVoiceEngine {
     if (!TripleVoiceEngine.instance) {
@@ -232,12 +288,79 @@ export class TripleVoiceEngine {
       ).length,
       totalPeersCount: this.peers.size,
       isMicActive: this.isMicActive,
-      isMuted: this.isMuted
+      isMuted: this.isMuted,
+      outputVolume: this.outputVolume,
+      isDeafened: this.isDeafened,
+      autoPlayVoice: this.autoPlayVoice,
+      radioChirpEnabled: this.radioChirpEnabled,
+      vadSensitivity: this.vadSensitivity
     };
   }
 
   public getPeers(): PeerVoiceState[] {
     return Array.from(this.peers.values());
+  }
+
+  // -------------------------------------------------------------
+  // Master Voice Audio Output & Privacy Controls
+  // -------------------------------------------------------------
+
+  public setOutputVolume(vol: number) {
+    this.outputVolume = Math.max(0, Math.min(1, vol));
+    this.saveSettings();
+    this.notifyStats();
+  }
+
+  public getOutputVolume(): number {
+    return this.outputVolume;
+  }
+
+  public setDeafened(deafened: boolean) {
+    this.isDeafened = deafened;
+    this.saveSettings();
+    this.notifyStats();
+  }
+
+  public isUserDeafened(): boolean {
+    return this.isDeafened;
+  }
+
+  public toggleDeafened(): boolean {
+    this.isDeafened = !this.isDeafened;
+    this.saveSettings();
+    this.notifyStats();
+    return this.isDeafened;
+  }
+
+  public setAutoPlayVoice(autoPlay: boolean) {
+    this.autoPlayVoice = autoPlay;
+    this.saveSettings();
+    this.notifyStats();
+  }
+
+  public getAutoPlayVoice(): boolean {
+    return this.autoPlayVoice;
+  }
+
+  public setRadioChirpEnabled(enabled: boolean) {
+    this.radioChirpEnabled = enabled;
+    setRadioChirpSoundEnabled(enabled);
+    this.saveSettings();
+    this.notifyStats();
+  }
+
+  public getRadioChirpEnabled(): boolean {
+    return this.radioChirpEnabled;
+  }
+
+  public setVadSensitivity(sens: VadSensitivity) {
+    this.vadSensitivity = sens;
+    this.saveSettings();
+    this.notifyStats();
+  }
+
+  public getVadSensitivity(): VadSensitivity {
+    return this.vadSensitivity;
   }
 
   // -------------------------------------------------------------
@@ -368,7 +491,12 @@ export class TripleVoiceEngine {
       }
 
       // Voice Activity Detection (VAD)
-      const SPEECH_THRESHOLD = 15;
+      const thresholdMap: Record<VadSensitivity, number> = {
+        low: 26,
+        medium: 15,
+        high: 8
+      };
+      const SPEECH_THRESHOLD = thresholdMap[this.vadSensitivity] || 15;
       if (vol >= SPEECH_THRESHOLD) {
         if (!this.isSpeaking) {
           this.isSpeaking = true;
@@ -501,7 +629,9 @@ export class TripleVoiceEngine {
   // -------------------------------------------------------------
 
   public sendVoicePhrase(phrase: string, category: string = '战术播报', icon: string = '📢') {
-    playRadioChirpStart();
+    if (this.radioChirpEnabled) {
+      playRadioChirpStart();
+    }
     this.packetsSent += 1;
 
     // Local trigger
@@ -1042,9 +1172,11 @@ export class TripleVoiceEngine {
 
     if (!phrase) return;
 
-    playRadioChirpStart();
-    speakTextMessage(phrase);
-    setTimeout(() => playRadioChirpEnd(), 1400);
+    if (!this.isDeafened) {
+      if (this.radioChirpEnabled) playRadioChirpStart();
+      speakTextMessage(phrase);
+      if (this.radioChirpEnabled) setTimeout(() => playRadioChirpEnd(), 1400);
+    }
 
     const p = this.peers.get(senderId);
     if (p) {
@@ -1073,9 +1205,11 @@ export class TripleVoiceEngine {
   }
 
   private playReceivedAudio(audioSrc: string) {
+    if (this.isDeafened) return;
+    if (!this.autoPlayVoice) return;
     try {
       const audio = new Audio(audioSrc);
-      audio.volume = 1.0;
+      audio.volume = Math.max(0, Math.min(1, this.outputVolume));
       audio.play().catch(() => {});
     } catch {}
   }

@@ -82,19 +82,14 @@ export const AI_NAMES_POOL = [
 ];
 
 /**
- * Generate a simulated voice note audio URL using Web Audio API
- * Ensures voice messages can be previewed/played even without mic permissions
+ * Generate a simulated voice note audio WAV blob & URL without exhausting AudioContext hardware limits
+ * Ensures voice messages can be previewed/played even without mic permissions or in sandboxes
  */
-export function createSimulatedVoiceAudioUrl(durationSec: number = 2, pitchFreq: number = 320): string {
+export function createSimulatedVoiceAudioBlob(durationSec: number = 2, pitchFreq: number = 320): { blob: Blob; url: string } {
   try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return '';
-
     const sampleRate = 22050;
     const totalSamples = Math.floor(sampleRate * Math.min(10, Math.max(1, durationSec)));
-    const ctx = new AudioCtx();
-    const buffer = ctx.createBuffer(1, totalSamples, sampleRate);
-    const data = buffer.getChannelData(0);
+    const data = new Float32Array(totalSamples);
 
     for (let i = 0; i < totalSamples; i++) {
       const t = i / sampleRate;
@@ -106,21 +101,26 @@ export function createSimulatedVoiceAudioUrl(durationSec: number = 2, pitchFreq:
       data[i] = voiceWave * envelope * 0.4;
     }
 
-    // Convert AudioBuffer to WAV Blob
-    const wavBlob = audioBufferToWavBlob(buffer, sampleRate);
-    return URL.createObjectURL(wavBlob);
+    // Convert Float32Array directly to WAV Blob
+    const wavBlob = float32ArrayToWavBlob(data, sampleRate);
+    const url = URL.createObjectURL(wavBlob);
+    return { blob: wavBlob, url };
   } catch (err) {
     console.warn('Failed to synthesize voice audio:', err);
-    return '';
+    const emptyBlob = new Blob([], { type: 'audio/wav' });
+    return { blob: emptyBlob, url: '' };
   }
 }
 
+export function createSimulatedVoiceAudioUrl(durationSec: number = 2, pitchFreq: number = 320): string {
+  return createSimulatedVoiceAudioBlob(durationSec, pitchFreq).url;
+}
+
 /**
- * Helper to encode float32 audio buffer into a playable PCM WAV Blob
+ * Helper to encode float32 audio samples directly into a playable PCM WAV Blob
  */
-function audioBufferToWavBlob(buffer: AudioBuffer, sampleRate: number): Blob {
+function float32ArrayToWavBlob(channelData: Float32Array, sampleRate: number): Blob {
   const numChannels = 1;
-  const channelData = buffer.getChannelData(0);
   const bufferLength = channelData.length;
   const wavBuffer = new ArrayBuffer(44 + bufferLength * 2);
   const view = new DataView(wavBuffer);
@@ -169,62 +169,97 @@ function audioBufferToWavBlob(buffer: AudioBuffer, sampleRate: number): Blob {
 }
 
 /**
+ * Shared AudioContext singleton for walkie-talkie and notification chirps
+ * Avoids browser hardware context exhaustion (max 6-32 AudioContexts)
+ */
+let sharedAudioCtx: AudioContext | null = null;
+function getSharedAudioContext(): AudioContext | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtxClass) return null;
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new AudioCtxClass();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    return sharedAudioCtx;
+  } catch {
+    return null;
+  }
+}
+
+let radioChirpSoundEnabled = true;
+
+export function setRadioChirpSoundEnabled(enabled: boolean) {
+  radioChirpSoundEnabled = enabled;
+}
+
+export function getRadioChirpSoundEnabled(): boolean {
+  return radioChirpSoundEnabled;
+}
+
+/**
  * Walkie-talkie radio beep sound effects
  */
 export function playRadioChirpStart() {
+  if (!radioChirpSoundEnabled) return;
   try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
+    const now = ctx.currentTime;
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(650, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(1050, ctx.currentTime + 0.06);
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    osc.frequency.setValueAtTime(650, now);
+    osc.frequency.exponentialRampToValueAtTime(1050, now + 0.06);
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
     osc.connect(gain);
     gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.08);
+    osc.start(now);
+    osc.stop(now + 0.08);
   } catch {}
 }
 
 export function playRadioChirpEnd() {
+  if (!radioChirpSoundEnabled) return;
   try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
+    const now = ctx.currentTime;
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(950, ctx.currentTime);
-    osc.frequency.setValueAtTime(720, ctx.currentTime + 0.04);
-    gain.gain.setValueAtTime(0.12, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    osc.frequency.setValueAtTime(950, now);
+    osc.frequency.setValueAtTime(720, now + 0.04);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
     osc.connect(gain);
     gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.08);
+    osc.start(now);
+    osc.stop(now + 0.08);
   } catch {}
 }
 
 export function playIncomingRadioBeep() {
+  if (!radioChirpSoundEnabled) return;
   try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
+    const now = ctx.currentTime;
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(750, ctx.currentTime);
-    osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.05);
-    gain.gain.setValueAtTime(0.1, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.09);
+    osc.frequency.setValueAtTime(750, now);
+    osc.frequency.setValueAtTime(1100, now + 0.05);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
     osc.connect(gain);
     gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.09);
+    osc.start(now);
+    osc.stop(now + 0.09);
   } catch {}
 }
 
@@ -245,8 +280,15 @@ export function speakTextMessage(text: string) {
   }
 }
 
+export interface VoiceRecordResult {
+  audioBlob: Blob;
+  audioUrl: string;
+  duration: number;
+}
+
 /**
- * Simple Audio Recorder for Voice Messages with Simulated Fallback & Real-time Volume Meter
+ * Audio Recorder for Voice Messages with Simulated Fallback & Real-time Volume Meter
+ * Hardened against rapid clicks, repeated stop calls, and browser audio context limits
  */
 export class VoiceRecorder {
   private mediaRecorder: MediaRecorder | null = null;
@@ -257,14 +299,20 @@ export class VoiceRecorder {
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private animFrameId: number | null = null;
+  private isStopping: boolean = false;
+  private isStopped: boolean = false;
+  private stopPromise: Promise<VoiceRecordResult> | null = null;
   public onVolume?: (vol: number) => void;
 
   async start(): Promise<void> {
     this.audioChunks = [];
     this.startTime = Date.now();
     this.isSimulated = false;
+    this.isStopping = false;
+    this.isStopped = false;
+    this.stopPromise = null;
 
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
         this.stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -289,18 +337,22 @@ export class VoiceRecorder {
           console.warn('Volume meter initialization note:', e);
         }
 
-        let mimeType = 'audio/webm';
-        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-          mimeType = 'audio/webm;codecs=opus';
-        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-          mimeType = 'audio/mp4';
-        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
-          mimeType = 'audio/ogg';
+        let mimeType: string | undefined = undefined;
+        if (typeof MediaRecorder !== 'undefined') {
+          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            mimeType = 'audio/webm;codecs=opus';
+          } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+            mimeType = 'audio/webm';
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            mimeType = 'audio/mp4';
+          } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+            mimeType = 'audio/ogg';
+          }
         }
 
-        this.mediaRecorder = new MediaRecorder(this.stream, { mimeType });
+        this.mediaRecorder = mimeType ? new MediaRecorder(this.stream, { mimeType }) : new MediaRecorder(this.stream);
         this.mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
+          if (event.data && event.data.size > 0) {
             this.audioChunks.push(event.data);
           }
         };
@@ -338,7 +390,7 @@ export class VoiceRecorder {
 
   private simulateVolumePulse() {
     const pulse = () => {
-      if (!this.isSimulated) return;
+      if (!this.isSimulated || this.isStopped) return;
       const simVol = Math.floor(Math.random() * 40) + 20;
       if (this.onVolume) {
         this.onVolume(simVol);
@@ -362,39 +414,89 @@ export class VoiceRecorder {
     this.analyser = null;
   }
 
-  stop(): Promise<{ audioBlob: Blob | null; audioUrl: string; duration: number }> {
+  stop(): Promise<VoiceRecordResult> {
+    if (this.stopPromise) {
+      return this.stopPromise;
+    }
+
+    this.isStopping = true;
     this.cleanupAudioCtx();
-    return new Promise((resolve) => {
+
+    this.stopPromise = new Promise<VoiceRecordResult>((resolve) => {
       const duration = Math.max(1, Math.round((Date.now() - this.startTime) / 1000));
 
+      const finalizeSimulated = () => {
+        this.isStopped = true;
+        this.isStopping = false;
+        const sim = createSimulatedVoiceAudioBlob(duration, 380);
+        resolve({ audioBlob: sim.blob, audioUrl: sim.url, duration });
+      };
+
       if (this.isSimulated || !this.mediaRecorder) {
-        const audioUrl = createSimulatedVoiceAudioUrl(duration, 380);
-        resolve({ audioBlob: null, audioUrl, duration });
+        finalizeSimulated();
         return;
       }
 
-      this.mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(this.audioChunks, { type: this.mediaRecorder?.mimeType || 'audio/webm' });
-        const audioUrl = URL.createObjectURL(audioBlob);
+      let isResolved = false;
+      const handleDone = () => {
+        if (isResolved) return;
+        isResolved = true;
+        this.isStopped = true;
+        this.isStopping = false;
 
         if (this.stream) {
-          this.stream.getTracks().forEach((track) => track.stop());
+          try {
+            this.stream.getTracks().forEach((track) => track.stop());
+          } catch {}
           this.stream = null;
         }
 
-        resolve({ audioBlob, audioUrl, duration });
+        if (this.audioChunks.length > 0) {
+          try {
+            const mime = this.mediaRecorder?.mimeType || 'audio/webm';
+            const audioBlob = new Blob(this.audioChunks, { type: mime });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            resolve({ audioBlob, audioUrl, duration });
+            return;
+          } catch (e) {
+            console.warn('Error creating audio blob from chunks:', e);
+          }
+        }
+        finalizeSimulated();
+      };
+
+      // Fallback timer: ensure resolve is always triggered even if onstop hangs
+      const timeoutId = setTimeout(handleDone, 700);
+
+      this.mediaRecorder.onstop = () => {
+        clearTimeout(timeoutId);
+        handleDone();
+      };
+
+      this.mediaRecorder.onerror = () => {
+        clearTimeout(timeoutId);
+        handleDone();
       };
 
       try {
-        this.mediaRecorder.stop();
+        if (this.mediaRecorder.state !== 'inactive') {
+          this.mediaRecorder.stop();
+        } else {
+          clearTimeout(timeoutId);
+          handleDone();
+        }
       } catch (err) {
-        const audioUrl = createSimulatedVoiceAudioUrl(duration, 380);
-        resolve({ audioBlob: null, audioUrl, duration });
+        clearTimeout(timeoutId);
+        handleDone();
       }
     });
+
+    return this.stopPromise;
   }
 
   cancel(): void {
+    this.isStopping = true;
+    this.isStopped = true;
     this.cleanupAudioCtx();
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
       try {
@@ -402,7 +504,9 @@ export class VoiceRecorder {
       } catch {}
     }
     if (this.stream) {
-      this.stream.getTracks().forEach((track) => track.stop());
+      try {
+        this.stream.getTracks().forEach((track) => track.stop());
+      } catch {}
       this.stream = null;
     }
     this.audioChunks = [];

@@ -962,7 +962,9 @@ export default function App() {
     if (mode === 'realtime') {
       saveAndBroadcastChatMessage(userMsg);
       // 🚀 同时通过 TripleVoiceEngine 三重架构 (WebRTC P2P + WebSocket广播 + HTTP保底) 极速广播文本与战术语音
-      TripleVoiceEngine.getInstance().sendVoicePhrase(content, senderName, senderAvatar);
+      if (type === 'quick' || type === 'text') {
+        TripleVoiceEngine.getInstance().sendVoicePhrase(content, senderName, senderAvatar);
+      }
     }
   };
 

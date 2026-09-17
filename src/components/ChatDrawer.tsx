@@ -12,7 +12,12 @@ import {
   Square,
   Sparkles,
   Radio,
-  Trash2
+  Trash2,
+  Sliders,
+  Activity,
+  Headphones,
+  ShieldCheck,
+  Check
 } from 'lucide-react';
 import { ChatMessage, ChatMessageType } from '../types';
 import {
@@ -21,6 +26,12 @@ import {
   VoiceRecorder,
   speakTextMessage
 } from '../lib/chatManager';
+import {
+  TripleVoiceEngine,
+  VoiceEngineStats,
+  VadSensitivity
+} from '../lib/tripleVoiceEngine';
+import { TripleVoiceDiagnosticsModal } from './TripleVoiceDiagnosticsModal';
 
 interface ChatDrawerProps {
   isOpen: boolean;
@@ -35,7 +46,7 @@ interface ChatDrawerProps {
   onToggleTts: () => void;
 }
 
-type TabType = 'quick' | 'emoji' | 'history';
+type TabType = 'quick' | 'emoji' | 'history' | 'settings';
 
 export function ChatDrawer({
   isOpen,
@@ -52,13 +63,38 @@ export function ChatDrawer({
   const [activeTab, setActiveTab] = useState<TabType>('quick');
   const [inputText, setInputText] = useState('');
   
-  // Voice Recording State
+  // Voice Engine State & Stats
+  const engine = TripleVoiceEngine.getInstance();
+  const [voiceStats, setVoiceStats] = useState<VoiceEngineStats>(() => engine.getStats());
+  const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
+  const [micTesting, setMicTesting] = useState(false);
+  const [micTestVolume, setMicTestVolume] = useState(0);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setVoiceStats(engine.getStats());
+    const handleStats = (st: VoiceEngineStats) => {
+      setVoiceStats(st);
+    };
+    engine.onStatsChange = handleStats;
+    const interval = setInterval(() => {
+      setVoiceStats(engine.getStats());
+    }, 1200);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [isOpen, engine]);
+
+  // Voice Recording State Machine
   const [isRecording, setIsRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [drawerVolume, setDrawerVolume] = useState<number>(0);
   const voiceRecorderRef = useRef<VoiceRecorder | null>(null);
   const recordTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordPhaseRef = useRef<'idle' | 'starting' | 'recording' | 'stopping'>('idle');
+  const pendingStopRef = useRef(false);
 
   // Audio Playback State
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
@@ -73,11 +109,19 @@ export function ChatDrawer({
     }
   }, [messages, activeTab, isOpen]);
 
-  // Handle Recording cleanup
+  // Handle Recording & Audio cleanup
   useEffect(() => {
     return () => {
-      if (recordTimerRef.current) clearInterval(recordTimerRef.current);
-      if (voiceRecorderRef.current) voiceRecorderRef.current.cancel();
+      pendingStopRef.current = false;
+      recordPhaseRef.current = 'idle';
+      if (recordTimerRef.current) {
+        clearInterval(recordTimerRef.current);
+        recordTimerRef.current = null;
+      }
+      if (voiceRecorderRef.current) {
+        voiceRecorderRef.current.cancel();
+        voiceRecorderRef.current = null;
+      }
       if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
         audioPlayerRef.current = null;
@@ -113,21 +157,43 @@ export function ChatDrawer({
     onClose();
   };
 
-  // 4. Voice Recording Flow
+  // 4. Voice Recording Flow (Robust State Machine)
   const handleStartRecord = async () => {
+    if (recordPhaseRef.current !== 'idle') return;
+    recordPhaseRef.current = 'starting';
+    pendingStopRef.current = false;
     setRecordError(null);
+
     try {
       const recorder = new VoiceRecorder();
       recorder.onVolume = (vol) => setDrawerVolume(vol);
       voiceRecorderRef.current = recorder;
       await recorder.start();
+
+      // Check if user clicked stop during async start
+      if (pendingStopRef.current) {
+        pendingStopRef.current = false;
+        recordPhaseRef.current = 'stopping';
+        try {
+          const res = await recorder.stop();
+          if (res.duration >= 1) {
+            onSendMessage('voice', `[语音消息 ${res.duration}"]`, res.audioUrl, res.duration);
+            onClose();
+          }
+        } catch {}
+        recordPhaseRef.current = 'idle';
+        voiceRecorderRef.current = null;
+        setIsRecording(false);
+        return;
+      }
+
+      recordPhaseRef.current = 'recording';
       setIsRecording(true);
       setRecordSeconds(0);
 
       recordTimerRef.current = setInterval(() => {
         setRecordSeconds((prev) => {
           if (prev >= 9) {
-            // Auto stop at 10 seconds
             handleStopRecord();
             return 10;
           }
@@ -136,20 +202,35 @@ export function ChatDrawer({
       }, 1000);
     } catch (err: any) {
       console.error('Record error:', err);
-      setRecordError(err.message || '无法访问麦克风，请检查浏览器权限');
+      recordPhaseRef.current = 'idle';
       setIsRecording(false);
+      setRecordError(err.message || '无法访问麦克风，请检查浏览器权限');
     }
   };
 
   const handleStopRecord = async () => {
-    if (!isRecording || !voiceRecorderRef.current) return;
+    if (recordPhaseRef.current === 'starting') {
+      pendingStopRef.current = true;
+      return;
+    }
+    if (recordPhaseRef.current !== 'recording') return;
+    recordPhaseRef.current = 'stopping';
+
     if (recordTimerRef.current) {
       clearInterval(recordTimerRef.current);
       recordTimerRef.current = null;
     }
 
+    const recorder = voiceRecorderRef.current;
+    if (!recorder) {
+      recordPhaseRef.current = 'idle';
+      setIsRecording(false);
+      return;
+    }
+
     try {
-      const result = await voiceRecorderRef.current.stop();
+      const result = await recorder.stop();
+      recordPhaseRef.current = 'idle';
       setIsRecording(false);
       voiceRecorderRef.current = null;
 
@@ -157,16 +238,29 @@ export function ChatDrawer({
         onSendMessage('voice', `[语音消息 ${result.duration}"]`, result.audioUrl, result.duration);
         onClose();
       } else {
-        setRecordError('说话时间太短');
+        setRecordError('说话时间太短 (需大于1秒)');
       }
     } catch (err: any) {
       console.error('Stop record error:', err);
+      recordPhaseRef.current = 'idle';
       setIsRecording(false);
       setRecordError('录音处理失败');
     }
   };
 
+  const handleToggleRecord = () => {
+    if (recordPhaseRef.current === 'idle') {
+      handleStartRecord();
+    } else if (recordPhaseRef.current === 'starting') {
+      pendingStopRef.current = true;
+    } else if (recordPhaseRef.current === 'recording') {
+      handleStopRecord();
+    }
+  };
+
   const handleCancelRecord = () => {
+    pendingStopRef.current = false;
+    recordPhaseRef.current = 'idle';
     if (recordTimerRef.current) {
       clearInterval(recordTimerRef.current);
       recordTimerRef.current = null;
@@ -179,7 +273,7 @@ export function ChatDrawer({
     setRecordSeconds(0);
   };
 
-  // 5. Voice Audio Playback
+  // 5. Voice Audio Playback with Master Volume & Deafen Check
   const handlePlayVoice = (msg: ChatMessage) => {
     if (!msg.audioUrl) return;
 
@@ -194,6 +288,7 @@ export function ChatDrawer({
     }
 
     const audio = new Audio(msg.audioUrl);
+    audio.volume = engine.isUserDeafened() ? 0 : engine.getOutputVolume();
     audioPlayerRef.current = audio;
     setPlayingAudioId(msg.id);
 
@@ -208,6 +303,25 @@ export function ChatDrawer({
       console.warn('Playback error:', err);
       setPlayingAudioId(null);
     });
+  };
+
+  // 6. Real-time Mic Testing
+  const handleToggleMicTest = async () => {
+    if (micTesting) {
+      setMicTesting(false);
+      engine.onLocalVolumeChange = undefined;
+      setMicTestVolume(0);
+    } else {
+      setMicTesting(true);
+      const ok = await engine.startMicrophone();
+      if (ok) {
+        engine.onLocalVolumeChange = (vol) => {
+          setMicTestVolume(vol);
+        };
+      } else {
+        setMicTesting(false);
+      }
+    }
   };
 
   return (
@@ -256,41 +370,55 @@ export function ChatDrawer({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1 px-4 pt-3 pb-2 border-b border-slate-800/60 bg-slate-900/60 shrink-0">
+        <div className="flex items-center gap-1 px-3 sm:px-4 pt-3 pb-2 border-b border-slate-800/60 bg-slate-900/60 shrink-0">
           <button
             onClick={() => setActiveTab('quick')}
-            className={`flex-1 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`flex-1 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1 cursor-pointer ${
               activeTab === 'quick'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
             }`}
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>经典快捷语</span>
+            <span>快捷语</span>
           </button>
           <button
             onClick={() => setActiveTab('emoji')}
-            className={`flex-1 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`flex-1 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1 cursor-pointer ${
               activeTab === 'emoji'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
             }`}
           >
             <Smile className="w-3.5 h-3.5" />
-            <span>趣味表情</span>
+            <span>表情</span>
           </button>
           <button
             onClick={() => setActiveTab('history')}
-            className={`flex-1 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer relative ${
+            className={`flex-1 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1 cursor-pointer relative ${
               activeTab === 'history'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
             }`}
           >
             <Radio className="w-3.5 h-3.5" />
-            <span>消息记录</span>
+            <span>消息</span>
             {messages.length > 0 && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`flex-1 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1 cursor-pointer relative ${
+              activeTab === 'settings'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>语音设置</span>
+            {engine.isUserDeafened() && (
+              <span className="w-2 h-2 rounded-full bg-rose-500" title="已开启静音他人模式" />
             )}
           </button>
         </div>
@@ -463,6 +591,270 @@ export function ChatDrawer({
               <div ref={messagesEndRef} />
             </div>
           )}
+
+          {/* TAB 4: Voice & Audio Settings */}
+          {activeTab === 'settings' && (
+            <div className="space-y-4 text-xs">
+              {/* Header Banner */}
+              <div className="p-3 bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-slate-900 border border-indigo-500/20 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600/30 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+                    <Headphones className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-black text-white text-xs flex items-center gap-1.5">
+                      <span>对讲音频与传输偏好</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        实时生效
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">配置个人耳聋免打扰、音量控制及对讲拾音门限</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Master Volume Control */}
+              <div className="p-3.5 bg-slate-850/80 border border-slate-700/60 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                    <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>接收对讲语音音量</span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-indigo-300 font-bold">
+                      {Math.round(engine.getOutputVolume() * 100)}%
+                    </span>
+                    <button
+                      onClick={() => {
+                        const newVol = engine.getOutputVolume() > 0 ? 0 : 0.85;
+                        engine.setOutputVolume(newVol);
+                        setVoiceStats(engine.getStats());
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-[10px] font-bold text-slate-300 transition"
+                    >
+                      {engine.getOutputVolume() === 0 ? '恢复' : '静音'}
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={Math.round(engine.getOutputVolume() * 100)}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10) / 100;
+                    engine.setOutputVolume(v);
+                    setVoiceStats(engine.getStats());
+                  }}
+                  className="w-full accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer"
+                />
+              </div>
+
+              {/* Switches Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Deafen Toggle */}
+                <div className="p-3 bg-slate-850/80 border border-slate-700/60 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-slate-200 flex items-center gap-1">
+                      <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                      <span>对讲免打扰 (耳聋模式)</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">静音所有牌友实时语音与语音条</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !engine.isUserDeafened();
+                      engine.setDeafened(next);
+                      setVoiceStats(engine.getStats());
+                    }}
+                    className={`w-11 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${
+                      engine.isUserDeafened() ? 'bg-rose-600' : 'bg-slate-700'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                        engine.isUserDeafened() ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Auto Play Toggle */}
+                <div className="p-3 bg-slate-850/80 border border-slate-700/60 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-slate-200 flex items-center gap-1">
+                      <Play className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>新语音对讲自动播放</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">收到他人对讲时无需点击直接收听</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !engine.getAutoPlayVoice();
+                      engine.setAutoPlayVoice(next);
+                      setVoiceStats(engine.getStats());
+                    }}
+                    className={`w-11 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${
+                      engine.getAutoPlayVoice() ? 'bg-emerald-600' : 'bg-slate-700'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                        engine.getAutoPlayVoice() ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Radio Chirp FX Toggle */}
+                <div className="p-3 bg-slate-850/80 border border-slate-700/60 rounded-2xl flex items-center justify-between sm:col-span-2">
+                  <div>
+                    <div className="font-bold text-slate-200 flex items-center gap-1">
+                      <Radio className="w-3.5 h-3.5 text-amber-400" />
+                      <span>无线电步话机对讲提示音</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">模拟真实车厢无线电呼叫与挂断清脆滴声 (Chirp FX)</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !engine.getRadioChirpEnabled();
+                      engine.setRadioChirpEnabled(next);
+                      setVoiceStats(engine.getStats());
+                    }}
+                    className={`w-11 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${
+                      engine.getRadioChirpEnabled() ? 'bg-amber-600' : 'bg-slate-700'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                        engine.getRadioChirpEnabled() ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* VAD Sensitivity Selection */}
+              <div className="p-3.5 bg-slate-850/80 border border-slate-700/60 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>自由麦拾音门限灵敏度</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    当前: {engine.getVadSensitivity() === 'low' ? '低灵敏' : engine.getVadSensitivity() === 'high' ? '高灵敏' : '标准平衡'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'low' as VadSensitivity, label: '低灵敏', desc: '吵闹环境 / 防误触' },
+                    { id: 'medium' as VadSensitivity, label: '标准平衡', desc: '推荐日常交流' },
+                    { id: 'high' as VadSensitivity, label: '高灵敏', desc: '安静夜间 / 轻语' }
+                  ].map((item) => {
+                    const isSelected = engine.getVadSensitivity() === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          engine.setVadSensitivity(item.id);
+                          setVoiceStats(engine.getStats());
+                        }}
+                        className={`p-2 rounded-xl text-left transition border cursor-pointer ${
+                          isSelected
+                            ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200 shadow-sm'
+                            : 'bg-slate-800/80 border-slate-700/60 text-slate-300 hover:bg-slate-750'
+                        }`}
+                      >
+                        <div className="font-black text-xs flex items-center justify-between">
+                          <span>{item.label}</span>
+                          {isSelected && <Check className="w-3 h-3 text-cyan-400" />}
+                        </div>
+                        <div className="text-[9px] text-slate-400 mt-0.5">{item.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Microphone Real-time Hardware Test */}
+              <div className="p-3.5 bg-slate-850/80 border border-slate-700/60 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-slate-200 flex items-center gap-1.5">
+                    <Mic className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>麦克风实时输入电平测试</span>
+                  </div>
+                  <button
+                    onClick={handleToggleMicTest}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                      micTesting
+                        ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse'
+                        : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                    }`}
+                  >
+                    {micTesting ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                    <span>{micTesting ? '停止测试' : '开始试麦'}</span>
+                  </button>
+                </div>
+
+                {/* 10-level LED VU Meter */}
+                <div className="flex items-center gap-1 h-3 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                  {Array.from({ length: 20 }).map((_, idx) => {
+                    const threshold = (idx + 1) * 5;
+                    const isActive = micTesting && micTestVolume >= threshold;
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex-1 h-full rounded-xs transition-colors duration-75 ${
+                          isActive
+                            ? idx > 15
+                              ? 'bg-rose-500'
+                              : idx > 10
+                              ? 'bg-amber-400'
+                              : 'bg-emerald-400'
+                            : 'bg-slate-800/60'
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                  <span>-40dB</span>
+                  <span>-18dB (最佳)</span>
+                  <span>0dB (过载)</span>
+                </div>
+              </div>
+
+              {/* Triple-tier Network Link Status & Diagnostics Button */}
+              <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  <div>
+                    <div className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+                      <span>三重保底链路:</span>
+                      <span className="font-mono text-emerald-400 font-black">
+                        {voiceStats.currentTier === 'webrtc'
+                          ? 'WebRTC P2P 高清直连'
+                          : voiceStats.currentTier === 'websocket'
+                          ? 'WebSocket 中继广播'
+                          : 'HTTP 智能极速轮询'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      延迟: {voiceStats.pingMs || 18}ms · 发送: {voiceStats.packetsSent}包 · 接收: {voiceStats.packetsReceived}包
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowDiagnosticsModal(true)}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Activity className="w-3.5 h-3.5" />
+                  <span>详细诊断</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Recording Overlay / Audio Controller with Live VU Meter */}
@@ -521,22 +913,20 @@ export function ChatDrawer({
         <div className="p-3 sm:p-4 bg-slate-950/70 border-t border-slate-800/80 flex items-center gap-2 shrink-0">
           {/* Voice Record Button (按住/点击对讲) */}
           <button
-            onClick={() => {
-              if (isRecording) {
-                handleStopRecord();
-              } else {
-                handleStartRecord();
-              }
-            }}
+            onClick={handleToggleRecord}
             className={`px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl font-bold text-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 shadow ${
               isRecording
                 ? 'bg-rose-600 text-white animate-pulse'
+                : recordPhaseRef.current === 'starting'
+                ? 'bg-amber-600 text-white animate-bounce'
                 : 'bg-slate-800 hover:bg-slate-750 text-emerald-400 border border-emerald-500/30'
             }`}
             title="点击开始录制语音对讲消息"
           >
             {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4 text-emerald-400" />}
-            <span className="hidden min-[380px]:inline">{isRecording ? '结束对讲' : '语音对讲'}</span>
+            <span className="hidden min-[380px]:inline">
+              {isRecording ? '结束对讲' : recordPhaseRef.current === 'starting' ? '准备中...' : '语音对讲'}
+            </span>
           </button>
 
           {/* Text Input */}
@@ -568,6 +958,14 @@ export function ChatDrawer({
         </div>
 
       </div>
+
+      {/* Embedded Diagnostics Modal */}
+      {showDiagnosticsModal && (
+        <TripleVoiceDiagnosticsModal
+          isOpen={showDiagnosticsModal}
+          onClose={() => setShowDiagnosticsModal(false)}
+        />
+      )}
     </div>
   );
 }

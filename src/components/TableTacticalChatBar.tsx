@@ -98,7 +98,18 @@ export function TableTacticalChatBar({
   const timerRef = useRef<any>(null);
   const speakerTimerRef = useRef<any>(null);
   const pointerStartYRef = useRef<number>(0);
+  const pointerStartTimeRef = useRef<number>(0);
   const isPointerDownRef = useRef<boolean>(false);
+  const recordPhaseRef = useRef<'idle' | 'starting' | 'recording' | 'stopping'>('idle');
+  const pendingStopRef = useRef<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(prev => (prev === msg ? null : prev));
+    }, 2800);
+  };
 
   // Monitor latestMessage for active speaker ripple effect
   useEffect(() => {
@@ -145,9 +156,15 @@ export function TableTacticalChatBar({
     };
   }, []);
 
-  // 1. PTT Voice Record Routine
+  // 1. PTT / Click-to-Talk Voice Record Routine
   const startVoiceRecord = async () => {
-    if (isRecording) return;
+    if (recordPhaseRef.current !== 'idle') return;
+    recordPhaseRef.current = 'starting';
+    pendingStopRef.current = false;
+    setIsRecording(true);
+    setRecordingSeconds(0);
+    setIsSlideCancel(false);
+
     try {
       playRadioChirpStart();
       triggerHaptic('medium');
@@ -157,11 +174,18 @@ export function TableTacticalChatBar({
       };
       recorderRef.current = recorder;
       await recorder.start();
-      setIsRecording(true);
-      setRecordingSeconds(0);
-      setIsSlideCancel(false);
+
+      // If user tapped to stop while start was in flight
+      if (pendingStopRef.current || recordPhaseRef.current === 'stopping') {
+        recordPhaseRef.current = 'recording';
+        await stopVoiceRecordAndSend();
+        return;
+      }
+
+      recordPhaseRef.current = 'recording';
       if (onUserSpeakingChange) onUserSpeakingChange(true);
 
+      if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
         setRecordingSeconds(prev => {
           if (prev >= 15) {
@@ -173,70 +197,100 @@ export function TableTacticalChatBar({
       }, 1000);
     } catch (err: any) {
       console.warn('Microphone recording error:', err);
+      recordPhaseRef.current = 'idle';
+      setIsRecording(false);
+      showToast('麦克风初始化提示: 已使用安全模拟语音通道');
     }
   };
 
   const stopVoiceRecordAndSend = async () => {
-    if (!recorderRef.current || !isRecording) return;
-    clearInterval(timerRef.current);
-    setIsRecording(false);
+    if (recordPhaseRef.current === 'starting') {
+      pendingStopRef.current = true;
+      return;
+    }
+    if (recordPhaseRef.current !== 'recording') {
+      return;
+    }
+
+    recordPhaseRef.current = 'stopping';
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     setCurrentVolume(0);
     if (onUserSpeakingChange) onUserSpeakingChange(false);
 
+    const activeRecorder = recorderRef.current;
+    const shouldCancel = isSlideCancel;
+
     try {
-      if (isSlideCancel) {
-        recorderRef.current.cancel();
+      if (shouldCancel || !activeRecorder) {
+        if (activeRecorder) activeRecorder.cancel();
         triggerHaptic('light');
         return;
       }
 
       playRadioChirpEnd();
       triggerHaptic('success');
-      const { audioUrl, duration } = await recorderRef.current.stop();
-      if (duration < 0.4) {
-        return;
-      }
+      const result = await activeRecorder.stop();
+      const duration = Math.max(1, Math.round(result.duration));
+
       // Broadcast voice frame across Triple-Tier Architecture (WebRTC P2P / WebSocket / HTTP)
       try {
-        const resp = await fetch(audioUrl);
-        const blob = await resp.blob();
-        engine.dispatchVoiceBlob(blob, Math.max(1, Math.round(duration)));
+        if (result.audioBlob && result.audioBlob.size > 0) {
+          engine.dispatchVoiceBlob(result.audioBlob, duration);
+        }
       } catch (err) {
         console.warn('TripleVoice dispatch error:', err);
       }
-      onSendMessage('voice', `[对讲语音 ${Math.max(1, Math.round(duration))}秒]`, audioUrl, Math.max(1, Math.round(duration)));
+
+      const validUrl = result.audioUrl || (result.audioBlob ? URL.createObjectURL(result.audioBlob) : '');
+      if (validUrl) {
+        onSendMessage('voice', `[对讲语音 ${duration}秒]`, validUrl, duration);
+      }
     } catch (err) {
       console.error('Stop voice error:', err);
     } finally {
       recorderRef.current = null;
+      recordPhaseRef.current = 'idle';
+      setIsRecording(false);
       setIsSlideCancel(false);
     }
   };
 
   const cancelVoiceRecord = () => {
-    if (!recorderRef.current || !isRecording) return;
-    clearInterval(timerRef.current);
+    recordPhaseRef.current = 'stopping';
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     setIsRecording(false);
     setCurrentVolume(0);
     setIsSlideCancel(false);
     if (onUserSpeakingChange) onUserSpeakingChange(false);
     triggerHaptic('light');
-    try {
-      recorderRef.current.cancel();
-    } catch {}
-    recorderRef.current = null;
+    if (recorderRef.current) {
+      try {
+        recorderRef.current.cancel();
+      } catch {}
+      recorderRef.current = null;
+    }
+    recordPhaseRef.current = 'idle';
   };
 
-  // Pointer hold-to-talk handlers (for mobile and mouse)
+  // Pointer hold-to-talk handlers (for mobile long-press and desktop hold)
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (voiceMode !== 'ptt' || isRecording) return;
-    isPointerDownRef.current = true;
-    pointerStartYRef.current = e.clientY;
-    startVoiceRecord();
+    if (voiceMode !== 'ptt') return;
+    if (recordPhaseRef.current === 'idle') {
+      isPointerDownRef.current = true;
+      pointerStartYRef.current = e.clientY;
+      pointerStartTimeRef.current = Date.now();
+      startVoiceRecord();
+    }
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isRecording || !isPointerDownRef.current) return;
+    if (recordPhaseRef.current === 'idle' || !isPointerDownRef.current) return;
     const diffY = pointerStartYRef.current - e.clientY;
     if (diffY > 40) {
       if (!isSlideCancel) {
@@ -249,8 +303,26 @@ export function TableTacticalChatBar({
   };
 
   const handlePointerUp = () => {
-    if (isPointerDownRef.current && isRecording) {
-      isPointerDownRef.current = false;
+    if (!isPointerDownRef.current) return;
+    isPointerDownRef.current = false;
+    const holdDuration = Date.now() - pointerStartTimeRef.current;
+    // If user held the button for >= 400ms: it was Hold-to-Talk -> auto stop on release
+    if (holdDuration >= 400) {
+      stopVoiceRecordAndSend();
+    }
+    // If it was a short tap (< 400ms), user enters Toggle-to-Talk mode -> stay recording so they can tap again to send
+  };
+
+  // Explicit click handler for Tap-to-Talk mode (Click once to talk, click again to send)
+  const handleMicButtonClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const holdDuration = Date.now() - pointerStartTimeRef.current;
+    // If it was a hold gesture, handlePointerUp already handled it
+    if (holdDuration >= 400) return;
+
+    if (recordPhaseRef.current === 'idle') {
+      startVoiceRecord();
+    } else if (recordPhaseRef.current === 'recording' || recordPhaseRef.current === 'starting') {
       stopVoiceRecordAndSend();
     }
   };
@@ -283,7 +355,7 @@ export function TableTacticalChatBar({
         triggerHaptic('success');
       } else {
         setVoiceMode('ptt');
-        alert('无法访问麦克风，请确认浏览器已授予麦克风权限');
+        showToast('无法访问麦克风，请确认浏览器已授予麦克风权限');
       }
     } else {
       // Switch back to PTT
@@ -293,8 +365,6 @@ export function TableTacticalChatBar({
       }
       setIsOpenMicActive(false);
       setVoiceMode('ptt');
-      setCurrentVolume(0);
-      if (onUserSpeakingChange) onUserSpeakingChange(false);
       triggerHaptic('light');
     }
   };
@@ -422,6 +492,16 @@ export function TableTacticalChatBar({
         </div>
       )}
 
+      {/* Mic Status & Permission Notice Toast */}
+      {toastMessage && (
+        <div className="w-full mb-1.5 px-3 py-1 rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-200 text-xs font-semibold flex items-center justify-between animate-in fade-in slide-in-from-bottom-2 shadow-sm">
+          <span>{toastMessage}</span>
+          <button onClick={() => setToastMessage(null)} className="p-0.5 text-amber-400 hover:text-white cursor-pointer">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+
       {/* Main Tactical Bar */}
       <div className="w-full bg-slate-900/90 border border-slate-800 rounded-xl px-2 py-1.5 shadow-md flex items-center justify-between gap-2 shrink-0 backdrop-blur">
         {/* 1. Left Voice & Mode Controls */}
@@ -430,19 +510,20 @@ export function TableTacticalChatBar({
           {isRecording ? (
             <div
               onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              className="flex items-center gap-1.5 animate-in fade-in"
+              className="flex items-center gap-1.5 animate-in fade-in select-none"
             >
               <button
-                onClick={stopVoiceRecordAndSend}
-                className={`px-2.5 py-1 rounded-xl text-white font-black text-xs flex items-center gap-1.5 shadow-lg transition active:scale-95 cursor-pointer ${
+                onPointerUp={handlePointerUp}
+                onClick={handleMicButtonClick}
+                className={`px-2.5 py-1 rounded-xl text-white font-black text-xs flex items-center gap-1.5 shadow-lg transition active:scale-95 cursor-pointer touch-none ${
                   isSlideCancel
                     ? 'bg-amber-600 ring-2 ring-amber-400'
                     : 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/60 animate-pulse'
                 }`}
+                title="点击发送对讲语音，或松开发送"
               >
                 <Radio className="w-3.5 h-3.5 animate-spin" />
-                <span>{isSlideCancel ? '松开取消' : `松开发送 (${recordingSeconds}s)`}</span>
+                <span>{isSlideCancel ? '松开取消' : `发送 (${recordingSeconds}s)`}</span>
 
                 {/* Real-time Sound Wave Equalizer from Mic Volume */}
                 <div className="flex items-end gap-0.5 h-3 ml-1">
@@ -510,12 +591,13 @@ export function TableTacticalChatBar({
             <div className="flex items-center gap-1">
               <button
                 onPointerDown={handlePointerDown}
-                onClick={startVoiceRecord}
-                className="px-2.5 py-1 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-300 hover:text-white font-bold text-xs flex items-center gap-1 transition active:scale-95 shadow cursor-pointer touch-none"
-                title="按住对讲 / 点击开始录音"
+                onPointerUp={handlePointerUp}
+                onClick={handleMicButtonClick}
+                className="px-2.5 py-1 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-300 hover:text-white font-bold text-xs flex items-center gap-1 transition active:scale-95 shadow cursor-pointer select-none touch-none"
+                title="点击或按住对讲说话"
               >
                 <Mic className="w-3.5 h-3.5 text-indigo-400" />
-                <span className="hidden xs:inline">按住对讲</span>
+                <span className="hidden xs:inline">对讲</span>
               </button>
 
               {/* Toggle to Open Mic (自由麦) */}

@@ -143,10 +143,15 @@ export function CarriageHeaderBar({
           {mode === 'realtime' && (
             <button
               onClick={onOpenChat}
-              className="px-2.5 py-1 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+              className="relative px-2.5 py-1 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
             >
               <MessageSquare className="w-3.5 h-3.5 text-indigo-200" />
               <span className="hidden min-[480px]:inline">聊天/对讲</span>
+              {unreadChatCount > 0 && (
+                <span className="absolute -top-1.5 -right-1 px-1.5 py-0.2 bg-rose-500 text-white text-[9px] font-black rounded-full border border-slate-900 shadow animate-pulse">
+                  {unreadChatCount}
+                </span>
+              )}
             </button>
           )}
         </div>
