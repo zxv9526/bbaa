@@ -104,6 +104,43 @@ export function clearRealtimeChatMessages(): void {
   } catch {}
 }
 
+// Fetch remote chat history and merge with local storage
+export async function fetchRemoteChatHistory(roomId = 'default_table'): Promise<ChatMessage[]> {
+  try {
+    const res = await fetch(`/api/chat/history?roomId=${encodeURIComponent(roomId)}&limit=50`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.messages)) {
+        const local = getRealtimeChatMessages();
+        const map = new Map<string, ChatMessage>();
+        local.forEach(m => map.set(m.id, m));
+        data.messages.forEach((m: any) => {
+          if (!map.has(m.id)) {
+            map.set(m.id, {
+              id: m.id,
+              senderId: m.senderId,
+              senderName: m.senderName,
+              senderAvatar: m.senderAvatar,
+              isUser: Boolean(m.isUser),
+              type: m.type,
+              content: m.content,
+              audioUrl: m.audioUrl,
+              audioDuration: m.audioDuration,
+              timestamp: m.timestamp,
+              seatIndex: m.seatIndex,
+              isDealer: m.isDealer
+            });
+          }
+        });
+        const merged = Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp).slice(-50);
+        localStorage.setItem(TABLE_CHAT_STORAGE_KEY, JSON.stringify(merged));
+        return merged;
+      }
+    }
+  } catch {}
+  return getRealtimeChatMessages();
+}
+
 // Read table from localStorage
 export function getSavedRealtimeTable(): RealtimeTableState | null {
   try {

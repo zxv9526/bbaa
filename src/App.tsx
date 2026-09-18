@@ -126,6 +126,7 @@ import {
   getRealtimeChatMessages,
   saveAndBroadcastChatMessage,
   clearRealtimeChatMessages,
+  fetchRemoteChatHistory,
   RealtimeTableEvent,
   getTabSessionId
 } from './lib/realtimeTableManager';
@@ -430,10 +431,12 @@ export default function App() {
     };
   }, [mode, gameState, currentAccount.phone, currentAccount.id, showChatDrawer, ttsEnabled]);
 
-  // ⚡ 三重语音传输引擎 (WebRTC P2P + WebSocket 高速广播 + HTTP 轮询保底) 语音接收监听
+  // ⚡ 三重语音与实时聊天传输引擎 (WebRTC P2P + WebSocket 高速广播 + HTTP 轮询保底) 接收监听
   useEffect(() => {
     if (mode !== 'realtime') return;
     const engine = TripleVoiceEngine.getInstance();
+    
+    // 监听实时对讲与语音包
     engine.onIncomingVoice = (voice) => {
       const effectiveUserId = (mode === 'realtime' && realtimeUserId) 
         ? realtimeUserId 
@@ -466,6 +469,32 @@ export default function App() {
           timestamp: voice.timestamp || Date.now(),
           seatIndex: voice.seatIndex
         };
+
+        setMessages(prev => {
+          if (prev.some(m => m.id === incomingMsg.id)) return prev;
+          return [...prev, incomingMsg];
+        });
+      }
+    };
+
+    // 监听全格式实时聊天消息 (文本, 表情, 常用语, 语音)
+    engine.onIncomingChatMessage = (incomingMsg) => {
+      const effectiveUserId = (mode === 'realtime' && realtimeUserId) 
+        ? realtimeUserId 
+        : (currentAccount.phone || currentAccount.id || 'player_user');
+
+      if (incomingMsg.senderId !== effectiveUserId) {
+        setUserIsSpeaking(true);
+        setTimeout(() => setUserIsSpeaking(false), 2200);
+        playIncomingRadioBeep();
+
+        if (!showChatDrawer) {
+          setUnreadCount(c => c + 1);
+        }
+
+        if (incomingMsg.type === 'quick' && incomingMsg.content && ttsEnabled) {
+          speakTextMessage(incomingMsg.content);
+        }
 
         setMessages(prev => {
           if (prev.some(m => m.id === incomingMsg.id)) return prev;
@@ -583,6 +612,11 @@ export default function App() {
     // 加载并同步实时对战场聊天对讲历史
     const savedChat = getRealtimeChatMessages();
     setMessages(savedChat);
+    fetchRemoteChatHistory().then(remoteChat => {
+      if (remoteChat && remoteChat.length > 0) {
+        setMessages(remoteChat);
+      }
+    });
     setUnreadCount(0);
 
     // 🚀 初始化三重语音架构引擎 (WebRTC P2P + WebSocket高速广播 + HTTP轮询保底)
@@ -961,7 +995,8 @@ export default function App() {
     // 在实时场向全桌真人玩家广播消息并持久化
     if (mode === 'realtime') {
       saveAndBroadcastChatMessage(userMsg);
-      // 🚀 同时通过 TripleVoiceEngine 三重架构 (WebRTC P2P + WebSocket广播 + HTTP保底) 极速广播文本与战术语音
+      // 🚀 同时通过 TripleVoiceEngine 三重架构 (WebRTC P2P + WebSocket广播 + HTTP保底) 极速广播全格式聊天与语音消息
+      TripleVoiceEngine.getInstance().sendChatMessage(userMsg);
       if (type === 'quick' || type === 'text') {
         TripleVoiceEngine.getInstance().sendVoicePhrase(content, senderName, senderAvatar);
       }

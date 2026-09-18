@@ -24,6 +24,21 @@ interface VoiceFrameRecord {
   timestamp: number;
 }
 
+interface ChatMessageRecord {
+  id: string;
+  roomId: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar: string;
+  type: 'text' | 'voice' | 'quick' | 'emoji';
+  content: string;
+  audioUrl?: string;
+  audioDuration?: number;
+  timestamp: number;
+  seatIndex?: number;
+  isDealer?: boolean;
+}
+
 interface SignalRecord {
   id: string;
   roomId: string;
@@ -35,10 +50,11 @@ interface SignalRecord {
 }
 
 const voiceFramesBuffer: VoiceFrameRecord[] = [];
+const chatMessagesBuffer: ChatMessageRecord[] = [];
 const signalsBuffer: SignalRecord[] = [];
 const roomPeersMap = new Map<string, Set<string>>(); // roomId -> Set of userIds
 
-// Cleanup old frames & signals periodically (keep last 60 seconds)
+// Cleanup old frames & signals periodically
 setInterval(() => {
   const now = Date.now();
   while (voiceFramesBuffer.length > 0 && now - voiceFramesBuffer[0].timestamp > 60000) {
@@ -46,6 +62,10 @@ setInterval(() => {
   }
   while (signalsBuffer.length > 0 && now - signalsBuffer[0].timestamp > 60000) {
     signalsBuffer.shift();
+  }
+  // Keep chat buffer under 300 messages and within 2 hours
+  while (chatMessagesBuffer.length > 300 || (chatMessagesBuffer.length > 0 && now - chatMessagesBuffer[0].timestamp > 2 * 3600 * 1000)) {
+    chatMessagesBuffer.shift();
   }
 }, 10000);
 
@@ -133,6 +153,85 @@ app.get("/api/voice/poll", (req, res) => {
       ok: true,
       timestamp: Date.now(),
       frames: newFrames
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || "Internal error" });
+  }
+});
+
+// 2b. Real-time Multi-Device Chat Message Send & Broadcast
+app.post("/api/chat/send", (req, res) => {
+  try {
+    const { roomId = "default_table", message } = req.body;
+    if (!message || !message.senderId) {
+      res.status(400).json({ ok: false, error: "Missing message payload" });
+      return;
+    }
+
+    const record: ChatMessageRecord = {
+      id: message.id || ("msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
+      roomId: String(roomId),
+      senderId: String(message.senderId),
+      senderName: String(message.senderName || "玩家"),
+      senderAvatar: String(message.senderAvatar || "😎"),
+      type: message.type || "text",
+      content: String(message.content || ""),
+      audioUrl: message.audioUrl,
+      audioDuration: message.audioDuration,
+      timestamp: message.timestamp || Date.now(),
+      seatIndex: typeof message.seatIndex === "number" ? message.seatIndex : undefined,
+      isDealer: Boolean(message.isDealer)
+    };
+
+    chatMessagesBuffer.push(record);
+    if (chatMessagesBuffer.length > 300) chatMessagesBuffer.shift();
+
+    // Broadcast to WebSocket clients in the same room
+    broadcastToRoom(record.roomId, {
+      type: "CHAT_MESSAGE_INCOMING",
+      message: record
+    }, record.senderId);
+
+    res.json({ ok: true, messageId: record.id });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || "Internal error" });
+  }
+});
+
+// 2c. Real-time Multi-Device Chat Message Poll (for HTTP fallback)
+app.get("/api/chat/poll", (req, res) => {
+  try {
+    const roomId = String(req.query.roomId || "default_table");
+    const userId = String(req.query.userId || "");
+    const since = parseInt(String(req.query.since || "0"), 10);
+
+    const newMessages = chatMessagesBuffer.filter(
+      m => m.roomId === roomId && m.senderId !== userId && m.timestamp > since
+    );
+
+    res.json({
+      ok: true,
+      timestamp: Date.now(),
+      messages: newMessages
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || "Internal error" });
+  }
+});
+
+// 2d. Chat History Fetch (for joining table or refreshing)
+app.get("/api/chat/history", (req, res) => {
+  try {
+    const roomId = String(req.query.roomId || "default_table");
+    const limit = Math.min(100, parseInt(String(req.query.limit || "50"), 10));
+
+    const history = chatMessagesBuffer
+      .filter(m => m.roomId === roomId)
+      .slice(-limit);
+
+    res.json({
+      ok: true,
+      messages: history
     });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err?.message || "Internal error" });
@@ -399,6 +498,37 @@ async function startServer() {
               category,
               icon,
               audioUrl
+            }, currentClient.userId);
+            break;
+          }
+
+          // Real-time Multi-Device Chat Message Broadcast (文本, 语音条, 战术常用语, 表情)
+          case "CHAT_MESSAGE": {
+            if (!currentClient) return;
+            const chatPayload = msg.message;
+            if (!chatPayload) return;
+
+            const record: ChatMessageRecord = {
+              id: chatPayload.id || ("msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
+              roomId: currentClient.roomId,
+              senderId: currentClient.userId,
+              senderName: chatPayload.senderName || currentClient.name,
+              senderAvatar: chatPayload.senderAvatar || currentClient.avatar,
+              type: chatPayload.type || "text",
+              content: String(chatPayload.content || ""),
+              audioUrl: chatPayload.audioUrl,
+              audioDuration: chatPayload.audioDuration,
+              timestamp: chatPayload.timestamp || Date.now(),
+              seatIndex: typeof chatPayload.seatIndex === "number" ? chatPayload.seatIndex : currentClient.seatIndex,
+              isDealer: Boolean(chatPayload.isDealer)
+            };
+
+            chatMessagesBuffer.push(record);
+            if (chatMessagesBuffer.length > 300) chatMessagesBuffer.shift();
+
+            broadcastToRoom(currentClient.roomId, {
+              type: "CHAT_MESSAGE_INCOMING",
+              message: record
             }, currentClient.userId);
             break;
           }

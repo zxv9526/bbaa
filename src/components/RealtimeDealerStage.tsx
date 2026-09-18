@@ -87,11 +87,35 @@ export function RealtimeDealerStage({
   const mySeatIndex = players.findIndex(p => p.id === currentUserId);
 
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+  const [seatBubbles, setSeatBubbles] = useState<Record<string, {
+    content: string;
+    type: 'text' | 'voice' | 'quick' | 'emoji';
+    duration?: number;
+    audioUrl?: string;
+    id: string;
+  }>>({});
 
   useEffect(() => {
-    if (latestMessage && Date.now() - latestMessage.timestamp < 5000) {
+    if (latestMessage && Date.now() - latestMessage.timestamp < 6000) {
       setActiveSpeakerId(latestMessage.senderId);
-      const timer = setTimeout(() => setActiveSpeakerId(null), 4000);
+      setSeatBubbles(prev => ({
+        ...prev,
+        [latestMessage.senderId]: {
+          content: latestMessage.content,
+          type: latestMessage.type,
+          duration: latestMessage.audioDuration,
+          audioUrl: latestMessage.audioUrl,
+          id: latestMessage.id
+        }
+      }));
+      const timer = setTimeout(() => {
+        setActiveSpeakerId(null);
+        setSeatBubbles(prev => {
+          const copy = { ...prev };
+          delete copy[latestMessage.senderId];
+          return copy;
+        });
+      }, 5000);
       return () => clearTimeout(timer);
     }
   }, [latestMessage]);
@@ -472,6 +496,7 @@ export function RealtimeDealerStage({
             const isThisDealer = isOccupied && idx === dealerIndex;
             const isMe = isOccupied && p.id === currentUserId;
             const isSpeaking = isOccupied && activeSpeakerId && p.id === activeSpeakerId;
+            const bubble = isOccupied ? seatBubbles[p.id] : null;
 
             return (
               <div
@@ -485,6 +510,28 @@ export function RealtimeDealerStage({
                 }`}
                 title={isOccupied ? `${idx + 1}号位: ${p.name}` : `${idx + 1}号位: 待加入`}
               >
+                {/* Real-time Floating Seat Chat Bubble */}
+                {bubble && (
+                  <div className="absolute -top-11 left-1/2 -translate-x-1/2 z-30 pointer-events-none animate-in zoom-in-75 fade-in slide-in-from-bottom-2 duration-200">
+                    {bubble.type === 'emoji' ? (
+                      <div className="text-3xl drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)] animate-bounce select-none">
+                        {bubble.content}
+                      </div>
+                    ) : bubble.type === 'voice' ? (
+                      <div className="px-2 py-1 rounded-full bg-emerald-950/95 border border-emerald-400 text-emerald-200 text-[10px] font-black shadow-xl flex items-center gap-1 whitespace-nowrap">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping" />
+                        <span>🎙️ {bubble.duration || 2}"</span>
+                        <span className="text-[9px] text-emerald-400 animate-pulse">〰️</span>
+                      </div>
+                    ) : (
+                      <div className="relative px-2.5 py-1 rounded-xl bg-slate-950/95 border border-amber-400/80 text-amber-200 text-[11px] font-bold shadow-2xl max-w-[130px] truncate whitespace-nowrap">
+                        <span>{bubble.content}</span>
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-amber-400/80" />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Dealer Crown Badge on the Dealer Seat */}
                 {isThisDealer && (
                   <span className="absolute -top-2.5 -right-1 bg-amber-500 text-slate-950 font-black text-[9px] px-1.5 py-0.5 rounded-full shadow-md border border-amber-300 flex items-center gap-0.5 z-10 animate-bounce" title="当前发牌庄家">

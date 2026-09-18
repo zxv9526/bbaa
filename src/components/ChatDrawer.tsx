@@ -17,7 +17,9 @@ import {
   Activity,
   Headphones,
   ShieldCheck,
-  Check
+  Check,
+  Copy,
+  Filter
 } from 'lucide-react';
 import { ChatMessage, ChatMessageType } from '../types';
 import {
@@ -46,6 +48,21 @@ interface ChatDrawerProps {
   onToggleTts: () => void;
 }
 
+export const TABLE_INTERACTION_ITEMS = [
+  { emoji: '🍻', label: '碰杯敬酒', desc: '敬牌友一杯' },
+  { emoji: '💣', label: '战术手雷', desc: '牌运炸裂' },
+  { emoji: '🍵', label: '奉茶慢品', desc: '不急慢慢想' },
+  { emoji: '🍗', label: '加个鸡腿', desc: '犒劳队友' },
+  { emoji: '💸', label: '大吉大利', desc: '财源广进' },
+  { emoji: '👑', label: '庄家霸气', desc: '威武发牌' },
+  { emoji: '⚡', label: '出牌电击', desc: '催牌专用' },
+  { emoji: '👏', label: '精彩鼓掌', desc: '绝妙牌型' },
+  { emoji: '🔥', label: '手气爆棚', desc: '火力全开' },
+  { emoji: '🧊', label: '冷静一下', desc: '稳扎稳打' },
+  { emoji: '🎉', label: '大获全胜', desc: '全胜通吃' },
+  { emoji: '🤝', label: '承让承让', desc: '切磋牌技' }
+];
+
 type TabType = 'quick' | 'emoji' | 'history' | 'settings';
 
 export function ChatDrawer({
@@ -62,6 +79,8 @@ export function ChatDrawer({
 }: ChatDrawerProps) {
   const [activeTab, setActiveTab] = useState<TabType>('quick');
   const [inputText, setInputText] = useState('');
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'voice' | 'text' | 'emoji'>('all');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   
   // Voice Engine State & Stats
   const engine = TripleVoiceEngine.getInstance();
@@ -453,43 +472,125 @@ export function ChatDrawer({
             </div>
           )}
 
-          {/* TAB 2: Emoji Grid */}
+          {/* TAB 2: Emoji & Interactive Props Grid */}
           {activeTab === 'emoji' && (
-            <div className="grid grid-cols-4 sm:grid-cols-6 gap-3 py-2">
-              {CHAT_EMOJIS.map((emoji) => (
-                <button
-                  key={emoji}
-                  onClick={() => handleSendEmoji(emoji)}
-                  className="h-14 rounded-2xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700/60 flex items-center justify-center text-2xl hover:scale-110 active:scale-95 transition shadow cursor-pointer"
-                >
-                  {emoji}
-                </button>
-              ))}
+            <div className="space-y-4 py-1">
+              {/* Table Interactive Props */}
+              <div className="space-y-2">
+                <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5 px-1">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>牌桌互动趣味道具</span>
+                  <span className="text-[10px] text-slate-500 font-normal">（发送后全桌头顶实时浮动）</span>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  {TABLE_INTERACTION_ITEMS.map((item) => (
+                    <button
+                      key={item.label}
+                      onClick={() => handleSendEmoji(item.emoji)}
+                      className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-amber-600/20 hover:border-amber-400/50 border border-slate-700/60 flex flex-col items-center justify-center gap-1 transition shadow cursor-pointer active:scale-95 group"
+                      title={item.desc}
+                    >
+                      <span className="text-2xl group-hover:scale-125 transition-transform duration-200">
+                        {item.emoji}
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-200 group-hover:text-amber-300 transition">
+                        {item.label}
+                      </span>
+                      <span className="text-[9px] text-slate-500 truncate max-w-full">
+                        {item.desc}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Standard Chat Emojis */}
+              <div className="space-y-2 pt-1 border-t border-slate-800/80">
+                <div className="text-xs font-bold text-slate-400 flex items-center gap-1.5 px-1">
+                  <Smile className="w-3.5 h-3.5 text-slate-400" />
+                  <span>常用对战表情</span>
+                </div>
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5">
+                  {CHAT_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => handleSendEmoji(emoji)}
+                      className="h-12 rounded-xl bg-slate-800/70 hover:bg-slate-750 border border-slate-700/50 flex items-center justify-center text-2xl hover:scale-120 active:scale-90 transition shadow cursor-pointer"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
           {/* TAB 3: Message History */}
           {activeTab === 'history' && (
             <div className="space-y-3">
-              {messages.length > 0 && onClearMessages && (
-                <div className="flex items-center justify-between px-1 pb-1 border-b border-slate-800 text-[11px] text-slate-400">
-                  <span>共 {messages.length} 条对讲记录</span>
+              {/* History Top Filter & Actions */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2 border-b border-slate-800 text-[11px] text-slate-400">
+                {/* Filter Pills */}
+                <div className="flex items-center gap-1">
+                  {(['all', 'voice', 'text', 'emoji'] as const).map((f) => {
+                    const count = f === 'all' 
+                      ? messages.length 
+                      : f === 'voice' 
+                      ? messages.filter(m => m.type === 'voice').length 
+                      : f === 'emoji' 
+                      ? messages.filter(m => m.type === 'emoji').length 
+                      : messages.filter(m => m.type === 'text' || m.type === 'quick').length;
+
+                    const label = f === 'all' ? '全部' : f === 'voice' ? '🎙️语音' : f === 'text' ? '💬文字' : '😊表情';
+
+                    return (
+                      <button
+                        key={f}
+                        onClick={() => setHistoryFilter(f)}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                          historyFilter === f
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <span>{label}</span>
+                        <span className="opacity-70">({count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {messages.length > 0 && onClearMessages && (
                   <button
                     onClick={onClearMessages}
-                    className="flex items-center gap-1 text-slate-500 hover:text-rose-400 transition cursor-pointer"
+                    className="flex items-center gap-1 text-slate-500 hover:text-rose-400 transition cursor-pointer ml-auto"
                   >
                     <Trash2 className="w-3 h-3" />
-                    <span>清空记录</span>
+                    <span>清空</span>
                   </button>
-                </div>
-              )}
+                )}
+              </div>
 
-              {messages.length === 0 ? (
-                <div className="text-center py-12 text-slate-500 text-xs">
-                  暂无对讲记录，点击快捷战术或语音与全桌玩家互动吧~
-                </div>
-              ) : (
-                messages.map((msg) => {
+              {/* Message List */}
+              {(() => {
+                const filteredMessages = messages.filter(m => {
+                  if (historyFilter === 'all') return true;
+                  if (historyFilter === 'voice') return m.type === 'voice';
+                  if (historyFilter === 'emoji') return m.type === 'emoji';
+                  return m.type === 'text' || m.type === 'quick';
+                });
+
+                if (filteredMessages.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-slate-500 text-xs">
+                      {historyFilter === 'all' 
+                        ? '暂无对讲记录，点击快捷战术或语音与全桌玩家互动吧~'
+                        : '当前分类下暂无消息记录'}
+                    </div>
+                  );
+                }
+
+                return filteredMessages.map((msg) => {
                   if (msg.senderId === 'system') {
                     return (
                       <div key={msg.id} className="flex justify-center my-1.5 animate-in fade-in">
@@ -512,7 +613,7 @@ export function ChatDrawer({
                   return (
                     <div
                       key={msg.id}
-                      className={`flex items-start gap-2.5 ${isMe ? 'flex-row-reverse' : 'flex-row'} animate-in fade-in`}
+                      className={`flex items-start gap-2.5 ${isMe ? 'flex-row-reverse' : 'flex-row'} animate-in fade-in group`}
                     >
                       <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-sm shrink-0 shadow">
                         {msg.senderAvatar || '👤'}
@@ -573,21 +674,44 @@ export function ChatDrawer({
                         ) : msg.type === 'emoji' ? (
                           <div className="text-3xl p-1 animate-in zoom-in-50">{msg.content}</div>
                         ) : (
-                          <div
-                            className={`px-3.5 py-2 rounded-2xl text-xs font-medium leading-relaxed break-words shadow ${
-                              isMe
-                                ? 'bg-indigo-600 text-white rounded-tr-sm'
-                                : 'bg-slate-800 text-slate-100 border border-slate-700/80 rounded-tl-sm'
-                            }`}
-                          >
-                            {msg.content}
+                          <div className="relative group/msg">
+                            <div
+                              className={`px-3.5 py-2 rounded-2xl text-xs font-medium leading-relaxed break-words shadow ${
+                                isMe
+                                  ? 'bg-indigo-600 text-white rounded-tr-sm'
+                                  : 'bg-slate-800 text-slate-100 border border-slate-700/80 rounded-tl-sm'
+                              }`}
+                            >
+                              {msg.content}
+                            </div>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard?.writeText?.(msg.content);
+                                setCopiedId(msg.id);
+                                setTimeout(() => setCopiedId(null), 1800);
+                              }}
+                              className={`absolute -bottom-2 ${isMe ? 'left-0' : 'right-0'} opacity-0 group-hover/msg:opacity-100 transition px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-[10px] text-slate-400 hover:text-white flex items-center gap-0.5 shadow cursor-pointer`}
+                              title="复制此文本"
+                            >
+                              {copiedId === msg.id ? (
+                                <>
+                                  <Check className="w-2.5 h-2.5 text-emerald-400" />
+                                  <span className="text-emerald-400 text-[9px]">已复制</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-2.5 h-2.5" />
+                                  <span className="text-[9px]">复制</span>
+                                </>
+                              )}
+                            </button>
                           </div>
                         )}
                       </div>
                     </div>
                   );
-                })
-              )}
+                });
+              })()}
               <div ref={messagesEndRef} />
             </div>
           )}

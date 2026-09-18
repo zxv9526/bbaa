@@ -11,6 +11,7 @@ import {
   speakTextMessage,
   setRadioChirpSoundEnabled
 } from './chatManager';
+import { ChatMessage } from '../types';
 
 export type TransmissionTier = 'webrtc' | 'websocket' | 'http';
 export type TierPreference = 'auto' | 'webrtc' | 'websocket' | 'http';
@@ -105,6 +106,7 @@ export class TripleVoiceEngine {
   private httpPollingTimer: any = null;
   private lastPollTimestamp: number = Date.now();
   private isHttpPolling: boolean = false;
+  private receivedChatIds = new Set<string>();
 
   // Audio Context & Recording
   private localStream: MediaStream | null = null;
@@ -142,6 +144,7 @@ export class TripleVoiceEngine {
     timestamp?: number;
     tier: TransmissionTier;
   }) => void;
+  public onIncomingChatMessage?: (message: ChatMessage) => void;
 
   constructor() {
     this.loadSettings();
@@ -688,6 +691,49 @@ export class TripleVoiceEngine {
     this.notifyStats();
   }
 
+  public sendChatMessage(msg: ChatMessage) {
+    this.packetsSent += 1;
+
+    // 1. Send via WebRTC DataChannels if P2P active
+    let sentP2P = false;
+    if (this.activeTier === 'webrtc') {
+      const payload = JSON.stringify({
+        type: 'CHAT_MESSAGE',
+        message: msg
+      });
+      this.dataChannels.forEach(dc => {
+        if (dc.readyState === 'open') {
+          try {
+            dc.send(payload);
+            sentP2P = true;
+          } catch {}
+        }
+      });
+    }
+
+    // 2. Send via WebSocket if connected
+    if (this.wsConnected) {
+      this.sendWsMessage({
+        type: 'CHAT_MESSAGE',
+        message: msg
+      });
+    }
+
+    // 3. Guarantee via HTTP backend
+    try {
+      fetch('/api/chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomId: this.roomId,
+          message: msg
+        })
+      }).catch(() => {});
+    } catch {}
+
+    this.notifyStats();
+  }
+
   // -------------------------------------------------------------
   // Tier 1: WebRTC P2P Mesh Implementation
   // -------------------------------------------------------------
@@ -794,6 +840,8 @@ export class TripleVoiceEngine {
           }
         } else if (msg.type === 'VOICE_PHRASE' && msg.phrase) {
           this.handleIncomingPhrase(msg, 'webrtc');
+        } else if (msg.type === 'CHAT_MESSAGE' && msg.message) {
+          this.handleIncomingChatMessage(msg.message, 'webrtc');
         }
       } catch {}
     };
@@ -1040,6 +1088,13 @@ export class TripleVoiceEngine {
         break;
       }
 
+      case 'CHAT_MESSAGE_INCOMING': {
+        if (msg.message) {
+          this.handleIncomingChatMessage(msg.message, 'websocket');
+        }
+        break;
+      }
+
       case 'PEER_VOICE_ACTIVITY': {
         const { userId, isSpeaking, volume, activeTier } = msg;
         const p = this.peers.get(userId);
@@ -1132,6 +1187,21 @@ export class TripleVoiceEngine {
             }
           }
         } catch {}
+
+        // Poll for real-time chat messages (Tier 3 HTTP fallback)
+        try {
+          const chatRes = await fetch(
+            `/api/chat/poll?roomId=${encodeURIComponent(this.roomId)}&userId=${encodeURIComponent(this.userId)}&since=${this.lastPollTimestamp - 5000}`
+          );
+          if (chatRes.ok) {
+            const chatData = await chatRes.json();
+            if (chatData.ok && Array.isArray(chatData.messages)) {
+              chatData.messages.forEach((m: any) => {
+                this.handleIncomingChatMessage(m, 'http');
+              });
+            }
+          }
+        } catch {}
       }
 
       this.httpPollingTimer = setTimeout(poll, 850);
@@ -1199,6 +1269,79 @@ export class TripleVoiceEngine {
         phrase,
         duration: 2,
         timestamp: Date.now(),
+        tier
+      });
+    }
+  }
+
+  private handleIncomingChatMessage(msg: any, tier: TransmissionTier) {
+    if (!msg || msg.senderId === this.userId) return;
+
+    const msgId = msg.id || ('chat_' + (msg.timestamp || Date.now()) + '_' + msg.senderId);
+    if (this.receivedChatIds.has(msgId)) return;
+    this.receivedChatIds.add(msgId);
+    if (this.receivedChatIds.size > 200) {
+      const first = this.receivedChatIds.values().next().value;
+      if (first) this.receivedChatIds.delete(first);
+    }
+
+    const senderId = msg.senderId;
+    const seatIndex = msg.seatIndex;
+
+    // Trigger peer visual presence
+    const p = this.peers.get(senderId);
+    if (p) {
+      p.isSpeaking = true;
+      p.tier = tier;
+      this.notifyPeers();
+      setTimeout(() => {
+        p.isSpeaking = false;
+        this.notifyPeers();
+      }, msg.type === 'voice' ? Math.max(1500, (msg.audioDuration || 2) * 1000) : 2500);
+    }
+
+    // Audio playback for voice or speech for quick tactical phrase
+    if (!this.isDeafened) {
+      if (msg.type === 'voice' && msg.audioUrl) {
+        this.playReceivedAudio(msg.audioUrl);
+      } else if (msg.type === 'quick' && msg.content) {
+        if (this.radioChirpEnabled) playRadioChirpStart();
+        speakTextMessage(msg.content);
+        if (this.radioChirpEnabled) setTimeout(() => playRadioChirpEnd(), 1400);
+      }
+    }
+
+    const normalizedMsg: ChatMessage = {
+      id: msgId,
+      senderId: msg.senderId,
+      senderName: msg.senderName || '牌友',
+      senderAvatar: msg.senderAvatar || '😎',
+      isUser: msg.senderId === this.userId,
+      type: msg.type || 'text',
+      content: msg.content || '',
+      audioUrl: msg.audioUrl,
+      audioDuration: msg.audioDuration,
+      timestamp: msg.timestamp || Date.now(),
+      seatIndex: msg.seatIndex,
+      isDealer: msg.isDealer
+    };
+
+    if (this.onIncomingChatMessage) {
+      this.onIncomingChatMessage(normalizedMsg);
+    }
+
+    // Backward compatibility for existing onIncomingVoice listeners
+    if (this.onIncomingVoice && (msg.type === 'voice' || msg.type === 'quick')) {
+      this.onIncomingVoice({
+        id: normalizedMsg.id,
+        senderId: normalizedMsg.senderId,
+        senderName: normalizedMsg.senderName,
+        senderAvatar: normalizedMsg.senderAvatar,
+        seatIndex: normalizedMsg.seatIndex,
+        phrase: msg.type === 'quick' ? normalizedMsg.content : undefined,
+        audioUrl: normalizedMsg.audioUrl,
+        duration: normalizedMsg.audioDuration || 2,
+        timestamp: normalizedMsg.timestamp,
         tier
       });
     }
