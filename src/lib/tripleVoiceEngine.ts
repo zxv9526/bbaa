@@ -1243,9 +1243,7 @@ export class TripleVoiceEngine {
     if (!phrase) return;
 
     if (!this.isDeafened) {
-      if (this.radioChirpEnabled) playRadioChirpStart();
       speakTextMessage(phrase);
-      if (this.radioChirpEnabled) setTimeout(() => playRadioChirpEnd(), 1400);
     }
 
     const p = this.peers.get(senderId);

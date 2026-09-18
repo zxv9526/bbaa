@@ -1,4 +1,8 @@
 import { ChatMessage } from '../types';
+import { TtsBroadcastEngine, TtsVoiceRole, TTS_VOICE_ROLES, TtsConfig } from './ttsEngine';
+
+export { TtsBroadcastEngine, TTS_VOICE_ROLES };
+export type { TtsVoiceRole, TtsConfig };
 
 export interface QuickPhraseCategory {
   category: string;
@@ -14,18 +18,21 @@ export const QUICK_PHRASE_GROUPS: QuickPhraseCategory[] = [
       '快点吧，等得花儿都谢了！',
       '别墨迹啦，赶快摆牌！',
       '时间不等人，抓紧上牌咯！',
-      '都好了没？我已经准备好通杀了！'
+      '都好了没？我已经准备好通杀了！',
+      '倒计时快到了，稳住千万别摆乌龙！'
     ]
   },
   {
-    category: '出牌交锋',
+    category: '摆牌出牌',
     icon: '🃏',
     phrases: [
       '三清同花顺，免摆直接起飞！',
       '这把庄家发得好牌，准备看枪！',
       '倒水可就直接全赔了哦，谨慎摆牌！',
       '乌龙就别硬撑了，速速投降！',
-      '全垒打通杀八方，承让了！'
+      '全垒打通杀八方，承让了！',
+      '头墩三条，我就问谁敢顶？',
+      '中墩葫芦尾墩同花，这把稳如老狗！'
     ]
   },
   {
@@ -36,7 +43,8 @@ export const QUICK_PHRASE_GROUPS: QuickPhraseCategory[] = [
       '看我这一把通杀全场，打枪翻倍！',
       '搏一搏，单车变摩托！',
       '手风正顺，谁敢与我一战！',
-      '特殊牌型在手，免摆直接起飞！'
+      '特殊牌型在手，免摆直接起飞！',
+      '今日运势冲天，神仙也挡不住！'
     ]
   },
   {
@@ -46,7 +54,8 @@ export const QUICK_PHRASE_GROUPS: QuickPhraseCategory[] = [
       '手气太背了，全是散牌，手下留情！',
       '大哥大姐手下留情，小弟给您倒茶了！',
       '哎呀又倒水了，这把难顶啊！',
-      '求轻虐，积分不够输啦！'
+      '求轻虐，积分不够输啦！',
+      '这手散牌简直感人，给条活路吧！'
     ]
   },
   {
@@ -56,7 +65,19 @@ export const QUICK_PHRASE_GROUPS: QuickPhraseCategory[] = [
       '打得漂亮，这把甘拜下风！',
       '青山不改绿水长流，下把再战！',
       '承让承让，运气好而已！',
-      '厉害厉害，高手在民间啊！'
+      '厉害厉害，高手在民间啊！',
+      '棋逢对手，打得痛快淋漓！'
+    ]
+  },
+  {
+    category: '闽南港粤',
+    icon: '🏮',
+    phrases: [
+      '乌龙倒水，阿嬷都摇头！',
+      '一条龙贯通天地，今晚加鸡腿！',
+      '同花顺大杀四方，稳如泰山！',
+      '催啥子嘛，高手出招都要深思熟虑！',
+      '阿兄手下留情，小弟给您泡铁观音！'
     ]
   }
 ];
@@ -173,7 +194,7 @@ function float32ArrayToWavBlob(channelData: Float32Array, sampleRate: number): B
  * Avoids browser hardware context exhaustion (max 6-32 AudioContexts)
  */
 let sharedAudioCtx: AudioContext | null = null;
-function getSharedAudioContext(): AudioContext | null {
+export function getSharedAudioContext(): AudioContext | null {
   try {
     if (typeof window === 'undefined') return null;
     const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -264,20 +285,17 @@ export function playIncomingRadioBeep() {
 }
 
 /**
- * Browser-native Web Speech Synthesis (TTS)
+ * 🎙️ 常用语与对局语音播报系统 (调用专业级 TtsBroadcastEngine)
  */
-export function speakTextMessage(text: string) {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-  try {
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'zh-CN';
-    utterance.rate = 1.08;
-    utterance.pitch = 1.0;
-    window.speechSynthesis.speak(utterance);
-  } catch (err) {
-    console.warn('Speech synthesis not available:', err);
-  }
+export function speakTextMessage(text: string, options?: { overrideRole?: TtsVoiceRole; isLocalPreview?: boolean; onEnd?: () => void }) {
+  TtsBroadcastEngine.getInstance().speak(text, options);
+}
+
+/**
+ * 本地常用语试听入口 (不发给他人，不受全局静音阻断)
+ */
+export function previewPhraseVoice(phrase: string, role?: TtsVoiceRole, onEnd?: () => void) {
+  TtsBroadcastEngine.getInstance().previewPhrase(phrase, role, onEnd);
 }
 
 export interface VoiceRecordResult {

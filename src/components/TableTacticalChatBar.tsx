@@ -14,7 +14,9 @@ import {
   Sliders,
   Smile,
   Layers,
-  Activity
+  Activity,
+  Play,
+  Square
 } from 'lucide-react';
 import {
   VoiceRecorder,
@@ -23,8 +25,14 @@ import {
   playRadioChirpEnd,
   createSimulatedVoiceAudioUrl,
   QUICK_PHRASE_GROUPS,
-  CHAT_EMOJIS
+  CHAT_EMOJIS,
+  previewPhraseVoice
 } from '../lib/chatManager';
+import {
+  TtsBroadcastEngine,
+  TTS_VOICE_ROLES,
+  TtsConfig
+} from '../lib/ttsEngine';
 import { triggerHaptic } from '../lib/haptics';
 import { ChatMessage } from '../types';
 import {
@@ -32,6 +40,7 @@ import {
   VoiceEngineStats
 } from '../lib/tripleVoiceEngine';
 import { TripleVoiceDiagnosticsModal } from './TripleVoiceDiagnosticsModal';
+import { TtsVoiceSettingsModal } from './TtsVoiceSettingsModal';
 import { TABLE_INTERACTION_ITEMS } from './ChatDrawer';
 
 interface TableTacticalChatBarProps {
@@ -68,8 +77,19 @@ export function TableTacticalChatBar({
   const [isSlideCancel, setIsSlideCancel] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>(QUICK_PHRASE_GROUPS[0].category);
   const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
+  const [showVoiceSettingsModal, setShowVoiceSettingsModal] = useState(false);
+  const [previewingPhrase, setPreviewingPhrase] = useState<string | null>(null);
   const engine = TripleVoiceEngine.getInstance();
+  const ttsEngine = TtsBroadcastEngine.getInstance();
+  const [ttsConfig, setTtsConfig] = useState<TtsConfig>(() => ttsEngine.getConfig());
   const [voiceStats, setVoiceStats] = useState<VoiceEngineStats>(() => engine.getStats());
+
+  useEffect(() => {
+    const unsubTts = ttsEngine.subscribe((cfg) => {
+      setTtsConfig(cfg);
+    });
+    return () => unsubTts();
+  }, [ttsEngine]);
 
   useEffect(() => {
     setVoiceStats(engine.getStats());
@@ -395,7 +415,24 @@ export function TableTacticalChatBar({
     const audioUrl = createSimulatedVoiceAudioUrl(2, 340 + Math.random() * 80);
     // 🚀 三重语音传输架构：向全桌真人玩家高速广播常用语音播报
     engine.sendVoicePhrase(phrase);
-    onSendMessage('voice', phrase, audioUrl, 2);
+    onSendMessage('quick', phrase, audioUrl, 2);
+    // 🎙️ 本地立即使用专属音色播报语音
+    if (ttsEnabled) {
+      ttsEngine.speak(phrase);
+    }
+  };
+
+  const handlePreviewPhrase = (phrase: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (previewingPhrase === phrase) {
+      ttsEngine.stop();
+      setPreviewingPhrase(null);
+      return;
+    }
+    setPreviewingPhrase(phrase);
+    previewPhraseVoice(phrase, ttsConfig.role, () => {
+      setPreviewingPhrase(null);
+    });
   };
 
   const handleSendQuickEmoji = (emoji: string) => {
@@ -415,17 +452,51 @@ export function TableTacticalChatBar({
       {/* 🚀 Quick Voice Tactical Phrases Popover */}
       {showQuickVoice && (
         <div className="absolute bottom-full left-0 mb-2 w-80 sm:w-96 bg-slate-900/98 border border-amber-500/50 rounded-2xl p-3 shadow-2xl backdrop-blur-md z-50 animate-in slide-in-from-bottom-2 fade-in">
+          {/* Header */}
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
             <div className="flex items-center gap-1.5 text-xs font-black text-amber-300">
               <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-              <span>常用战术语音播报 (三重架构广播)</span>
+              <span>常用战术语音播报</span>
             </div>
-            <button
-              onClick={() => setShowQuickVoice(false)}
-              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowVoiceSettingsModal(true)}
+                className="px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[10px] font-bold text-amber-300 flex items-center gap-1 transition cursor-pointer"
+                title="打开常用语音色与播报设置"
+              >
+                <Sliders className="w-3 h-3" />
+                <span>音色设置</span>
+              </button>
+              <button
+                onClick={() => setShowQuickVoice(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Voice Role Pill Switcher */}
+          <div className="flex items-center gap-1 mb-2 px-1.5 py-1 rounded-xl bg-slate-950/70 border border-slate-800 overflow-x-auto no-scrollbar text-[10px]">
+            <span className="text-slate-400 font-bold shrink-0">音色:</span>
+            {TTS_VOICE_ROLES.map((r) => {
+              const isSelected = ttsConfig.role === r.id;
+              return (
+                <button
+                  key={r.id}
+                  onClick={() => ttsEngine.setRole(r.id)}
+                  className={`px-2 py-0.5 rounded-lg whitespace-nowrap font-bold transition cursor-pointer flex items-center gap-1 ${
+                    isSelected
+                      ? 'bg-amber-500 text-slate-950 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                  title={r.tagline}
+                >
+                  <span>{r.avatar}</span>
+                  <span>{r.name}</span>
+                </button>
+              );
+            })}
           </div>
 
           {/* Category Tabs */}
@@ -448,18 +519,51 @@ export function TableTacticalChatBar({
 
           {/* Phrases under selected category */}
           <div className="grid grid-cols-1 gap-1.5 max-h-52 overflow-y-auto no-scrollbar">
-            {currentGroup.phrases.map((phrase, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSendQuickVoicePhrase(phrase)}
-                className="text-left px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-amber-600/20 hover:border-amber-400/50 border border-slate-700/60 text-slate-200 hover:text-white text-xs font-medium transition flex items-center justify-between group active:scale-98 cursor-pointer"
-              >
-                <span className="truncate">{phrase}</span>
-                <span className="text-[10px] text-amber-300 opacity-0 group-hover:opacity-100 transition shrink-0 ml-2 font-bold">
-                  🔊 播报
-                </span>
-              </button>
-            ))}
+            {currentGroup.phrases.map((phrase, idx) => {
+              const isThisPreviewing = previewingPhrase === phrase;
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 transition group"
+                >
+                  {/* 🔊 Preview Voice Button */}
+                  <button
+                    onClick={(e) => handlePreviewPhrase(phrase, e)}
+                    className={`p-1.5 rounded-lg shrink-0 transition cursor-pointer ${
+                      isThisPreviewing
+                        ? 'bg-rose-500 text-white animate-pulse'
+                        : 'bg-slate-700/60 text-slate-300 hover:bg-amber-500/20 hover:text-amber-300'
+                    }`}
+                    title="试听发音"
+                  >
+                    {isThisPreviewing ? (
+                      <Square className="w-3 h-3 fill-current" />
+                    ) : (
+                      <Volume2 className="w-3 h-3" />
+                    )}
+                  </button>
+
+                  {/* Phrase Text (Click to Send) */}
+                  <button
+                    onClick={() => handleSendQuickVoicePhrase(phrase)}
+                    className="flex-1 text-left py-1 text-slate-200 hover:text-amber-200 text-xs font-medium truncate cursor-pointer"
+                    title="点击发送全桌并语音播报"
+                  >
+                    {phrase}
+                  </button>
+
+                  {/* Send & Broadcast Badge */}
+                  <button
+                    onClick={() => handleSendQuickVoicePhrase(phrase)}
+                    className="px-2 py-1 rounded-lg text-[10px] bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 font-bold transition shrink-0 cursor-pointer flex items-center gap-1"
+                    title="发给全桌牌友"
+                  >
+                    <span>播报</span>
+                    <span>➔</span>
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -694,18 +798,27 @@ export function TableTacticalChatBar({
             </div>
           )}
 
-          {/* TTS Toggle */}
-          <button
-            onClick={onToggleTts}
-            className={`p-1 rounded-lg border text-xs transition cursor-pointer ${
-              ttsEnabled
-                ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
-                : 'bg-slate-800 border-slate-700 text-slate-500'
-            }`}
-            title={ttsEnabled ? '语音朗读已开启 (点击静音)' : '语音朗读已静音 (点击开启)'}
-          >
-            {ttsEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-          </button>
+          {/* TTS Toggle & Voice Settings */}
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={onToggleTts}
+              className={`p-1 rounded-lg border text-xs transition cursor-pointer ${
+                ttsEnabled
+                  ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                  : 'bg-slate-800 border-slate-700 text-slate-500'
+              }`}
+              title={ttsEnabled ? '常用语播报已开启 (点击静音)' : '常用语播报已静音 (点击开启)'}
+            >
+              {ttsEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              onClick={() => setShowVoiceSettingsModal(true)}
+              className="p-1 rounded-lg border border-slate-700/80 bg-slate-800/80 text-slate-400 hover:text-amber-300 hover:border-amber-500/40 text-xs transition cursor-pointer"
+              title="设置常用语播报音色与语速"
+            >
+              <Sliders className="w-3 h-3" />
+            </button>
+          </div>
         </div>
 
         {/* 2. Middle Area: Active Voice Speaker Ripple Animation OR Text Input */}
@@ -827,6 +940,12 @@ export function TableTacticalChatBar({
       <TripleVoiceDiagnosticsModal
         isOpen={showDiagnosticsModal}
         onClose={() => setShowDiagnosticsModal(false)}
+      />
+
+      {/* TTS Voice Broadcast Settings Modal */}
+      <TtsVoiceSettingsModal
+        isOpen={showVoiceSettingsModal}
+        onClose={() => setShowVoiceSettingsModal(false)}
       />
     </div>
   );
