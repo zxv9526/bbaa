@@ -956,15 +956,15 @@ export function ChatDrawer({
                     <div className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
                       <span>三重保底链路:</span>
                       <span className="font-mono text-emerald-400 font-black">
-                        {voiceStats.currentTier === 'webrtc'
+                        {voiceStats.activeTier === 'webrtc'
                           ? 'WebRTC P2P 高清直连'
-                          : voiceStats.currentTier === 'websocket'
+                          : voiceStats.activeTier === 'websocket'
                           ? 'WebSocket 中继广播'
                           : 'HTTP 智能极速轮询'}
                       </span>
                     </div>
                     <div className="text-[10px] text-slate-400">
-                      延迟: {voiceStats.pingMs || 18}ms · 发送: {voiceStats.packetsSent}包 · 接收: {voiceStats.packetsReceived}包
+                      延迟: {voiceStats.latencyMs || 18}ms · 发送: {voiceStats.packetsSent}包 · 接收: {voiceStats.packetsReceived}包
                     </div>
                   </div>
                 </div>

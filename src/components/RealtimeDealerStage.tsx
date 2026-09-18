@@ -500,7 +500,7 @@ export function RealtimeDealerStage({
 
             return (
               <div
-                key={isOccupied ? p.id : `seat-${idx}`}
+                key={`realtime-fixed-seat-${idx}`}
                 className={`relative flex-1 min-w-[42px] max-w-[95px] flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all border select-none ${
                   !isOccupied 
                     ? 'bg-slate-900/30 border-dashed border-slate-800 text-slate-500 opacity-60'
@@ -552,7 +552,7 @@ export function RealtimeDealerStage({
                 </div>
 
                 {/* Avatar */}
-                <div className={`text-xl sm:text-2xl my-0.5 ${!isOccupied && 'grayscale opacity-40'} ${isSpeaking && 'animate-bounce'}`}>
+                <div className={`text-xl sm:text-2xl my-0.5 ${!isOccupied ? 'grayscale opacity-40' : ''} ${isSpeaking ? 'animate-bounce' : ''}`}>
                   {isOccupied ? p.avatar : '🪑'}
                 </div>
 
@@ -729,10 +729,13 @@ export function RealtimeDealerStage({
                   </div>
                   <div className="text-[11px] text-slate-300 mt-0.5 flex items-center gap-2">
                     <span>
-                      {dealerStep === 'shuffling' && '🎴 庄家正在洗牌打乱...'}
-                      {dealerStep === 'cutting' && '✂️ 庄家正在切牌验牌...'}
-                      {dealerStep === 'dealing' && '🚀 庄家正在分发13张手牌...'}
-                      {dealerStep === 'idle' && (shuffleCount > 0 ? `已洗牌 ${shuffleCount} 次，等待发牌` : '正在准备洗牌...')}
+                      {dealerStep === 'shuffling'
+                        ? '🎴 庄家正在洗牌打乱...'
+                        : dealerStep === 'cutting'
+                        ? '✂️ 庄家正在切牌验牌...'
+                        : dealerStep === 'dealing'
+                        ? '🚀 庄家正在分发13张手牌...'
+                        : (shuffleCount > 0 ? `已洗牌 ${shuffleCount} 次，等待发牌` : '正在准备洗牌...')}
                     </span>
                   </div>
                 </div>

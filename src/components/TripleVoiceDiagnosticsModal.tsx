@@ -145,15 +145,19 @@ export function TripleVoiceDiagnosticsModal({
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-slate-300">当前活跃传输通道:</span>
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-black uppercase ${tierColors[stats.activeTier].badge}`}>
-                  {stats.activeTier === 'webrtc' && '🟢 WebRTC P2P 直连'}
-                  {stats.activeTier === 'websocket' && '🔵 WebSocket 高速广播'}
-                  {stats.activeTier === 'http' && '🟠 HTTP 轮询保底'}
+                  {stats.activeTier === 'webrtc'
+                    ? '🟢 WebRTC P2P 直连'
+                    : stats.activeTier === 'websocket'
+                    ? '🔵 WebSocket 高速广播'
+                    : '🟠 HTTP 轮询保底'}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1">
-                {stats.activeTier === 'webrtc' && '端到端加密点对点直连，绕过服务器中继，适合局域网与开放公网。'}
-                {stats.activeTier === 'websocket' && '毫秒级全双工音频帧广播，音质无损，适合各种云端容器与沙箱环境。'}
-                {stats.activeTier === 'http' && '全防火墙穿透长轮询保底传输，零阻塞，确保极端受限网络绝对畅通。'}
+                {stats.activeTier === 'webrtc'
+                  ? '端到端加密点对点直连，绕过服务器中继，适合局域网与开放公网。'
+                  : stats.activeTier === 'websocket'
+                  ? '毫秒级全双工音频帧广播，音质无损，适合各种云端容器与沙箱环境。'
+                  : '全防火墙穿透长轮询保底传输，零阻塞，确保极端受限网络绝对畅通。'}
               </p>
             </div>
 

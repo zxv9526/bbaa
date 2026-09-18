@@ -3,7 +3,7 @@ import { CarriagePoolStats, CarriageSubmission } from './carriageManager';
 
 export interface ActiveMatchSession {
   phone: string;
-  mode: 'vs_ai_8p' | string;
+  mode: 'vs_ai_8p' | 'realtime' | 'reservation' | 'practice';
   carriageId: string;
   carriageIndex: number;
   carriageSeatIndex: number;

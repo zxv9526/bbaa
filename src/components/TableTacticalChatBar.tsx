@@ -178,7 +178,7 @@ export function TableTacticalChatBar({
       await recorder.start();
 
       // If user tapped to stop while start was in flight
-      if (pendingStopRef.current || recordPhaseRef.current === 'stopping') {
+      if (pendingStopRef.current || (recordPhaseRef.current as string) === 'stopping') {
         recordPhaseRef.current = 'recording';
         await stopVoiceRecordAndSend();
         return;
@@ -798,9 +798,11 @@ export function TableTacticalChatBar({
               }`}
             />
             <span className="hidden min-[480px]:inline">
-              {voiceStats.activeTier === 'webrtc' && 'P2P直连'}
-              {voiceStats.activeTier === 'websocket' && 'WS广播'}
-              {voiceStats.activeTier === 'http' && 'HTTP保底'}
+              {voiceStats.activeTier === 'webrtc'
+                ? 'P2P直连'
+                : voiceStats.activeTier === 'websocket'
+                ? 'WS广播'
+                : 'HTTP保底'}
             </span>
             <span className="font-mono text-[10px] opacity-90">{voiceStats.latencyMs}ms</span>
           </button>

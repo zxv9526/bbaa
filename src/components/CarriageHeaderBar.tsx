@@ -4,7 +4,7 @@ import { CarriagePoolStats, CarriageSubmission } from '../lib/carriageManager';
 import { ChatMessage } from '../types';
 
 interface CarriageHeaderBarProps {
-  mode?: 'vs_ai_8p' | 'realtime' | 'reservation';
+  mode?: 'vs_ai_8p' | 'realtime' | 'reservation' | 'practice';
   currentCarriageIndex: number;
   seatIndex?: number;
   dealerIndex?: number;

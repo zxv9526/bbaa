@@ -1,7 +1,40 @@
-import React, { StrictMode, ReactNode, ErrorInfo } from 'react';
+import React, { Component, StrictMode, ReactNode, ErrorInfo } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+
+// 🛡️ 核心 DOM 防御补丁：防止浏览器内置翻译（如 Chrome / Edge 翻译插件）或第三方扩展篡改 DOM 导致 React 抛出
+// "Failed to execute 'removeChild' on 'Node': The Node to be returned is not a child of this node."
+if (typeof window !== 'undefined' && typeof Node === 'function' && Node.prototype) {
+  const originalRemoveChild = Node.prototype.removeChild;
+  Node.prototype.removeChild = function <T extends Node>(child: T): T {
+    if (child.parentNode !== this) {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('Prevented React removeChild crash from external DOM mutation:', child, this);
+      }
+      if (child.parentNode) {
+        try {
+          return child.parentNode.removeChild(child);
+        } catch {
+          return child;
+        }
+      }
+      return child;
+    }
+    return originalRemoveChild.call(this, child) as T;
+  };
+
+  const originalInsertBefore = Node.prototype.insertBefore;
+  Node.prototype.insertBefore = function <T extends Node>(newNode: T, referenceNode: Node | null): T {
+    if (referenceNode && referenceNode.parentNode !== this) {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('Prevented React insertBefore crash from external DOM mutation:', referenceNode, this);
+      }
+      return this.appendChild(newNode) as T;
+    }
+    return originalInsertBefore.call(this, newNode, referenceNode) as T;
+  };
+}
 
 interface Props {
   children?: ReactNode;
@@ -12,13 +45,9 @@ interface State {
   error: Error | null;
 }
 
-class ErrorBoundary extends React.Component<Props, State> {
-  public props: Readonly<Props> & Readonly<{ children?: ReactNode }>;
-  public state: State;
-
+class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.props = props;
     this.state = {
       hasError: false,
       error: null,
@@ -33,18 +62,39 @@ class ErrorBoundary extends React.Component<Props, State> {
     console.error('Uncaught Error in Thirteen Water App:', error, errorInfo);
   }
 
+  handleSoftRecover = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
   render() {
     if (this.state.hasError) {
+      const errorMsg = this.state.error?.message || '未知错误';
+      const isDomMismatch = errorMsg.includes('removeChild') || errorMsg.includes('insertBefore') || errorMsg.includes('not a child');
+
       return (
         <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center text-3xl mb-4">
-            ⚠️
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center text-3xl mb-4 animate-bounce">
+            ⚡
           </div>
-          <h1 className="text-2xl font-black text-rose-400 mb-2">十三水 · 页面加载或运行异常</h1>
-          <p className="text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
-            系统检测到页面数据或组件运行状态异常 ({this.state.error?.message || '未知错误'})。点击下方按钮可自动重置并恢复。
+          <h1 className="text-2xl font-black text-amber-300 mb-2">十三水 · 运行状态自愈</h1>
+          <p className="text-xs sm:text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
+            {isDomMismatch 
+              ? '检测到移动端浏览器自动翻译或扩展修改了页面节点。已为您注入防御隔离层，点击下方立即自愈即可无损继续对局！'
+              : `系统检测到页面组件临时状态异常 (${errorMsg})。您可以尝试自愈继续或刷新。`}
           </p>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={this.handleSoftRecover}
+              className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm shadow-lg transition active:scale-95 cursor-pointer flex items-center gap-1.5"
+            >
+              <span>✨ 一键自愈继续对局</span>
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm transition active:scale-95 cursor-pointer"
+            >
+              刷新页面
+            </button>
             <button
               onClick={() => {
                 try {
@@ -52,15 +102,9 @@ class ErrorBoundary extends React.Component<Props, State> {
                 } catch {}
                 window.location.reload();
               }}
-              className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm shadow-lg transition active:scale-95 cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-750 hover:bg-slate-800 text-slate-400 hover:text-rose-400 font-medium text-xs transition active:scale-95 cursor-pointer"
             >
-              重置缓存并恢复
-            </button>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm transition active:scale-95 cursor-pointer"
-            >
-              刷新页面
+              重置缓存
             </button>
           </div>
         </div>
