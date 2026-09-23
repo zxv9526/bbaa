@@ -98,38 +98,25 @@ export function CarriageHeaderBar({
 
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap">
-              {isReservation ? '预约场' : '实时对战场'} · 第<span className="text-amber-400 font-mono px-0.5">{currentCarriageIndex}</span>局
+              {isReservation ? '📅 预约场' : '⚡ 实时场'} · 第<span className="text-amber-400 font-mono px-0.5">{currentCarriageIndex}</span>局
             </span>
 
             {/* 👑 Realtime dealer rotation label */}
             {mode === 'realtime' && typeof dealerIndex === 'number' && (
-              <span className="flex items-center gap-1 text-[10px] sm:text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40">
+              <span className="flex items-center gap-1 text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-400/30">
                 <span>👑</span>
-                <span>当前由 {dealerIndex + 1}号位 发牌</span>
-              </span>
-            )}
-            
-            {/* Mode badge */}
-            {isReservation ? (
-              <span className="hidden xs:flex items-center gap-1 text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                <VolumeX className="w-3 h-3 text-blue-400" />
-                <span>纯净无打扰</span>
-              </span>
-            ) : (
-              <span className="hidden xs:flex items-center gap-1 text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse">
-                <Radio className="w-3 h-3 text-emerald-400" />
-                <span>对讲已启动</span>
+                <span>庄家: {dealerIndex + 1}号位</span>
               </span>
             )}
 
             {/* 👥 人数比例徽章 */}
-            <div className={`hidden sm:flex items-center gap-1 text-[11px] sm:text-xs font-black px-2 py-0.5 rounded-full border whitespace-nowrap ${
+            <div className={`flex items-center gap-1 text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${
               isFull
-                ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
                 : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
             }`}>
               <Users className="w-3 h-3 text-emerald-400" />
-              <span className="font-mono">{seatedCount}/{totalSeats}</span>
+              <span className="font-mono">{seatedCount}/{totalSeats}人</span>
             </div>
           </div>
         </div>

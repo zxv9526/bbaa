@@ -151,6 +151,8 @@ export interface ChatMessage {
   hasRead?: boolean; // 微信语音未读红点标记
   transcription?: string; // 微信语音转文字内容
   reactions?: { [emoji: string]: number }; // 表情回复 (👍 666 🔥 等)
+  isRecalled?: boolean; // 微信撤回标记
+  replyTo?: { id: string; senderName: string; content: string }; // 引用回复某条消息
 }
 
 

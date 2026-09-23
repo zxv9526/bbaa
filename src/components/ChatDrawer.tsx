@@ -24,7 +24,11 @@ import {
   Smartphone,
   Speaker,
   Heart,
-  ThumbsUp
+  ThumbsUp,
+  Search,
+  Reply,
+  Undo2,
+  Gauge
 } from 'lucide-react';
 import { ChatMessage, ChatMessageType } from '../types';
 import {
@@ -94,10 +98,14 @@ export function ChatDrawer({
   const [historyFilter, setHistoryFilter] = useState<'all' | 'voice' | 'text' | 'emoji'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [audioMode, setAudioMode] = useState<'speaker' | 'earpiece'>('speaker');
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [playedVoiceIds, setPlayedVoiceIds] = useState<Set<string>>(() => new Set());
   const [transcriptions, setTranscriptions] = useState<Record<string, { text: string; loading?: boolean; visible?: boolean }>>({});
   const [reactions, setReactions] = useState<Record<string, Record<string, number>>>({});
   const [showReactionPickerId, setShowReactionPickerId] = useState<string | null>(null);
+  const [replyTarget, setReplyTarget] = useState<{ id: string; senderName: string; content: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [recalledIds, setRecalledIds] = useState<Set<string>>(() => new Set());
   
   // Voice Engine State & Stats
   const engine = TripleVoiceEngine.getInstance();
@@ -109,6 +117,16 @@ export function ChatDrawer({
   const [micTestVolume, setMicTestVolume] = useState(0);
   const [previewingPhrase, setPreviewingPhrase] = useState<string | null>(null);
   const [previewingRole, setPreviewingRole] = useState<TtsVoiceRole | null>(null);
+
+  const handleRecallMessage = (msgId: string) => {
+    setRecalledIds(prev => new Set(prev).add(msgId));
+  };
+
+  const handleReEditMessage = (content: string) => {
+    // If it has quote format, strip the quote header
+    const cleanContent = content.replace(/^「@[^」]+」\n?/, '');
+    setInputText(cleanContent);
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -217,8 +235,12 @@ export function ChatDrawer({
   const handleSendText = () => {
     const trimmed = inputText.trim();
     if (!trimmed) return;
-    onSendMessage('text', trimmed);
+    const content = replyTarget
+      ? `「@${replyTarget.senderName}: ${replyTarget.content.length > 25 ? replyTarget.content.slice(0, 25) + '...' : replyTarget.content}」\n${trimmed}`
+      : trimmed;
+    onSendMessage('text', content);
     setInputText('');
+    setReplyTarget(null);
     if (ttsEnabled) {
       speakTextMessage(trimmed);
     }
@@ -376,6 +398,7 @@ export function ChatDrawer({
     // Adjust volume according to earpiece vs speaker mode
     const baseVol = engine.isUserDeafened() ? 0 : engine.getOutputVolume();
     audio.volume = audioMode === 'earpiece' ? Math.min(0.4, baseVol * 0.5) : baseVol;
+    audio.playbackRate = playbackSpeed;
     audioPlayerRef.current = audio;
     setPlayingAudioId(msg.id);
 
@@ -730,10 +753,30 @@ export function ChatDrawer({
           {/* TAB 3: Message History */}
           {activeTab === 'history' && (
             <div className="space-y-3">
+              {/* Search Bar */}
+              <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs shadow-inner">
+                <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="搜索发言人、聊天文本或语音识别内容..."
+                  className="bg-transparent text-slate-200 placeholder-slate-500 text-xs w-full focus:outline-none"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="text-slate-400 hover:text-white text-xs px-1 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
               {/* History Top Filter & Actions */}
               <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2 border-b border-slate-800 text-[11px] text-slate-400">
                 {/* Filter Pills */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
                   {(['all', 'voice', 'text', 'emoji'] as const).map((f) => {
                     const count = f === 'all' 
                       ? messages.length 
@@ -762,30 +805,71 @@ export function ChatDrawer({
                   })}
                 </div>
 
-                {messages.length > 0 && onClearMessages && (
+                {/* Audio Playback Controls: Speed & Mode & Clear */}
+                <div className="flex items-center gap-2 ml-auto">
+                  {/* Voice Speed Toggle */}
                   <button
-                    onClick={onClearMessages}
-                    className="flex items-center gap-1 text-slate-500 hover:text-rose-400 transition cursor-pointer ml-auto"
+                    onClick={() => {
+                      const nextSpeed = playbackSpeed === 1.0 ? 1.25 : playbackSpeed === 1.25 ? 1.5 : playbackSpeed === 1.5 ? 2.0 : 1.0;
+                      setPlaybackSpeed(nextSpeed);
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 text-[10px] font-bold text-amber-300 hover:text-white transition cursor-pointer flex items-center gap-1"
+                    title="切换语音播放倍速"
                   >
-                    <Trash2 className="w-3 h-3" />
-                    <span>清空</span>
+                    <Gauge className="w-2.5 h-2.5" />
+                    <span>{playbackSpeed}x</span>
                   </button>
-                )}
+
+                  {/* Earphone / Speaker toggle */}
+                  <button
+                    onClick={() => setAudioMode(m => m === 'speaker' ? 'earpiece' : 'speaker')}
+                    className={`px-2 py-0.5 rounded-lg border text-[10px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                      audioMode === 'earpiece'
+                        ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                        : 'bg-slate-800 text-slate-400 border-slate-700'
+                    }`}
+                    title="切换扬声器/听筒模式"
+                  >
+                    {audioMode === 'earpiece' ? <Smartphone className="w-2.5 h-2.5" /> : <Speaker className="w-2.5 h-2.5" />}
+                    <span>{audioMode === 'earpiece' ? '听筒' : '扬声器'}</span>
+                  </button>
+
+                  {messages.length > 0 && onClearMessages && (
+                    <button
+                      onClick={onClearMessages}
+                      className="flex items-center gap-1 text-slate-500 hover:text-rose-400 transition cursor-pointer"
+                      title="清空记录"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>清空</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Message List */}
               {(() => {
+                const query = searchQuery.trim().toLowerCase();
                 const filteredMessages = messages.filter(m => {
-                  if (historyFilter === 'all') return true;
-                  if (historyFilter === 'voice') return m.type === 'voice';
-                  if (historyFilter === 'emoji') return m.type === 'emoji';
-                  return m.type === 'text' || m.type === 'quick';
+                  if (historyFilter === 'voice' && m.type !== 'voice') return false;
+                  if (historyFilter === 'emoji' && m.type !== 'emoji') return false;
+                  if (historyFilter === 'text' && m.type !== 'text' && m.type !== 'quick') return false;
+                  
+                  if (query) {
+                    const matchContent = m.content.toLowerCase().includes(query);
+                    const matchSender = m.senderName.toLowerCase().includes(query);
+                    const matchTrans = transcriptions[m.id]?.text?.toLowerCase().includes(query);
+                    return matchContent || matchSender || matchTrans;
+                  }
+                  return true;
                 });
 
                 if (filteredMessages.length === 0) {
                   return (
                     <div className="text-center py-12 text-slate-500 text-xs">
-                      {historyFilter === 'all' 
+                      {query 
+                        ? `未找到包含 "${searchQuery}" 的消息`
+                        : historyFilter === 'all' 
                         ? '暂无对讲记录，点击快捷战术或语音与全桌玩家互动吧~'
                         : '当前分类下暂无消息记录'}
                     </div>
@@ -805,12 +889,42 @@ export function ChatDrawer({
                   }
 
                   const isMe = msg.senderId === currentUserId;
+                  const isRecalled = recalledIds.has(msg.id) || msg.isRecalled;
+
+                  if (isRecalled) {
+                    return (
+                      <div key={msg.id} className="flex justify-center my-1.5 animate-in fade-in">
+                        <div className="px-3 py-0.5 rounded-full bg-slate-900/80 border border-slate-800 text-[10px] text-slate-400 flex items-center gap-1.5 shadow-sm">
+                          <Undo2 className="w-2.5 h-2.5 text-slate-500" />
+                          <span>{isMe ? '你撤回了一条消息' : `${msg.senderName} 撤回了一条消息`}</span>
+                          {isMe && msg.type !== 'voice' && (
+                            <button
+                              onClick={() => handleReEditMessage(msg.content)}
+                              className="text-indigo-400 hover:text-indigo-300 font-bold ml-1 cursor-pointer underline"
+                            >
+                              重新编辑
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const seatBadge = typeof msg.seatIndex === 'number'
                     ? `${msg.seatIndex + 1}号位`
                     : '';
                   const timeStr = msg.timestamp
                     ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                     : '';
+
+                  // Parse quote if present: 「@name: quote」\ntext
+                  const quoteMatch = msg.content.match(/^「@([^:」]+):\s*([^」]+)」\n?([\s\S]*)$/);
+                  const quotedSender = quoteMatch ? quoteMatch[1] : null;
+                  const quotedText = quoteMatch ? quoteMatch[2] : null;
+                  const actualContent = quoteMatch ? quoteMatch[3] : msg.content;
+
+                  // Can recall if sent by me within 2 minutes
+                  const canRecall = isMe && (Date.now() - (msg.timestamp || Date.now()) <= 120000);
 
                   return (
                     <div
@@ -908,6 +1022,26 @@ export function ChatDrawer({
                                 <span>{transcriptions[msg.id]?.visible ? '收起' : '转文字'}</span>
                               </button>
 
+                              {/* Quote reply button */}
+                              <button
+                                onClick={() => setReplyTarget({ id: msg.id, senderName: msg.senderName, content: `🎙️ 语音 (${msg.audioDuration || 2}")` })}
+                                className="p-1 rounded-lg text-slate-400 hover:text-indigo-300 hover:bg-slate-800 transition cursor-pointer"
+                                title="引用回复此语音"
+                              >
+                                <Reply className="w-3 h-3" />
+                              </button>
+
+                              {/* Recall button */}
+                              {canRecall && (
+                                <button
+                                  onClick={() => handleRecallMessage(msg.id)}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition cursor-pointer"
+                                  title="撤回语音"
+                                >
+                                  <Undo2 className="w-3 h-3" />
+                                </button>
+                              )}
+
                               {/* Reaction Picker Trigger */}
                               <button
                                 onClick={() => setShowReactionPickerId(showReactionPickerId === msg.id ? null : msg.id)}
@@ -980,9 +1114,21 @@ export function ChatDrawer({
                             )}
                           </div>
                         ) : msg.type === 'emoji' ? (
-                          <div className="text-3xl p-1 animate-in zoom-in-50">{msg.content}</div>
-                        ) : (
                           <div className="relative group/msg">
+                            <div className="text-3xl p-1 animate-in zoom-in-50">{msg.content}</div>
+                            {canRecall && (
+                              <button
+                                onClick={() => handleRecallMessage(msg.id)}
+                                className={`absolute -bottom-2 ${isMe ? 'left-0' : 'right-0'} opacity-0 group-hover/msg:opacity-100 transition px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-[10px] text-slate-400 hover:text-rose-400 flex items-center gap-0.5 shadow cursor-pointer`}
+                                title="撤回表情"
+                              >
+                                <Undo2 className="w-2.5 h-2.5" />
+                                <span>撤回</span>
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="relative group/msg flex flex-col gap-1">
                             <div
                               className={`px-3.5 py-2 rounded-2xl text-xs font-medium leading-relaxed break-words shadow ${
                                 isMe
@@ -990,29 +1136,102 @@ export function ChatDrawer({
                                   : 'bg-slate-800 text-slate-100 border border-slate-700/80 rounded-tl-sm'
                               }`}
                             >
-                              {msg.content}
-                            </div>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard?.writeText?.(msg.content);
-                                setCopiedId(msg.id);
-                                setTimeout(() => setCopiedId(null), 1800);
-                              }}
-                              className={`absolute -bottom-2 ${isMe ? 'left-0' : 'right-0'} opacity-0 group-hover/msg:opacity-100 transition px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-[10px] text-slate-400 hover:text-white flex items-center gap-0.5 shadow cursor-pointer`}
-                              title="复制此文本"
-                            >
-                              {copiedId === msg.id ? (
-                                <>
-                                  <Check className="w-2.5 h-2.5 text-emerald-400" />
-                                  <span className="text-emerald-400 text-[9px]">已复制</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-2.5 h-2.5" />
-                                  <span className="text-[9px]">复制</span>
-                                </>
+                              {/* Quoted header if present */}
+                              {quotedSender && quotedText && (
+                                <div className="mb-1.5 pb-1 border-b border-white/20 text-[10px] opacity-90">
+                                  <span className="font-bold opacity-80">@{quotedSender}: </span>
+                                  <span className="italic">{quotedText}</span>
+                                </div>
                               )}
-                            </button>
+                              <div>{actualContent}</div>
+                            </div>
+
+                            {/* WeChat Message Action Toolbar on Hover */}
+                            <div className={`flex items-center gap-1 text-[10px] text-slate-400 opacity-0 group-hover/msg:opacity-100 transition-opacity ${isMe ? 'justify-end' : 'justify-start'}`}>
+                              {/* Reply / Quote */}
+                              <button
+                                onClick={() => setReplyTarget({ id: msg.id, senderName: msg.senderName, content: actualContent })}
+                                className="px-1.5 py-0.5 rounded bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-indigo-300 flex items-center gap-0.5 cursor-pointer shadow-sm"
+                                title="引用回复"
+                              >
+                                <Reply className="w-2.5 h-2.5" />
+                                <span>回复</span>
+                              </button>
+
+                              {/* Copy */}
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard?.writeText?.(actualContent);
+                                  setCopiedId(msg.id);
+                                  setTimeout(() => setCopiedId(null), 1800);
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white flex items-center gap-0.5 cursor-pointer shadow-sm"
+                                title="复制文本"
+                              >
+                                {copiedId === msg.id ? (
+                                  <>
+                                    <Check className="w-2.5 h-2.5 text-emerald-400" />
+                                    <span className="text-emerald-400 text-[9px]">已复制</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-2.5 h-2.5" />
+                                    <span>复制</span>
+                                  </>
+                                )}
+                              </button>
+
+                              {/* Recall (if within 2 min) */}
+                              {canRecall && (
+                                <button
+                                  onClick={() => handleRecallMessage(msg.id)}
+                                  className="px-1.5 py-0.5 rounded bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-rose-400 flex items-center gap-0.5 cursor-pointer shadow-sm"
+                                  title="撤回消息"
+                                >
+                                  <Undo2 className="w-2.5 h-2.5" />
+                                  <span>撤回</span>
+                                </button>
+                              )}
+
+                              {/* Smile reaction trigger */}
+                              <button
+                                onClick={() => setShowReactionPickerId(showReactionPickerId === msg.id ? null : msg.id)}
+                                className="px-1 py-0.5 rounded bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-amber-300 flex items-center gap-0.5 cursor-pointer shadow-sm"
+                                title="表情回应"
+                              >
+                                <Smile className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+
+                            {/* Floating Reaction Quick Picker Popup for Text */}
+                            {showReactionPickerId === msg.id && (
+                              <div className="flex items-center gap-1 p-1 rounded-full bg-slate-900 border border-slate-700 shadow-xl animate-in zoom-in-95 mt-1">
+                                {['👍', '666', '🔥', '🤣', '💩', '❤️'].map((em) => (
+                                  <button
+                                    key={em}
+                                    onClick={() => handleToggleReaction(msg.id, em)}
+                                    className="px-1.5 py-0.5 rounded-full hover:bg-slate-800 text-xs hover:scale-125 transition cursor-pointer"
+                                  >
+                                    {em}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Emoji Reaction Badges Row */}
+                            {reactions[msg.id] && Object.keys(reactions[msg.id]).length > 0 && (
+                              <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                {Object.entries(reactions[msg.id]).map(([emoji, count]) => (
+                                  <span
+                                    key={emoji}
+                                    className="px-1.5 py-0.2 rounded-full bg-slate-800 border border-slate-700 text-[10px] text-slate-200 flex items-center gap-1 shadow-sm"
+                                  >
+                                    <span>{emoji}</span>
+                                    <span className="font-bold text-amber-400 text-[9px]">{count}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1461,6 +1680,27 @@ export function ChatDrawer({
         {recordError && (
           <div className="px-4 py-2 bg-rose-500/20 border-t border-rose-500/30 text-rose-300 text-xs font-bold text-center">
             {recordError}
+          </div>
+        )}
+
+        {/* Quoted Message Indicator Banner */}
+        {replyTarget && (
+          <div className="px-4 py-2 bg-slate-900/95 border-t border-indigo-500/40 flex items-center justify-between gap-2 text-xs animate-in slide-in-from-bottom-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <Reply className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <div className="flex items-center gap-1.5 truncate text-[11px]">
+                <span className="text-slate-400">回复</span>
+                <span className="font-bold text-indigo-300">@{replyTarget.senderName}:</span>
+                <span className="text-slate-300 truncate max-w-[220px]">{replyTarget.content}</span>
+              </div>
+            </div>
+            <button
+              onClick={() => setReplyTarget(null)}
+              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer text-xs"
+              title="取消引用"
+            >
+              ✕
+            </button>
           </div>
         )}
 
