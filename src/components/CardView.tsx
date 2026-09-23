@@ -53,9 +53,9 @@ export function CardView({
   }, []);
 
   const sizeClasses = {
-    sm: 'w-12 h-17 sm:w-14 sm:h-20 text-xs rounded-lg shrink-0',
-    md: 'w-[76px] h-[106px] min-[360px]:w-[84px] min-[360px]:h-[118px] min-[390px]:w-[94px] min-[390px]:h-[132px] sm:w-[120px] sm:h-[168px] md:w-[136px] md:h-[190px] text-sm sm:text-base rounded-lg sm:rounded-xl shrink-0',
-    lg: 'w-24 h-34 sm:w-32 sm:h-45 text-base sm:text-lg rounded-xl shrink-0'
+    sm: 'w-11 h-15 sm:w-14 sm:h-20 text-xs rounded-lg shrink-0',
+    md: 'w-[64px] h-[90px] min-[360px]:w-[72px] min-[360px]:h-[102px] min-[390px]:w-[80px] min-[390px]:h-[114px] sm:w-[102px] sm:h-[144px] md:w-[118px] md:h-[166px] max-h-full text-xs sm:text-base rounded-lg sm:rounded-xl shrink-0',
+    lg: 'w-22 h-31 sm:w-30 sm:h-42 text-base sm:text-lg rounded-xl shrink-0'
   }[size];
 
   const handleClick = (e: React.MouseEvent) => {

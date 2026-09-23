@@ -2289,7 +2289,7 @@ export default function App() {
                         size="md"
                         animateEntry
                         index={idx}
-                        className={idx > 0 ? '-ml-12 min-[375px]:-ml-14 min-[414px]:-ml-16 sm:-ml-20 md:-ml-23' : ''}
+                        className={idx > 0 ? '-ml-10 min-[360px]:-ml-12 min-[390px]:-ml-14 sm:-ml-18 md:-ml-22' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
                       />
@@ -2351,7 +2351,7 @@ export default function App() {
                         size="md"
                         animateEntry
                         index={idx + 3}
-                        className={idx > 0 ? '-ml-12 min-[375px]:-ml-14 min-[414px]:-ml-16 sm:-ml-20 md:-ml-23' : ''}
+                        className={idx > 0 ? '-ml-10 min-[360px]:-ml-12 min-[390px]:-ml-14 sm:-ml-18 md:-ml-22' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
                       />
@@ -2413,7 +2413,7 @@ export default function App() {
                         size="md"
                         animateEntry
                         index={idx + 8}
-                        className={idx > 0 ? '-ml-12 min-[375px]:-ml-14 min-[414px]:-ml-16 sm:-ml-20 md:-ml-23' : ''}
+                        className={idx > 0 ? '-ml-10 min-[360px]:-ml-12 min-[390px]:-ml-14 sm:-ml-18 md:-ml-22' : ''}
                         selected={selectedCardIds.includes(c.id)}
                         onClick={() => handleToggleCardSelect(c.id)}
                       />
