@@ -201,6 +201,10 @@ function initialize300Carriages(currentTotal: number, existingCarriages: Carriag
 
 export function checkAndReplenishCarriages(mode: PoolMode = 'vs_ai_8p'): CarriagePoolStats {
   const storage = loadCarriageStorage(mode);
+  // 📅 预约场：按需自动发牌存储，严禁预生成300局牌池
+  if (mode === 'reservation') {
+    return getCarriageStats(storage.carriages, storage.totalGeneratedCount, mode);
+  }
   if (storage.carriages.length < 50) {
     const newStorage = initialize300Carriages(storage.totalGeneratedCount, storage.carriages, mode);
     return getCarriageStats(newStorage.carriages, newStorage.totalGeneratedCount, mode);

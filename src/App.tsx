@@ -34,6 +34,7 @@ import { NoPointsModal } from './components/NoPointsModal';
 import { ChatDrawer } from './components/ChatDrawer';
 import { ChatFloatingWidget } from './components/ChatFloatingWidget';
 import { TableTacticalChatBar } from './components/TableTacticalChatBar';
+import { TableBarrage } from './components/TableBarrage';
 import { ChatMessage, ChatMessageType } from './types';
 import {
   speakTextMessage,
@@ -189,6 +190,30 @@ export default function App() {
   const [showChatDrawer, setShowChatDrawer] = useState<boolean>(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [ttsEnabled, setTtsEnabled] = useState<boolean>(true);
+  const [barrageEnabled, setBarrageEnabled] = useState<boolean>(true);
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+
+  const handlePlayBarrageVoice = (msg: ChatMessage) => {
+    if (!msg.audioUrl) return;
+    if (playingAudioId === msg.id && audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      setPlayingAudioId(null);
+      return;
+    }
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+    }
+    const audio = new Audio(msg.audioUrl);
+    audioPlayerRef.current = audio;
+    setPlayingAudioId(msg.id);
+    audio.onended = () => setPlayingAudioId(null);
+    audio.onerror = () => setPlayingAudioId(null);
+    audio.play().catch(e => {
+      console.warn('Playback error', e);
+      setPlayingAudioId(null);
+    });
+  };
 
   const handleOpenChatDrawer = () => {
     setShowChatDrawer(true);
@@ -2058,6 +2083,16 @@ export default function App() {
             </div>
         )}
 
+        {/* 🚀 Real-time Table Barrage (实时牌桌弹幕系统) */}
+        {mode === 'realtime' && gameState !== 'menu' && (
+          <TableBarrage
+            messages={messages}
+            enabled={barrageEnabled}
+            onPlayVoice={handlePlayBarrageVoice}
+            playingAudioId={playingAudioId}
+          />
+        )}
+
         {/* 3. Realtime Dealer Stage (Shuffle & Cut Phase) */}
         {gameState === 'realtime_dealer' && (
           <RealtimeDealerStage
@@ -2176,6 +2211,8 @@ export default function App() {
               activeSpeakerId={userIsSpeaking ? (currentAccount.phone || currentAccount.id || 'player_user') : undefined}
               onExit={() => setShowExitModal(true)}
               players={playersInMatch}
+              barrageEnabled={barrageEnabled}
+              onToggleBarrage={() => setBarrageEnabled(b => !b)}
             />
 
 

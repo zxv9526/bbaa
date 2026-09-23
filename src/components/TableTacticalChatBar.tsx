@@ -449,6 +449,63 @@ export function TableTacticalChatBar({
 
   return (
     <div className="relative w-full select-none">
+      {/* 📱 微信风格语音录制中浮层 HUD (按住说话 / 松开取消 / 音波跳动) */}
+      {isRecording && (
+        <div
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] touch-none select-none pointer-events-auto animate-in fade-in duration-150"
+        >
+          <div
+            className={`w-44 h-44 rounded-3xl flex flex-col items-center justify-center p-4 shadow-2xl transition-all duration-200 border ${
+              isSlideCancel
+                ? 'bg-rose-950/95 border-rose-500/80 scale-105'
+                : 'bg-slate-900/95 border-emerald-500/60 shadow-emerald-950/50'
+            }`}
+          >
+            {isSlideCancel ? (
+              <div className="flex flex-col items-center gap-2 text-rose-300">
+                <div className="w-16 h-16 rounded-full bg-rose-600/30 border border-rose-500 flex items-center justify-center text-rose-400 animate-bounce">
+                  <X className="w-9 h-9 stroke-[2.5]" />
+                </div>
+                <div className="text-sm font-black text-rose-200">松开手指，取消发送</div>
+                <div className="text-[10px] text-rose-400/80 font-mono">CANCEL</div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2 text-emerald-300">
+                {/* WeChat-style dynamic sound wave & microphone */}
+                <div className="relative flex items-center justify-center w-16 h-16">
+                  <div className="w-14 h-14 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                    <Mic className="w-7 h-7 animate-pulse" />
+                  </div>
+                  {/* Surrounding sound waves based on volume level */}
+                  <div className="absolute -right-3 flex items-end gap-0.5 h-8">
+                    {[1, 2, 3, 4, 5].map((lvl) => (
+                      <span
+                        key={lvl}
+                        className={`w-1 rounded-full transition-all duration-75 ${
+                          volumeLevel >= lvl
+                            ? 'bg-emerald-400 h-6'
+                            : 'bg-emerald-900/60 h-1.5'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="text-center">
+                  <div className="text-sm font-black text-white flex items-center justify-center gap-1">
+                    <span>录音中</span>
+                    <span className="font-mono text-emerald-300">{recordingSeconds}"</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">手指上滑，取消发送</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 🚀 Quick Voice Tactical Phrases Popover */}
       {showQuickVoice && (
         <div className="absolute bottom-full left-0 mb-2 w-80 sm:w-96 bg-slate-900/98 border border-amber-500/50 rounded-2xl p-3 shadow-2xl backdrop-blur-md z-50 animate-in slide-in-from-bottom-2 fade-in">

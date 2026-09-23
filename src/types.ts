@@ -148,6 +148,9 @@ export interface ChatMessage {
   timestamp: number;
   seatIndex?: number; // 0-based seat index on the table (0 = 1号位, 1 = 2号位...)
   isDealer?: boolean; // Whether sender is the current dealer
+  hasRead?: boolean; // 微信语音未读红点标记
+  transcription?: string; // 微信语音转文字内容
+  reactions?: { [emoji: string]: number }; // 表情回复 (👍 666 🔥 等)
 }
 
 

@@ -19,6 +19,8 @@ interface CarriageHeaderBarProps {
   activeSpeakerId?: string | null;
   onExit?: () => void;
   players?: { id: string; name: string; avatar: string; isAi: boolean }[];
+  barrageEnabled?: boolean;
+  onToggleBarrage?: () => void;
 }
 
 export function CarriageHeaderBar({
@@ -36,7 +38,9 @@ export function CarriageHeaderBar({
   latestMessage,
   activeSpeakerId: externalSpeakerId,
   onExit,
-  players = []
+  players = [],
+  barrageEnabled = true,
+  onToggleBarrage
 }: CarriageHeaderBarProps) {
   const totalSeats = 8;
   const isReservation = mode === 'reservation';
@@ -141,18 +145,39 @@ export function CarriageHeaderBar({
           </div>
 
           {mode === 'realtime' && (
-            <button
-              onClick={onOpenChat}
-              className="relative px-2.5 py-1 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
-            >
-              <MessageSquare className="w-3.5 h-3.5 text-indigo-200" />
-              <span className="hidden min-[480px]:inline">聊天/对讲</span>
-              {unreadChatCount > 0 && (
-                <span className="absolute -top-1.5 -right-1 px-1.5 py-0.2 bg-rose-500 text-white text-[9px] font-black rounded-full border border-slate-900 shadow animate-pulse">
-                  {unreadChatCount}
-                </span>
+            <>
+              {/* 💬 Barrage Switch */}
+              {onToggleBarrage && (
+                <button
+                  onClick={onToggleBarrage}
+                  className={`px-2 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                    barrageEnabled
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-slate-800/80 text-slate-400 border border-slate-700/80'
+                  }`}
+                  title={barrageEnabled ? '点击关闭牌桌实时弹幕' : '点击开启牌桌实时弹幕'}
+                >
+                  <span className="text-[11px]">💬</span>
+                  <span className="hidden xs:inline">弹幕</span>
+                  <span className={`text-[10px] font-mono ${barrageEnabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    {barrageEnabled ? '开' : '关'}
+                  </span>
+                </button>
               )}
-            </button>
+
+              <button
+                onClick={onOpenChat}
+                className="relative px-2.5 py-1 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-indigo-200" />
+                <span className="hidden min-[480px]:inline">聊天/对讲</span>
+                {unreadChatCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1 px-1.5 py-0.2 bg-rose-500 text-white text-[9px] font-black rounded-full border border-slate-900 shadow animate-pulse">
+                    {unreadChatCount}
+                  </span>
+                )}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -192,10 +217,12 @@ export function CarriageHeaderBar({
               }`}
               title={`${s + 1}号位: ${name}`}
             >
-              {/* Floating speech bubble over active speaker */}
+              {/* Floating WeChat speech bubble over active speaker */}
               {isSpeaking && (speakerSnippet || isUser) && (
-                <div className="absolute -top-7 z-20 bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap animate-bounce flex items-center gap-1 border border-emerald-300">
-                  <span>{isUser ? '🎙️ 发言中' : speakerSnippet}</span>
+                <div className="absolute -top-7 z-30 bg-emerald-600 text-white font-black text-[10px] px-2 py-0.5 rounded-full shadow-xl whitespace-nowrap animate-bounce flex items-center gap-1 border border-emerald-300 pointer-events-none">
+                  <span className="text-[10px]">🎙️</span>
+                  <span className="truncate max-w-[85px]">{isUser ? '发言中...' : speakerSnippet}</span>
+                  <span className="text-[9px] font-mono text-emerald-200">)))</span>
                 </div>
               )}
 
