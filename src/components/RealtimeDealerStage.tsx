@@ -15,7 +15,11 @@ import {
   ShieldCheck,
   Radio,
   ExternalLink,
-  Volume2
+  Volume2,
+  Bot,
+  UserPlus,
+  UserMinus,
+  RefreshCw
 } from 'lucide-react';
 
 import { TableTacticalChatBar } from './TableTacticalChatBar';
@@ -37,6 +41,7 @@ interface RealtimeDealerStageProps {
   currentUserId: string;
   onAddPlayer?: () => void;
   onRemovePlayer?: () => void;
+  onFillAiPlayers?: (count?: number) => void;
   onStartDeal: (dealtHands: { [playerId: string]: Card[] }, dealerIndex: number) => void;
   onBackToMenu: () => void;
   onSendMessage?: (type: 'text' | 'voice' | 'quick' | 'emoji', content: string, audioUrl?: string, audioDuration?: number) => void;
@@ -63,6 +68,7 @@ export function RealtimeDealerStage({
   currentUserId,
   onAddPlayer,
   onRemovePlayer,
+  onFillAiPlayers,
   onStartDeal,
   onBackToMenu,
   onSendMessage,
@@ -411,7 +417,7 @@ export function RealtimeDealerStage({
         <div className="flex items-center gap-2">
           <button
             onClick={onBackToMenu}
-            className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-sm"
+            className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
           >
             <span>←</span>
             <span>大厅</span>
@@ -425,6 +431,39 @@ export function RealtimeDealerStage({
         </div>
 
         <div className="flex items-center gap-1.5 text-xs">
+          {/* Quick AI Seat Fill Controls */}
+          {onFillAiPlayers && seatedCount < 8 && (
+            <button
+              onClick={() => onFillAiPlayers(8)}
+              className="px-2 py-1 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+              title="一键补齐AI玩家至满桌8人"
+            >
+              <Bot className="w-3.5 h-3.5 text-indigo-400" />
+              <span>补满AI</span>
+            </button>
+          )}
+
+          {onAddPlayer && seatedCount < 8 && (
+            <button
+              onClick={onAddPlayer}
+              className="px-2 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+              title="添加一名AI玩家"
+            >
+              <UserPlus className="w-3 h-3 text-emerald-400" />
+              <span>+AI</span>
+            </button>
+          )}
+
+          {onRemovePlayer && seatedCount > 1 && (
+            <button
+              onClick={onRemovePlayer}
+              className="px-1.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-rose-300 text-[11px] font-bold flex items-center transition active:scale-95 cursor-pointer shadow-sm"
+              title="移除一名AI玩家"
+            >
+              <UserMinus className="w-3 h-3 text-rose-400" />
+            </button>
+          )}
+
           <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-900 border border-amber-500/40 text-slate-200 text-[11px] sm:text-xs">
             <Crown className="w-3 h-3 text-amber-400" />
             <span>庄家: <strong className="text-amber-300">{dealerIndex + 1}号位</strong></span>
@@ -432,7 +471,7 @@ export function RealtimeDealerStage({
           <div className={`px-2 py-0.5 rounded-full text-[11px] sm:text-xs font-bold border ${
             seatedCount >= 2
               ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-              : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+              : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
           }`}>
             👥 {seatedCount}/8人
           </div>
@@ -453,15 +492,21 @@ export function RealtimeDealerStage({
             return (
               <div
                 key={`realtime-seat-${idx}`}
-                className={`relative flex-1 min-w-[36px] max-w-[85px] flex flex-col items-center justify-center py-0.5 px-0.5 rounded-lg transition-all border ${
+                onClick={() => {
+                  if (!isOccupied && onAddPlayer) {
+                    onAddPlayer();
+                  }
+                }}
+                className={`relative flex-1 min-w-[36px] max-w-[85px] flex flex-col items-center justify-center py-0.5 px-0.5 rounded-lg transition-all border cursor-pointer ${
                   !isOccupied 
-                    ? 'bg-slate-900/20 border-dashed border-slate-800 text-slate-600'
+                    ? 'bg-slate-900/20 border-dashed border-slate-800 text-slate-600 hover:border-slate-600 hover:bg-slate-900/40'
                     : isSpeaking
                     ? 'bg-emerald-950/90 border-2 border-emerald-400 text-emerald-200 shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400/80 animate-pulse'
                     : isMe
                     ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
                     : 'bg-emerald-950/40 border border-emerald-500/30 text-emerald-300'
                 }`}
+                title={!isOccupied ? '点击添加AI玩家入座' : `${p.name}`}
               >
                 {/* Floating seat chat/voice bubble */}
                 {bubble && (
@@ -501,7 +546,7 @@ export function RealtimeDealerStage({
 
                 {/* Name */}
                 <span className="text-[9px] truncate w-full text-center font-medium">
-                  {isOccupied ? (isMe ? '我' : p.name.replace(/\(.*\)/, '')) : '空位'}
+                  {isOccupied ? (isMe ? '我' : p.name.replace(/\(.*\)/, '')) : '+AI'}
                 </span>
               </div>
             );
@@ -509,109 +554,144 @@ export function RealtimeDealerStage({
         </div>
       </div>
 
-      {/* 3. Central Stage (Adaptive Flex, No Scroll) */}
-      <div className="w-full flex-1 min-h-0 bg-slate-900/60 border border-slate-800 rounded-2xl p-2 sm:p-3 flex flex-col items-center justify-center relative shadow-inner overflow-hidden">
+      {/* 3. Central Stage (Adaptive Flex, No Scroll, Always Actionable) */}
+      <div className="w-full flex-1 min-h-0 bg-slate-900/60 border border-slate-800 rounded-2xl p-2 sm:p-3 flex flex-col items-center justify-between relative shadow-inner overflow-hidden">
         
-        {/* State A: Less than 2 players */}
-        {seatedCount < 2 ? (
-          <div className="flex flex-col items-center text-center gap-2 z-10 max-w-sm">
-            <div className="w-11 h-11 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-xl animate-pulse">
-              👥
-            </div>
-            <div className="space-y-0.5">
-              <h3 className="text-sm font-bold text-white">等待其他玩家加入</h3>
-              <p className="text-[11px] text-slate-400">
-                当前已入座 <span className="text-emerald-400 font-bold">{seatedCount}/8</span> 人 · 满 2 人即可发牌
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                try {
-                  window.open(window.location.origin + window.location.pathname + '?mode=realtime', '_blank');
-                } catch (e) {
-                  console.log(e);
-                }
-              }}
-              className="mt-0.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 transition shadow active:scale-95 cursor-pointer"
-            >
-              <ExternalLink className="w-3 h-3" />
-              <span>新标签页联机体验</span>
-            </button>
-          </div>
-        ) : isHumanDealer ? (
-          /* State B: User is Dealer -> Clean controls */
-          <div className="w-full flex flex-col items-center justify-center gap-2 z-10">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black text-amber-300 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center gap-1">
-                <Crown className="w-3 h-3 text-amber-400" />
-                <span>您是发牌庄家</span>
-              </span>
-              <span className="text-[11px] text-slate-400">
-                已洗牌: <strong className="text-white">{shuffleCount}</strong> 次
-              </span>
-            </div>
-
-            {renderDeckAnimation()}
-
-            {/* Quick Action Buttons (Comfortable & Perfectly Sized) */}
-            <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-center mt-1">
-              <button
-                onClick={handleManualShuffle}
-                disabled={isShuffling || isDealing}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl sm:rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-indigo-500/40 text-indigo-200 hover:text-white text-xs sm:text-sm font-black flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md shadow-indigo-950/40"
-              >
-                <RotateCcw className={`w-3.5 h-3.5 ${isShuffling ? 'animate-spin text-amber-400' : 'text-indigo-400'}`} />
-                <span>{shuffleCount > 0 ? `再洗 (${shuffleCount})` : '洗牌'}</span>
-              </button>
-
-              <button
-                onClick={handleManualCut}
-                disabled={isShuffling || isCutting || isDealing}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl sm:rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-cyan-500/40 text-cyan-200 hover:text-white text-xs sm:text-sm font-black flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md shadow-cyan-950/40"
-              >
-                <Scissors className="w-3.5 h-3.5 text-cyan-400" />
-                <span>{cutCard ? '重切' : '切牌'}</span>
-              </button>
-
-              <button
-                onClick={handleManualDeal}
-                disabled={isShuffling || isCutting || isDealing}
-                className="h-10 sm:h-11 px-6 sm:px-7 rounded-xl sm:rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-amber-950/60 ring-2 ring-amber-300/50 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer"
-              >
-                <Play className="w-4 h-4 fill-slate-950" />
-                <span>{isDealing ? '发牌中...' : '立即发牌'}</span>
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* State C: Non-Dealer -> Waiting for Dealer */
-          <div className="flex flex-col items-center text-center gap-2 z-10 max-w-sm">
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/90 border border-slate-700 text-slate-300 text-xs font-bold shadow-md">
+        {/* Top Status Pill */}
+        <div className="flex items-center gap-2 z-10 shrink-0">
+          {isHumanDealer ? (
+            <span className="text-xs font-black text-amber-300 px-3 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center gap-1.5 shadow-sm">
+              <Crown className="w-3.5 h-3.5 text-amber-400" />
+              <span>您是发牌庄家 · 请洗牌、切牌后发牌</span>
+            </span>
+          ) : (
+            <span className="text-xs font-black text-slate-300 px-3 py-0.5 rounded-full bg-slate-800/90 border border-slate-700 flex items-center gap-1.5 shadow-sm">
               <span className="text-sm">⏳</span>
               <span>等待庄家【<strong className="text-amber-300">{currentDealer?.name}</strong>】发牌...</span>
+            </span>
+          )}
+
+          <span className="text-[11px] text-slate-400 bg-slate-950/60 px-2.5 py-0.5 rounded-full border border-slate-800">
+            已洗牌: <strong className="text-white">{shuffleCount}</strong> 次
+          </span>
+        </div>
+
+        {/* 3D Animated Deck in the Center */}
+        <div className="flex-1 flex items-center justify-center min-h-0 py-1">
+          {renderDeckAnimation()}
+        </div>
+
+        {/* Core Function Buttons Deck (Always Prominent, Clear & Tactile) */}
+        <div className="w-full flex flex-col items-center gap-1.5 z-10 shrink-0">
+          {isHumanDealer ? (
+            /* DEALER ACTION SUITE */
+            <div className="w-full flex flex-col items-center gap-2">
+              <div className="w-full flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
+                {/* 1. Shuffle Button */}
+                <button
+                  id="btn-realtime-shuffle"
+                  onClick={handleManualShuffle}
+                  disabled={isShuffling || isDealing}
+                  className="h-11 sm:h-12 px-4 sm:px-5 rounded-xl sm:rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-indigo-500/50 text-indigo-200 hover:text-white text-xs sm:text-sm font-black flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg shadow-indigo-950/50"
+                  title="点击洗牌（支持多次连续洗牌）"
+                >
+                  <RotateCcw className={`w-4 h-4 ${isShuffling ? 'animate-spin text-amber-400' : 'text-indigo-400'}`} />
+                  <span>{shuffleCount > 0 ? `再洗一次 (${shuffleCount})` : '洗牌 (Shuffle)'}</span>
+                </button>
+
+                {/* 2. Cut Deck Button */}
+                <button
+                  id="btn-realtime-cut"
+                  onClick={handleManualCut}
+                  disabled={isShuffling || isCutting || isDealing}
+                  className="h-11 sm:h-12 px-4 sm:px-5 rounded-xl sm:rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-cyan-500/50 text-cyan-200 hover:text-white text-xs sm:text-sm font-black flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg shadow-cyan-950/50"
+                  title="点击切牌"
+                >
+                  <Scissors className="w-4 h-4 text-cyan-400" />
+                  <span>{cutCard ? '重新切牌' : '切牌 (Cut)'}</span>
+                </button>
+
+                {/* 3. Primary Deal Button */}
+                <button
+                  id="btn-realtime-deal"
+                  onClick={() => {
+                    if (seatedCount < 2 && onFillAiPlayers) {
+                      onFillAiPlayers(4);
+                      setTimeout(() => {
+                        handleManualDeal();
+                      }, 200);
+                    } else {
+                      handleManualDeal();
+                    }
+                  }}
+                  disabled={isShuffling || isCutting || isDealing}
+                  className="h-11 sm:h-12 px-6 sm:px-8 rounded-xl sm:rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs sm:text-sm shadow-xl shadow-amber-950/70 ring-2 ring-amber-300/50 flex items-center gap-2 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                  title="分发手牌并进入理牌对局"
+                >
+                  <Play className="w-4 h-4 fill-slate-950" />
+                  <span>
+                    {isDealing 
+                      ? '发牌中...' 
+                      : seatedCount < 2 
+                      ? '一键补齐AI发牌' 
+                      : `立即发牌 (${seatedCount}人)`}
+                  </span>
+                </button>
+              </div>
+
+              {/* Auxiliary Quick AI Bar */}
+              <div className="flex items-center gap-2 text-xs">
+                {onFillAiPlayers && seatedCount < 8 && (
+                  <button
+                    onClick={() => onFillAiPlayers(8)}
+                    className="px-3 py-1 rounded-xl bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-200 text-xs font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+                  >
+                    <Bot className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>一键满桌AI (8人开桌)</span>
+                  </button>
+                )}
+                {onRotateDealer && (
+                  <button
+                    onClick={() => onRotateDealer((dealerIndex + 1) % Math.max(1, seatedCount))}
+                    className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+                  >
+                    <RefreshCw className="w-3 h-3 text-amber-400" />
+                    <span>顺延下一位庄家</span>
+                  </button>
+                )}
+              </div>
             </div>
-
-            {renderDeckAnimation()}
-
-            <div className="flex items-center gap-2 mt-1">
+          ) : (
+            /* NON-DEALER ACTION SUITE */
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-center">
               <button
                 onClick={handleUrgeDealer}
-                className="h-9 sm:h-10 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs sm:text-sm font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
               >
                 <span className="text-sm">⌛</span>
-                <span>催促发牌</span>
+                <span>催促庄家发牌</span>
               </button>
 
               <button
                 onClick={handleClaimDealerRole}
-                className="h-9 sm:h-10 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
+                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs sm:text-sm font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
               >
                 <Crown className="w-3.5 h-3.5 text-amber-400" />
-                <span>换我做庄</span>
+                <span>换我做庄发牌</span>
               </button>
+
+              {onFillAiPlayers && seatedCount < 8 && (
+                <button
+                  onClick={() => onFillAiPlayers(8)}
+                  className="h-10 sm:h-11 px-4 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-200 text-xs sm:text-sm font-black flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-md"
+                >
+                  <Bot className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>满桌AI</span>
+                </button>
+              )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* 4. Bottom Tactical Chat Bar (Clean, Focused, Zero Overflow) */}
