@@ -1910,7 +1910,7 @@ export default function App() {
       )}
 
       {/* 2. Main Body Content: Minimalist & Clean Two Arena Blocks */}
-      <main className="flex-1 w-full max-w-5xl mx-auto px-2 sm:px-6 py-0 flex flex-col items-center justify-center overflow-hidden">
+      <main className="flex-1 w-full max-w-5xl mx-auto px-1.5 sm:px-4 py-0 flex flex-col items-center justify-center overflow-hidden min-h-0 h-full">
         {gameState === 'menu' && (
           <div className="w-full max-w-4xl flex flex-col items-center justify-center gap-4 sm:gap-6 py-2 sm:py-4 my-auto animate-fade-in-up">
               {/* 🛡️ 契约精神锁定横幅：存在进行中的牌局时醒目展示 */}
@@ -2189,7 +2189,7 @@ export default function App() {
           </div>
         )}
         {gameState === 'arranging' && (
-          <div className="w-full max-w-5xl flex-1 flex flex-col items-center justify-between gap-2 py-1 px-0 min-h-0">
+          <div className="w-full max-w-5xl h-full flex-1 flex flex-col items-center justify-between gap-1 py-0.5 px-0 min-h-0 overflow-hidden">
             {/* 🚆 Compact Carriage Header Bar with Live Seating & Chat */}
             <CarriageHeaderBar
               mode={mode}
@@ -2447,43 +2447,43 @@ export default function App() {
             )}
 
             {/* Bottom Actions: Clean Two Primary Action Buttons (变换牌型 / 一键纠正 & 提交牌型) */}
-            <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1 shrink-0 pt-0.5 pb-2 sm:pb-3">
+            <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-1 shrink-0 pt-0.5 pb-1">
               {/* Context hints / pattern info */}
               {selectedCardIds.length === 1 ? (
-                <div className="text-[10px] sm:text-[11px] font-bold text-blue-300 bg-blue-950/80 border border-blue-500/50 px-3 py-0.5 rounded-full animate-in fade-in flex items-center gap-1.5 shadow-md">
+                <div className="text-[10px] sm:text-[11px] font-bold text-blue-300 bg-blue-950/80 border border-blue-500/50 px-2.5 py-0.2 rounded-full animate-in fade-in flex items-center gap-1 shadow-md">
                   <span>💡 已选 1 张牌，点击任意另一张牌即可直接对调位置</span>
                 </div>
               ) : isCurrentDaoShui ? (
-                <div className="text-[10px] sm:text-[11px] font-bold text-rose-300 bg-rose-950/80 border border-rose-500/60 px-3 py-0.5 rounded-full animate-in fade-in flex items-center gap-1.5 shadow-md">
+                <div className="text-[10px] sm:text-[11px] font-bold text-rose-300 bg-rose-950/80 border border-rose-500/60 px-2.5 py-0.2 rounded-full animate-in fade-in flex items-center gap-1 shadow-md">
                   <span>⚠️ 当前牌型倒水 (头墩大过中墩 或 中墩大过尾墩)，请点击一键纠正</span>
                 </div>
               ) : patternInfo ? (
-                <div className="text-[10px] sm:text-[11px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/40 px-3 py-0.2 rounded-full animate-in fade-in flex items-center gap-1.5 shadow-sm">
+                <div className="text-[10px] sm:text-[11px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/40 px-2.5 py-0.2 rounded-full animate-in fade-in flex items-center gap-1 shadow-sm">
                   <span>✨ 方案:</span>
                   <span className="text-amber-200">{patternInfo.tag}</span>
                   <span className="text-slate-400 font-medium">({patternInfo.index}/{patternInfo.total})</span>
                 </div>
               ) : null}
 
-              <div className="w-full flex items-center justify-center gap-3 sm:gap-4 mt-1">
+              <div className="w-full flex items-center justify-center gap-2 sm:gap-3 mt-0.5">
                 {isCurrentDaoShui ? (
                   <button
                     id="btn-auto-fix-daoshui"
                     onClick={handleAutoFix}
-                    className="flex-1 h-12 sm:h-14 px-4 rounded-2xl bg-gradient-to-r from-rose-950 via-amber-950/90 to-rose-950 border-2 border-rose-500 text-amber-200 hover:text-white text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-xl shadow-rose-950/70 transition active:scale-95 cursor-pointer animate-pulse ring-2 ring-rose-500/30"
+                    className="flex-1 h-11 sm:h-12 px-3 rounded-xl sm:rounded-2xl bg-gradient-to-r from-rose-950 via-amber-950/90 to-rose-950 border-2 border-rose-500 text-amber-200 hover:text-white text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-lg shadow-rose-950/70 transition active:scale-95 cursor-pointer animate-pulse ring-1 ring-rose-500/30"
                     title="当前摆法倒水！点击一键智能纠正并恢复最佳牌力"
                   >
-                    <ShieldAlert className="w-5 h-5 text-rose-400" />
+                    <ShieldAlert className="w-4 h-4 text-rose-400" />
                     <span>一键纠正倒水</span>
                   </button>
                 ) : (
                   <button
                     id="btn-change-pattern"
                     onClick={handleChangePattern}
-                    className="flex-1 h-12 sm:h-14 px-4 rounded-2xl bg-slate-850 hover:bg-slate-800 border-2 border-amber-500/50 text-amber-300 hover:text-amber-200 text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-xl shadow-amber-950/50 transition active:scale-95 cursor-pointer"
+                    className="flex-1 h-11 sm:h-12 px-3 rounded-xl sm:rounded-2xl bg-slate-850 hover:bg-slate-800 border-2 border-amber-500/50 text-amber-300 hover:text-amber-200 text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-lg shadow-amber-950/50 transition active:scale-95 cursor-pointer"
                     title="点击切换下一组不倒水合法方案"
                   >
-                    <Sparkles className="w-5 h-5 text-amber-400" />
+                    <Sparkles className="w-4 h-4 text-amber-400" />
                     <span>变换牌型</span>
                   </button>
                 )}
@@ -2492,14 +2492,14 @@ export default function App() {
                   id="btn-submit-arrangement"
                   onClick={handleSubmitArrangement}
                   disabled={!useSpecialHand && (isCurrentDaoShui || (front.length + mid.length + back.length !== 13))}
-                  className={`flex-1 h-12 sm:h-14 px-4 rounded-2xl text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-xl transition active:scale-95 cursor-pointer ${
+                  className={`flex-1 h-11 sm:h-12 px-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-lg transition active:scale-95 cursor-pointer ${
                     !useSpecialHand && (isCurrentDaoShui || (front.length + mid.length + back.length !== 13))
                       ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
-                      : 'bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-600/40 ring-2 ring-emerald-400/40'
+                      : 'bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-600/40 ring-1 ring-emerald-400/40'
                   }`}
                   title="提交牌型"
                 >
-                  <CheckCircle2 className="w-5 h-5" />
+                  <CheckCircle2 className="w-4 h-4" />
                   <span>
                     {useSpecialHand && specialHand
                       ? `🌟 特殊牌型提交 (+${SPECIAL_HAND_CN[specialHand].points}水)`
