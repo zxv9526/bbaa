@@ -1705,51 +1705,94 @@ export function ChatDrawer({
         )}
 
         {/* Bottom Input & Voice Record Action Bar */}
-        <div className="p-3 sm:p-4 bg-slate-950/70 border-t border-slate-800/80 flex items-center gap-2 shrink-0">
-          {/* Voice Record Button (按住/点击对讲) */}
-          <button
-            onClick={handleToggleRecord}
-            className={`px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl font-bold text-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 shadow ${
-              isRecording
-                ? 'bg-rose-600 text-white animate-pulse'
-                : recordPhaseRef.current === 'starting'
-                ? 'bg-amber-600 text-white animate-bounce'
-                : 'bg-slate-800 hover:bg-slate-750 text-emerald-400 border border-emerald-500/30'
-            }`}
-            title="点击开始录制语音对讲消息"
-          >
-            {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4 text-emerald-400" />}
-            <span className="hidden min-[380px]:inline">
-              {isRecording ? '结束对讲' : recordPhaseRef.current === 'starting' ? '准备中...' : '语音对讲'}
-            </span>
-          </button>
+        <div className="p-3 sm:p-4 bg-slate-950/70 border-t border-slate-800/80 shrink-0">
+          {isRecording ? (
+            /* Active Recording Bar */
+            <div className="flex items-center gap-2 animate-in fade-in">
+              <button
+                type="button"
+                onClick={handleCancelRecord}
+                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-rose-900/40 border border-slate-700 hover:border-rose-500/50 text-slate-300 hover:text-rose-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+                <span>取消</span>
+              </button>
 
-          {/* Text Input */}
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSendText();
-            }}
-            placeholder="输入聊天内容..."
-            maxLength={60}
-            className="flex-1 bg-slate-850 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-          />
+              <div className="flex-1 flex items-center justify-center gap-2 bg-emerald-950/40 border border-emerald-500/40 rounded-xl py-2 px-3">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span className="text-xs font-bold text-emerald-300">对讲中</span>
+                <span className="font-mono text-xs font-black text-white">{recordSeconds}s</span>
+                <div className="flex items-end gap-0.5 h-3.5 ml-1">
+                  {[1, 2, 3, 4, 5].map((lvl) => {
+                    const activeLvl = Math.min(5, Math.ceil(drawerVolume / 18));
+                    return (
+                      <span
+                        key={lvl}
+                        className={`w-0.5 rounded-full transition-all duration-75 ${
+                          activeLvl >= lvl ? 'bg-emerald-400 h-3.5' : 'bg-emerald-900/60 h-1'
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
 
-          {/* Send Button */}
-          <button
-            onClick={handleSendText}
-            disabled={!inputText.trim()}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition flex items-center gap-1 cursor-pointer active:scale-95 shrink-0 ${
-              inputText.trim()
-                ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30'
-                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-            }`}
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>发送</span>
-          </button>
+              <button
+                type="button"
+                onClick={handleStopRecord}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-900/40 active:scale-95"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>立即发送</span>
+              </button>
+            </div>
+          ) : (
+            /* Normal Input Bar */
+            <div className="flex items-center gap-2">
+              {/* Voice Record Button */}
+              <button
+                onClick={handleToggleRecord}
+                className={`px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl font-bold text-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 shadow ${
+                  recordPhaseRef.current === 'starting'
+                    ? 'bg-amber-600 text-white animate-bounce'
+                    : 'bg-slate-800 hover:bg-slate-750 text-emerald-400 border border-emerald-500/30'
+                }`}
+                title="点击开始录制语音对讲消息"
+              >
+                <Mic className="w-4 h-4 text-emerald-400" />
+                <span className="hidden min-[380px]:inline">
+                  {recordPhaseRef.current === 'starting' ? '准备中...' : '语音对讲'}
+                </span>
+              </button>
+
+              {/* Text Input */}
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSendText();
+                }}
+                placeholder="输入聊天内容..."
+                maxLength={60}
+                className="flex-1 bg-slate-850 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              />
+
+              {/* Send Button */}
+              <button
+                onClick={handleSendText}
+                disabled={!inputText.trim()}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition flex items-center gap-1 cursor-pointer active:scale-95 shrink-0 ${
+                  inputText.trim()
+                    ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30'
+                    : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>发送</span>
+              </button>
+            </div>
+          )}
         </div>
 
       </div>

@@ -312,9 +312,12 @@ export function TableTacticalChatBar({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (recordPhaseRef.current === 'idle' || !isPointerDownRef.current) return;
+    if (recordPhaseRef.current === 'idle') return;
+    if (pointerStartYRef.current === 0) {
+      pointerStartYRef.current = e.clientY;
+    }
     const diffY = pointerStartYRef.current - e.clientY;
-    if (diffY > 40) {
+    if (diffY > 35) {
       if (!isSlideCancel) {
         setIsSlideCancel(true);
         triggerHaptic('heavy');
@@ -328,21 +331,61 @@ export function TableTacticalChatBar({
     if (!isPointerDownRef.current) return;
     isPointerDownRef.current = false;
     const holdDuration = Date.now() - pointerStartTimeRef.current;
-    // If user held the button for >= 400ms: it was Hold-to-Talk -> auto stop on release
-    if (holdDuration >= 400) {
+    if (isSlideCancel) {
+      cancelVoiceRecord();
+      return;
+    }
+    // If user held the button for >= 350ms: it was Hold-to-Talk -> auto stop and send on release
+    if (holdDuration >= 350) {
       stopVoiceRecordAndSend();
     }
-    // If it was a short tap (< 400ms), user enters Toggle-to-Talk mode -> stay recording so they can tap again to send
+    // If it was a short tap (< 350ms), user entered Tap-to-Talk mode -> stays recording until explicit tap on send
   };
+
+  // Window-level gesture tracker during recording so slide-to-cancel & release-to-send are 100% reliable
+  useEffect(() => {
+    if (!isRecording) return;
+
+    const onWinPointerMove = (e: PointerEvent) => {
+      if (pointerStartYRef.current > 0) {
+        const diffY = pointerStartYRef.current - e.clientY;
+        if (diffY > 35) {
+          setIsSlideCancel(true);
+        } else {
+          setIsSlideCancel(false);
+        }
+      }
+    };
+
+    const onWinPointerUp = () => {
+      if (isPointerDownRef.current) {
+        isPointerDownRef.current = false;
+        const holdDuration = Date.now() - pointerStartTimeRef.current;
+        if (isSlideCancel) {
+          cancelVoiceRecord();
+        } else if (holdDuration >= 350) {
+          stopVoiceRecordAndSend();
+        }
+      }
+    };
+
+    window.addEventListener('pointermove', onWinPointerMove);
+    window.addEventListener('pointerup', onWinPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onWinPointerMove);
+      window.removeEventListener('pointerup', onWinPointerUp);
+    };
+  }, [isRecording, isSlideCancel]);
 
   // Explicit click handler for Tap-to-Talk mode (Click once to talk, click again to send)
   const handleMicButtonClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     const holdDuration = Date.now() - pointerStartTimeRef.current;
     // If it was a hold gesture, handlePointerUp already handled it
-    if (holdDuration >= 400) return;
+    if (holdDuration >= 350) return;
 
     if (recordPhaseRef.current === 'idle') {
+      pointerStartYRef.current = e.clientY;
       startVoiceRecord();
     } else if (recordPhaseRef.current === 'recording' || recordPhaseRef.current === 'starting') {
       stopVoiceRecordAndSend();
@@ -449,36 +492,65 @@ export function TableTacticalChatBar({
 
   return (
     <div className="relative w-full select-none">
-      {/* 📱 微信风格语音录制中浮层 HUD (按住说话 / 松开取消 / 音波跳动) */}
+      {/* 📱 微信风格语音录制中浮层 HUD (按住说话 / 松开发送 / 手指上滑取消 / 点击发送) */}
       {isRecording && (
         <div
+          onPointerDown={(e) => {
+            isPointerDownRef.current = true;
+            if (pointerStartYRef.current === 0) {
+              pointerStartYRef.current = e.clientY;
+            }
+          }}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] touch-none select-none pointer-events-auto animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/50 backdrop-blur-[3px] select-none animate-in fade-in duration-150"
         >
+          {/* Top Cancel Guide Pill */}
+          <div className="mb-4">
+            <div
+              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg ${
+                isSlideCancel
+                  ? 'bg-rose-600 text-white scale-110 ring-4 ring-rose-500/40 animate-pulse'
+                  : 'bg-slate-900/90 text-slate-300 border border-slate-700'
+              }`}
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>{isSlideCancel ? '松开手指，取消发送' : '手指往上滑，取消发送'}</span>
+            </div>
+          </div>
+
+          {/* Center Card */}
           <div
-            className={`w-44 h-44 rounded-3xl flex flex-col items-center justify-center p-4 shadow-2xl transition-all duration-200 border ${
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isSlideCancel) {
+                cancelVoiceRecord();
+              } else {
+                stopVoiceRecordAndSend();
+              }
+            }}
+            className={`w-52 h-48 rounded-3xl flex flex-col items-center justify-between p-4 shadow-2xl transition-all duration-200 border cursor-pointer ${
               isSlideCancel
-                ? 'bg-rose-950/95 border-rose-500/80 scale-105'
-                : 'bg-slate-900/95 border-emerald-500/60 shadow-emerald-950/50'
+                ? 'bg-rose-950/95 border-rose-500/80 scale-105 shadow-rose-950/80'
+                : 'bg-slate-900/95 border-emerald-500/60 shadow-emerald-950/50 hover:border-emerald-400'
             }`}
           >
             {isSlideCancel ? (
-              <div className="flex flex-col items-center gap-2 text-rose-300">
+              <div className="flex flex-col items-center justify-center flex-1 gap-2 text-rose-300">
                 <div className="w-16 h-16 rounded-full bg-rose-600/30 border border-rose-500 flex items-center justify-center text-rose-400 animate-bounce">
                   <X className="w-9 h-9 stroke-[2.5]" />
                 </div>
                 <div className="text-sm font-black text-rose-200">松开手指，取消发送</div>
-                <div className="text-[10px] text-rose-400/80 font-mono">CANCEL</div>
+                <div className="text-[10px] text-rose-400 font-mono">RELEASE TO CANCEL</div>
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-2 text-emerald-300">
-                {/* WeChat-style dynamic sound wave & microphone */}
+              <div className="flex flex-col items-center justify-center flex-1 gap-2 text-emerald-300">
+                {/* Dynamic sound wave & microphone */}
                 <div className="relative flex items-center justify-center w-16 h-16">
                   <div className="w-14 h-14 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
                     <Mic className="w-7 h-7 animate-pulse" />
                   </div>
-                  {/* Surrounding sound waves based on volume level */}
+                  {/* Surrounding sound waves */}
                   <div className="absolute -right-3 flex items-end gap-0.5 h-8">
                     {[1, 2, 3, 4, 5].map((lvl) => (
                       <span
@@ -494,14 +566,41 @@ export function TableTacticalChatBar({
                 </div>
 
                 <div className="text-center">
-                  <div className="text-sm font-black text-white flex items-center justify-center gap-1">
+                  <div className="text-base font-black text-white flex items-center justify-center gap-1.5">
                     <span>录音中</span>
-                    <span className="font-mono text-emerald-300">{recordingSeconds}"</span>
+                    <span className="font-mono text-emerald-300 text-lg">{recordingSeconds}"</span>
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">手指上滑，取消发送</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">松开或点击卡片立即发送</div>
                 </div>
               </div>
             )}
+
+            {/* Bottom Explicit Action Buttons inside Card */}
+            <div className="flex items-center gap-2 w-full pt-2 border-t border-slate-800 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  cancelVoiceRecord();
+                }}
+                className="flex-1 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-900/50 border border-slate-700 hover:border-rose-500/60 text-slate-300 hover:text-rose-200 text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+                <span>取消</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  stopVoiceRecordAndSend();
+                }}
+                className="flex-1 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition flex items-center justify-center gap-1 cursor-pointer shadow-md shadow-emerald-900/40"
+              >
+                <Send className="w-3 h-3" />
+                <span>发送</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
