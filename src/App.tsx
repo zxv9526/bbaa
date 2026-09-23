@@ -129,10 +129,7 @@ import {
   clearRealtimeChatMessages,
   fetchRemoteChatHistory,
   RealtimeTableEvent,
-  getTabSessionId,
-  addAiPlayerToRealtimeTable,
-  fillAiPlayersToRealtimeTable,
-  removeAiPlayerFromRealtimeTable
+  getTabSessionId
 } from './lib/realtimeTableManager';
 import {
   saveActiveMatchSession,
@@ -2103,24 +2100,6 @@ export default function App() {
             dealerIndex={realtimeDealerIndex}
             players={realtimePlayers}
             currentUserId={(mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')}
-            onAddPlayer={() => {
-              const updated = addAiPlayerToRealtimeTable();
-              if (updated) {
-                setRealtimePlayers([...updated.seats]);
-              }
-            }}
-            onRemovePlayer={() => {
-              const updated = removeAiPlayerFromRealtimeTable();
-              if (updated) {
-                setRealtimePlayers([...updated.seats]);
-              }
-            }}
-            onFillAiPlayers={(count) => {
-              const updated = fillAiPlayersToRealtimeTable(count || 8);
-              if (updated) {
-                setRealtimePlayers([...updated.seats]);
-              }
-            }}
             onStartDeal={handleRealtimeDealComplete}
             onBackToMenu={() => {
               const tabSessionId = getTabSessionId();

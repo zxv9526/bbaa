@@ -16,9 +16,8 @@ import {
   Radio,
   ExternalLink,
   Volume2,
-  Bot,
-  UserPlus,
-  UserMinus,
+  Copy,
+  Check,
   RefreshCw
 } from 'lucide-react';
 
@@ -30,7 +29,7 @@ export interface RealtimeSeatPlayer {
   id: string;
   name: string;
   avatar: string;
-  isAi: boolean;
+  isAi?: boolean;
   score: number;
 }
 
@@ -39,9 +38,6 @@ interface RealtimeDealerStageProps {
   dealerIndex: number;
   players: RealtimeSeatPlayer[];
   currentUserId: string;
-  onAddPlayer?: () => void;
-  onRemovePlayer?: () => void;
-  onFillAiPlayers?: (count?: number) => void;
   onStartDeal: (dealtHands: { [playerId: string]: Card[] }, dealerIndex: number) => void;
   onBackToMenu: () => void;
   onSendMessage?: (type: 'text' | 'voice' | 'quick' | 'emoji', content: string, audioUrl?: string, audioDuration?: number) => void;
@@ -66,9 +62,6 @@ export function RealtimeDealerStage({
   dealerIndex,
   players,
   currentUserId,
-  onAddPlayer,
-  onRemovePlayer,
-  onFillAiPlayers,
   onStartDeal,
   onBackToMenu,
   onSendMessage,
@@ -91,6 +84,7 @@ export function RealtimeDealerStage({
   const currentDealer = players[dealerIndex] || players[0];
   const isHumanDealer = Boolean(currentDealer && currentUserId && currentDealer.id === currentUserId);
   const mySeatIndex = players.findIndex(p => p.id === currentUserId);
+  const [copiedInvite, setCopiedInvite] = useState(false);
 
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
   const [seatBubbles, setSeatBubbles] = useState<Record<string, {
@@ -423,7 +417,7 @@ export function RealtimeDealerStage({
             <span>大厅</span>
           </button>
           <div className="flex items-center gap-1.5">
-            <span className="text-xs sm:text-sm font-black text-white">⚡ 实时场</span>
+            <span className="text-xs sm:text-sm font-black text-white">⚡ 真人实时场</span>
             <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
               第 {round} 局
             </span>
@@ -431,38 +425,25 @@ export function RealtimeDealerStage({
         </div>
 
         <div className="flex items-center gap-1.5 text-xs">
-          {/* Quick AI Seat Fill Controls */}
-          {onFillAiPlayers && seatedCount < 8 && (
-            <button
-              onClick={() => onFillAiPlayers(8)}
-              className="px-2 py-1 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
-              title="一键补齐AI玩家至满桌8人"
-            >
-              <Bot className="w-3.5 h-3.5 text-indigo-400" />
-              <span>补满AI</span>
-            </button>
-          )}
-
-          {onAddPlayer && seatedCount < 8 && (
-            <button
-              onClick={onAddPlayer}
-              className="px-2 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
-              title="添加一名AI玩家"
-            >
-              <UserPlus className="w-3 h-3 text-emerald-400" />
-              <span>+AI</span>
-            </button>
-          )}
-
-          {onRemovePlayer && seatedCount > 1 && (
-            <button
-              onClick={onRemovePlayer}
-              className="px-1.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-rose-300 text-[11px] font-bold flex items-center transition active:scale-95 cursor-pointer shadow-sm"
-              title="移除一名AI玩家"
-            >
-              <UserMinus className="w-3 h-3 text-rose-400" />
-            </button>
-          )}
+          {/* Copy Invite Link */}
+          <button
+            onClick={() => {
+              try {
+                const url = window.location.origin + window.location.pathname + '?mode=realtime';
+                navigator.clipboard.writeText(url);
+                setCopiedInvite(true);
+                setTimeout(() => setCopiedInvite(false), 2000);
+                triggerHaptic('light');
+              } catch (e) {
+                console.log(e);
+              }
+            }}
+            className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-emerald-500/40 text-emerald-300 hover:text-emerald-200 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+            title="复制房间链接邀请好友"
+          >
+            {copiedInvite ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-emerald-400" />}
+            <span>{copiedInvite ? '已复制链接' : '邀请真人'}</span>
+          </button>
 
           <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-900 border border-amber-500/40 text-slate-200 text-[11px] sm:text-xs">
             <Crown className="w-3 h-3 text-amber-400" />
@@ -473,12 +454,12 @@ export function RealtimeDealerStage({
               ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
               : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
           }`}>
-            👥 {seatedCount}/8人
+            👥 真人 {seatedCount}/8
           </div>
         </div>
       </div>
 
-      {/* 2. Compact 8-Seat Live Strip */}
+      {/* 2. Compact 8-Seat Live Strip (Real Players Only) */}
       <div className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-1 shrink-0 shadow-md">
         <div className="w-full flex items-center justify-between gap-1 overflow-x-auto no-scrollbar">
           {Array.from({ length: 8 }).map((_, idx) => {
@@ -493,20 +474,26 @@ export function RealtimeDealerStage({
               <div
                 key={`realtime-seat-${idx}`}
                 onClick={() => {
-                  if (!isOccupied && onAddPlayer) {
-                    onAddPlayer();
+                  if (!isOccupied) {
+                    try {
+                      const url = window.location.origin + window.location.pathname + '?mode=realtime';
+                      navigator.clipboard.writeText(url);
+                      setCopiedInvite(true);
+                      setTimeout(() => setCopiedInvite(false), 2000);
+                      triggerHaptic('light');
+                    } catch (e) {}
                   }
                 }}
-                className={`relative flex-1 min-w-[36px] max-w-[85px] flex flex-col items-center justify-center py-0.5 px-0.5 rounded-lg transition-all border cursor-pointer ${
+                className={`relative flex-1 min-w-[36px] max-w-[85px] flex flex-col items-center justify-center py-0.5 px-0.5 rounded-lg transition-all border ${
                   !isOccupied 
-                    ? 'bg-slate-900/20 border-dashed border-slate-800 text-slate-600 hover:border-slate-600 hover:bg-slate-900/40'
+                    ? 'bg-slate-900/20 border-dashed border-slate-800 text-slate-600 cursor-pointer hover:border-slate-700'
                     : isSpeaking
                     ? 'bg-emerald-950/90 border-2 border-emerald-400 text-emerald-200 shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400/80 animate-pulse'
                     : isMe
                     ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
                     : 'bg-emerald-950/40 border border-emerald-500/30 text-emerald-300'
                 }`}
-                title={!isOccupied ? '点击添加AI玩家入座' : `${p.name}`}
+                title={!isOccupied ? '空位 · 点击复制邀请链接' : `${p.name}`}
               >
                 {/* Floating seat chat/voice bubble */}
                 {bubble && (
@@ -546,7 +533,7 @@ export function RealtimeDealerStage({
 
                 {/* Name */}
                 <span className="text-[9px] truncate w-full text-center font-medium">
-                  {isOccupied ? (isMe ? '我' : p.name.replace(/\(.*\)/, '')) : '+AI'}
+                  {isOccupied ? (isMe ? '我' : p.name.replace(/\(.*\)/, '')) : '空位'}
                 </span>
               </div>
             );
@@ -614,42 +601,42 @@ export function RealtimeDealerStage({
                 {/* 3. Primary Deal Button */}
                 <button
                   id="btn-realtime-deal"
-                  onClick={() => {
-                    if (seatedCount < 2 && onFillAiPlayers) {
-                      onFillAiPlayers(4);
-                      setTimeout(() => {
-                        handleManualDeal();
-                      }, 200);
-                    } else {
-                      handleManualDeal();
-                    }
-                  }}
-                  disabled={isShuffling || isCutting || isDealing}
-                  className="h-11 sm:h-12 px-6 sm:px-8 rounded-xl sm:rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs sm:text-sm shadow-xl shadow-amber-950/70 ring-2 ring-amber-300/50 flex items-center gap-2 transition active:scale-95 disabled:opacity-50 cursor-pointer"
-                  title="分发手牌并进入理牌对局"
+                  onClick={handleManualDeal}
+                  disabled={isShuffling || isCutting || isDealing || seatedCount < 2}
+                  className={`h-11 sm:h-12 px-6 sm:px-8 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 transition active:scale-95 cursor-pointer ${
+                    seatedCount >= 2
+                      ? 'bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 shadow-amber-950/70 ring-2 ring-amber-300/50'
+                      : 'bg-slate-800 text-slate-400 border border-slate-700 opacity-80 cursor-not-allowed'
+                  }`}
+                  title={seatedCount >= 2 ? '分发手牌并进入理牌对局' : '至少需要 2 位真人玩家入座方可发牌'}
                 >
-                  <Play className="w-4 h-4 fill-slate-950" />
+                  <Play className="w-4 h-4 fill-current" />
                   <span>
                     {isDealing 
                       ? '发牌中...' 
                       : seatedCount < 2 
-                      ? '一键补齐AI发牌' 
-                      : `立即发牌 (${seatedCount}人)`}
+                      ? `等待真人入座 (当前${seatedCount}/2~8人)` 
+                      : `立即发牌 (${seatedCount}人对局)`}
                   </span>
                 </button>
               </div>
 
-              {/* Auxiliary Quick AI Bar */}
-              <div className="flex items-center gap-2 text-xs">
-                {onFillAiPlayers && seatedCount < 8 && (
+              {/* Auxiliary Controls */}
+              <div className="flex items-center gap-2 text-xs flex-wrap justify-center">
+                {seatedCount < 2 && (
                   <button
-                    onClick={() => onFillAiPlayers(8)}
-                    className="px-3 py-1 rounded-xl bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-200 text-xs font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+                    onClick={() => {
+                      try {
+                        window.open(window.location.origin + window.location.pathname + '?mode=realtime', '_blank');
+                      } catch (e) {}
+                    }}
+                    className="px-3 py-1 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
                   >
-                    <Bot className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>一键满桌AI (8人开桌)</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>新标签页联机 (模拟2人对战)</span>
                   </button>
                 )}
+
                 {onRotateDealer && (
                   <button
                     onClick={() => onRotateDealer((dealerIndex + 1) % Math.max(1, seatedCount))}
@@ -680,13 +667,17 @@ export function RealtimeDealerStage({
                 <span>换我做庄发牌</span>
               </button>
 
-              {onFillAiPlayers && seatedCount < 8 && (
+              {seatedCount < 2 && (
                 <button
-                  onClick={() => onFillAiPlayers(8)}
-                  className="h-10 sm:h-11 px-4 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-200 text-xs sm:text-sm font-black flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-md"
+                  onClick={() => {
+                    try {
+                      window.open(window.location.origin + window.location.pathname + '?mode=realtime', '_blank');
+                    } catch (e) {}
+                  }}
+                  className="h-10 sm:h-11 px-4 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 text-xs sm:text-sm font-black flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-md"
                 >
-                  <Bot className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>满桌AI</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>新标签页入座</span>
                 </button>
               )}
             </div>

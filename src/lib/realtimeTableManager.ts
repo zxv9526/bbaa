@@ -152,6 +152,10 @@ export function getSavedRealtimeTable(): RealtimeTableState | null {
       localStorage.removeItem(TABLE_STORAGE_KEY);
       return null;
     }
+    // Strictly prohibit AI seats - ensure only real human players remain
+    if (Array.isArray(parsed.seats)) {
+      parsed.seats = parsed.seats.filter(s => !s.isAi);
+    }
     return parsed;
   } catch {
     return null;
@@ -518,115 +522,5 @@ export function subscribeRealtimeTable(
       window.removeEventListener('storage', handleStorageEvent);
     }
   };
-}
-
-const AI_NAMES = [
-  { name: '智胜先锋', avatar: '🤖' },
-  { name: '牌圣阿杰', avatar: '🦊' },
-  { name: '算无遗策', avatar: '🧙‍♂️' },
-  { name: '稳如泰山', avatar: '🐻' },
-  { name: '飞龙在天', avatar: '🐉' },
-  { name: '绝杀雀神', avatar: '🦅' },
-  { name: '锦鲤小仙', avatar: '🐬' }
-];
-
-// Add an AI player to the realtime table
-export function addAiPlayerToRealtimeTable(): RealtimeTableState | null {
-  const current = getSavedRealtimeTable();
-  if (!current || current.seats.length >= 8) return current;
-
-  const seatIndex = current.seats.length;
-  const occupiedIds = new Set(current.seats.map(s => s.id));
-  const availableAi = AI_NAMES.find((_, i) => !occupiedIds.has(`ai_${i + 1}`)) || {
-    name: `AI高手${seatIndex + 1}`,
-    avatar: '🤖'
-  };
-
-  const aiPlayer: RealtimeSeatPlayer = {
-    id: `ai_${seatIndex + 1}_${Date.now().toString(36).slice(-3)}`,
-    name: `${availableAi.name} (${seatIndex + 1}号位)`,
-    avatar: availableAi.avatar,
-    isAi: true,
-    score: 0
-  };
-
-  current.seats.push(aiPlayer);
-  current.lastAction = {
-    type: 'join',
-    playerId: aiPlayer.id,
-    text: `AI玩家【${availableAi.name}】已入座第 ${seatIndex + 1} 席`,
-    timestamp: Date.now()
-  };
-  current.lastUpdated = Date.now();
-
-  saveRealtimeTable(current);
-  broadcastEvent({ type: 'PLAYER_JOIN', player: aiPlayer, state: current });
-  return current;
-}
-
-// Fill all empty seats up to target count (e.g. 8 or 4) with AI players
-export function fillAiPlayersToRealtimeTable(targetCount = 8): RealtimeTableState | null {
-  const current = getSavedRealtimeTable();
-  if (!current) return null;
-
-  while (current.seats.length < Math.min(8, targetCount)) {
-    const seatIndex = current.seats.length;
-    const aiPreset = AI_NAMES[seatIndex % AI_NAMES.length];
-    const aiPlayer: RealtimeSeatPlayer = {
-      id: `ai_${seatIndex + 1}_${Math.random().toString(36).slice(2, 6)}`,
-      name: `${aiPreset.name} (${seatIndex + 1}号位)`,
-      avatar: aiPreset.avatar,
-      isAi: true,
-      score: 0
-    };
-    current.seats.push(aiPlayer);
-  }
-
-  current.lastAction = {
-    type: 'join',
-    playerId: 'system',
-    text: `已一键补齐AI玩家至满桌 ${current.seats.length} 人！`,
-    timestamp: Date.now()
-  };
-  current.lastUpdated = Date.now();
-
-  saveRealtimeTable(current);
-  broadcastEvent({ type: 'SYNC_STATE', state: current });
-  return current;
-}
-
-// Remove the last added AI player
-export function removeAiPlayerFromRealtimeTable(): RealtimeTableState | null {
-  const current = getSavedRealtimeTable();
-  if (!current || current.seats.length <= 1) return current;
-
-  // Find last AI seat
-  let lastAiIndex = -1;
-  for (let i = current.seats.length - 1; i >= 0; i--) {
-    if (current.seats[i].isAi) {
-      lastAiIndex = i;
-      break;
-    }
-  }
-
-  if (lastAiIndex === -1) return current;
-  const removed = current.seats.splice(lastAiIndex, 1)[0];
-
-  if (current.dealerIndex >= current.seats.length) {
-    current.dealerIndex = 0;
-    current.dealerId = current.seats[0]?.id || '';
-  }
-
-  current.lastAction = {
-    type: 'leave',
-    playerId: removed.id,
-    text: `AI玩家【${removed.name}】已退出席位`,
-    timestamp: Date.now()
-  };
-  current.lastUpdated = Date.now();
-
-  saveRealtimeTable(current);
-  broadcastEvent({ type: 'PLAYER_LEAVE', playerId: removed.id, state: current });
-  return current;
 }
 
