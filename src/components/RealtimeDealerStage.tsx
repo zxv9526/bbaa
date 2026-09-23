@@ -555,31 +555,31 @@ export function RealtimeDealerStage({
             {renderDeckAnimation()}
 
             {/* Quick Action Buttons */}
-            <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-center mt-2">
+            <div className="flex items-center gap-3 sm:gap-4 flex-wrap justify-center mt-3">
               <button
                 onClick={handleManualShuffle}
                 disabled={isShuffling || isDealing}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-sm"
+                className="h-12 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-indigo-500/40 text-indigo-200 hover:text-white text-sm font-black flex items-center gap-2 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg shadow-indigo-950/40"
               >
-                <RotateCcw className={`w-3.5 h-3.5 ${isShuffling ? 'animate-spin text-amber-400' : ''}`} />
+                <RotateCcw className={`w-4 h-4 ${isShuffling ? 'animate-spin text-amber-400' : 'text-indigo-400'}`} />
                 <span>{shuffleCount > 0 ? `再次洗牌 (${shuffleCount})` : '洗牌'}</span>
               </button>
 
               <button
                 onClick={handleManualCut}
                 disabled={isShuffling || isCutting || isDealing}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs sm:text-sm font-bold flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-sm"
+                className="h-12 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-cyan-500/40 text-cyan-200 hover:text-white text-sm font-black flex items-center gap-2 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg shadow-cyan-950/40"
               >
-                <Scissors className="w-3.5 h-3.5 text-blue-400" />
+                <Scissors className="w-4 h-4 text-cyan-400" />
                 <span>{cutCard ? '重新切牌' : '切牌'}</span>
               </button>
 
               <button
                 onClick={handleManualDeal}
                 disabled={isShuffling || isCutting || isDealing}
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs sm:text-sm shadow-md flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                className="h-12 px-7 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-sm sm:text-base shadow-xl shadow-amber-950/60 ring-2 ring-amber-300/50 flex items-center gap-2 transition active:scale-95 disabled:opacity-50 cursor-pointer"
               >
-                <Play className="w-4 h-4 fill-slate-950" />
+                <Play className="w-5 h-5 fill-slate-950" />
                 <span>{isDealing ? '发牌中...' : '立即发牌'}</span>
               </button>
             </div>
@@ -587,27 +587,27 @@ export function RealtimeDealerStage({
         ) : (
           /* State C: Non-Dealer -> Waiting for Dealer */
           <div className="flex flex-col items-center text-center gap-3 z-10 max-w-sm">
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 text-xs font-bold">
-              <span>⏳</span>
+            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-800/90 border border-slate-700 text-slate-300 text-xs sm:text-sm font-bold shadow-md">
+              <span className="text-base">⏳</span>
               <span>等待庄家【<strong className="text-amber-300">{currentDealer?.name}</strong>】发牌中...</span>
             </div>
 
             {renderDeckAnimation()}
 
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-3 mt-2">
               <button
                 onClick={handleUrgeDealer}
-                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+                className="h-11 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-amber-500/40 text-amber-300 hover:text-amber-200 text-sm font-black flex items-center gap-2 transition active:scale-95 cursor-pointer shadow-lg shadow-amber-950/40"
               >
-                <span>⌛</span>
+                <span className="text-base">⌛</span>
                 <span>催促发牌</span>
               </button>
 
               <button
                 onClick={handleClaimDealerRole}
-                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-indigo-500/30 text-indigo-300 text-xs font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+                className="h-11 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-indigo-500/40 text-indigo-300 hover:text-white text-sm font-black flex items-center gap-2 transition active:scale-95 cursor-pointer shadow-lg shadow-indigo-950/40"
               >
-                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <Crown className="w-4 h-4 text-amber-400" />
                 <span>换我做庄</span>
               </button>
             </div>
@@ -617,7 +617,7 @@ export function RealtimeDealerStage({
 
       {/* 4. Bottom Tactical Chat Bar (Clean & Focused) */}
       {onSendMessage && onOpenFullChat && (
-        <div className="w-full max-w-2xl mx-auto shrink-0 px-1">
+        <div className="w-full max-w-3xl mx-auto shrink-0 px-1 mt-1">
           <TableTacticalChatBar
             onSendMessage={onSendMessage}
             onOpenFullChat={onOpenFullChat}

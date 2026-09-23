@@ -2465,25 +2465,25 @@ export default function App() {
                 </div>
               ) : null}
 
-              <div className="w-full flex items-center justify-center gap-2 sm:gap-4">
+              <div className="w-full flex items-center justify-center gap-3 sm:gap-4 mt-1">
                 {isCurrentDaoShui ? (
                   <button
                     id="btn-auto-fix-daoshui"
                     onClick={handleAutoFix}
-                    className="flex-1 py-2.5 sm:py-3.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-rose-950/90 via-amber-950/80 to-rose-950/90 border-2 border-rose-500 text-amber-200 hover:text-white text-xs sm:text-base font-black flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-rose-950/60 transition active:scale-95 cursor-pointer animate-pulse"
+                    className="flex-1 h-12 sm:h-14 px-4 rounded-2xl bg-gradient-to-r from-rose-950 via-amber-950/90 to-rose-950 border-2 border-rose-500 text-amber-200 hover:text-white text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-xl shadow-rose-950/70 transition active:scale-95 cursor-pointer animate-pulse ring-2 ring-rose-500/30"
                     title="当前摆法倒水！点击一键智能纠正并恢复最佳牌力"
                   >
-                    <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5 text-rose-400" />
+                    <ShieldAlert className="w-5 h-5 text-rose-400" />
                     <span>一键纠正倒水</span>
                   </button>
                 ) : (
                   <button
                     id="btn-change-pattern"
                     onClick={handleChangePattern}
-                    className="flex-1 py-2.5 sm:py-3.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl bg-slate-850 hover:bg-slate-800 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs sm:text-base font-black flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-amber-950/40 transition active:scale-95 cursor-pointer"
+                    className="flex-1 h-12 sm:h-14 px-4 rounded-2xl bg-slate-850 hover:bg-slate-800 border-2 border-amber-500/50 text-amber-300 hover:text-amber-200 text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-xl shadow-amber-950/50 transition active:scale-95 cursor-pointer"
                     title="点击切换下一组不倒水合法方案"
                   >
-                    <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+                    <Sparkles className="w-5 h-5 text-amber-400" />
                     <span>变换牌型</span>
                   </button>
                 )}
@@ -2492,14 +2492,14 @@ export default function App() {
                   id="btn-submit-arrangement"
                   onClick={handleSubmitArrangement}
                   disabled={!useSpecialHand && (isCurrentDaoShui || (front.length + mid.length + back.length !== 13))}
-                  className={`flex-1 py-2.5 sm:py-3.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl text-xs sm:text-base font-black flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg transition active:scale-95 cursor-pointer ${
+                  className={`flex-1 h-12 sm:h-14 px-4 rounded-2xl text-sm sm:text-base font-black flex items-center justify-center gap-2 shadow-xl transition active:scale-95 cursor-pointer ${
                     !useSpecialHand && (isCurrentDaoShui || (front.length + mid.length + back.length !== 13))
                       ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
-                      : 'bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-600/30'
+                      : 'bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-600/40 ring-2 ring-emerald-400/40'
                   }`}
                   title="提交牌型"
                 >
-                  <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <CheckCircle2 className="w-5 h-5" />
                   <span>
                     {useSpecialHand && specialHand
                       ? `🌟 特殊牌型提交 (+${SPECIAL_HAND_CN[specialHand].points}水)`
