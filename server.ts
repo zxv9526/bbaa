@@ -87,8 +87,14 @@ const signalsBuffer: SignalRecord[] = [];
 const roomPeersMap = new Map<string, Set<string>>(); // roomId -> Set of userIds
 const tablesMap = new Map<string, ServerTableState>(); // roomId -> ServerTableState
 
+function normalizeRoomId(rawRoomId: any): string {
+  if (!rawRoomId) return "888888";
+  const clean = String(rawRoomId).trim().replace(/^realtime_room_/, "");
+  return clean || "888888";
+}
+
 function getOrCreateTable(rawRoomId: string, customName?: string): ServerTableState {
-  const roomId = String(rawRoomId || "888888").trim();
+  const roomId = normalizeRoomId(rawRoomId);
   let table = tablesMap.get(roomId);
   if (!table) {
     table = {
@@ -673,9 +679,10 @@ interface ConnectedClient {
 const wsClients = new Set<ConnectedClient>();
 
 function broadcastToRoom(roomId: string, message: any, excludeUserId?: string) {
+  const targetRoom = normalizeRoomId(roomId);
   const payload = JSON.stringify(message);
   wsClients.forEach(client => {
-    if (client.roomId === roomId && client.userId !== excludeUserId && client.ws.readyState === WebSocket.OPEN) {
+    if (normalizeRoomId(client.roomId) === targetRoom && client.userId !== excludeUserId && client.ws.readyState === WebSocket.OPEN) {
       try {
         client.ws.send(payload);
       } catch {}
@@ -684,12 +691,13 @@ function broadcastToRoom(roomId: string, message: any, excludeUserId?: string) {
 }
 
 function forwardSignalViaWs(signal: SignalRecord) {
+  const targetRoom = normalizeRoomId(signal.roomId);
   const payload = JSON.stringify({
     type: "WEBRTC_SIGNAL",
     signal
   });
   wsClients.forEach(client => {
-    if (client.roomId === signal.roomId && client.userId === signal.targetId && client.ws.readyState === WebSocket.OPEN) {
+    if (normalizeRoomId(client.roomId) === targetRoom && client.userId === signal.targetId && client.ws.readyState === WebSocket.OPEN) {
       try {
         client.ws.send(payload);
       } catch {}
@@ -715,15 +723,16 @@ async function startServer() {
         const msg = JSON.parse(raw.toString());
 
         switch (msg.type) {
-          // Player joins a voice room
+          // Player joins a voice / game room
           case "JOIN_ROOM": {
             const { roomId, userId, name, avatar, seatIndex } = msg;
             if (!roomId || !userId) return;
 
+            const cleanRoomId = normalizeRoomId(roomId);
             currentClient = {
               ws,
               userId: String(userId),
-              roomId: String(roomId),
+              roomId: cleanRoomId,
               name: name || "玩家",
               avatar: avatar || "😎",
               seatIndex: typeof seatIndex === "number" ? seatIndex : 0
@@ -738,7 +747,7 @@ async function startServer() {
 
             // Gather all current peers in room for WebRTC mesh initialization
             const peersInRoom = Array.from(wsClients)
-              .filter(c => c.roomId === currentClient!.roomId && c.userId !== currentClient!.userId)
+              .filter(c => normalizeRoomId(c.roomId) === cleanRoomId && c.userId !== currentClient!.userId)
               .map(c => ({
                 userId: c.userId,
                 name: c.name,
@@ -905,7 +914,20 @@ async function startServer() {
 
           // Real-time table state subscription / request
           case "TABLE_SUBSCRIBE": {
-            const tableRoomId = msg.roomId || (currentClient ? currentClient.roomId : "888888");
+            const tableRoomId = normalizeRoomId(msg.roomId || (currentClient ? currentClient.roomId : "888888"));
+            if (!currentClient) {
+              currentClient = {
+                ws,
+                userId: String(msg.userId || ("sub_" + Math.random().toString(36).slice(2, 8))),
+                roomId: tableRoomId,
+                name: msg.name || "牌友",
+                avatar: msg.avatar || "😎",
+                seatIndex: typeof msg.seatIndex === "number" ? msg.seatIndex : 0
+              };
+              wsClients.add(currentClient);
+            } else {
+              currentClient.roomId = tableRoomId;
+            }
             ws.send(JSON.stringify({
               type: "TABLE_SYNC",
               table: getOrCreateTable(tableRoomId)
@@ -915,7 +937,7 @@ async function startServer() {
 
           // Real-time table event/action pass-through
           case "TABLE_ACTION": {
-            const tableRoomId = msg.roomId || (currentClient ? currentClient.roomId : "888888");
+            const tableRoomId = normalizeRoomId(msg.roomId || (currentClient ? currentClient.roomId : "888888"));
             const action = msg.action;
             if (action && action.type) {
               const table = getOrCreateTable(tableRoomId);

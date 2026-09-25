@@ -130,6 +130,8 @@ import {
   fetchRemoteChatHistory,
   RealtimeTableEvent,
   getTabSessionId,
+  getOrCreateDeviceId,
+  getPlayerUniqueId,
   getCurrentRoomId,
   setCurrentRoomId,
   rotateRealtimeDealer,
@@ -628,8 +630,8 @@ export default function App() {
     }
     const effectiveRoomId = targetRoomId || getCurrentRoomId();
 
-    const myId = currentAccount.phone || currentAccount.id || 'player_user';
-    const myName = currentAccount.nickname || playerName || '我';
+    const distinctUserId = getPlayerUniqueId(currentAccount.phone || currentAccount.id);
+    const myName = currentAccount.nickname || playerName || '十三水雀神';
     const myAvatar = currentAccount.avatar || '😎';
 
     // 检查是否有未完成的真实契约
@@ -647,10 +649,10 @@ export default function App() {
     setSyncedCutCard(null);
     setSyncedIsDealing(false);
 
-    // 加入或创建多人实时牌桌
-    const tabSessionId = getTabSessionId();
+    // 加入或创建多人实时牌桌 (保证每台手机/设备拥有独立玩家席位)
+    const tabSessionId = getOrCreateDeviceId();
     const { table, assignedUser } = joinOrCreateRealtimeTable({
-      id: myId,
+      id: distinctUserId,
       name: myName,
       avatar: myAvatar,
       tabSessionId
@@ -674,7 +676,7 @@ export default function App() {
     // 🚀 初始化三重语音架构引擎 (WebRTC P2P + WebSocket高速广播 + HTTP轮询保底)
     const mySeat = table.seats.findIndex(p => p.id === assignedUser.id);
     TripleVoiceEngine.getInstance().init({
-      roomId: `realtime_room_${effectiveRoomId}`,
+      roomId: effectiveRoomId,
       userId: assignedUser.id,
       name: assignedUser.name,
       avatar: assignedUser.avatar,

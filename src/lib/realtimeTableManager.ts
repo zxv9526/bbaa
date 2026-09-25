@@ -209,6 +209,27 @@ export function sendTableWs(data: any): void {
   }
 }
 
+// Get or generate a persistent device unique identifier
+export function getOrCreateDeviceId(): string {
+  if (typeof window === 'undefined') return 'srv_' + Math.random().toString(36).slice(2, 8);
+  let devId = localStorage.getItem('thirteen_device_unique_id');
+  if (!devId) {
+    devId = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    localStorage.setItem('thirteen_device_unique_id', devId);
+  }
+  return devId;
+}
+
+// Generate guaranteed distinct player ID per device even with shared default phone
+export function getPlayerUniqueId(phoneOrAccount?: string): string {
+  const devId = getOrCreateDeviceId();
+  const cleanPhone = (phoneOrAccount || '').trim().replace(/[^\w]/g, '');
+  if (cleanPhone) {
+    return `${cleanPhone}_${devId.slice(-6)}`;
+  }
+  return devId;
+}
+
 // Get or generate a tab/session unique identifier
 export function getTabSessionId(): string {
   if (typeof window === 'undefined') return 'session_default';
