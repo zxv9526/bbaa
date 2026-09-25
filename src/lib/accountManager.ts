@@ -33,7 +33,7 @@ function notifyListeners(account: UserAccount) {
 // ----------------------------------------------------
 // 1. 授权手机号白名单管理 (Bot 授权注册机制)
 // ----------------------------------------------------
-const INITIAL_AUTHORIZED_PHONES = ['13800138000', '13900000000', '18888888888'];
+const INITIAL_AUTHORIZED_PHONES: string[] = [];
 
 export function normalizePhone(phone: string): string {
   if (!phone) return '';
@@ -50,17 +50,14 @@ export function getAuthorizedPhones(): string[] {
     const raw = localStorage.getItem(AUTHORIZED_PHONES_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map(normalizePhone);
+      if (Array.isArray(parsed)) {
+        return parsed.map(normalizePhone).filter(Boolean);
       }
     }
   } catch {
     // ignore
   }
-  // 默认初始授权手机号
-  const defaults = INITIAL_AUTHORIZED_PHONES.map(normalizePhone);
-  localStorage.setItem(AUTHORIZED_PHONES_KEY, JSON.stringify(defaults));
-  return defaults;
+  return [];
 }
 
 export function isPhoneAuthorized(phone: string): boolean {
@@ -268,17 +265,17 @@ export function getAllUsersList(): UserAccount[] {
 // 获取供牌桌匹配/就座的真实玩家账号池（非当前玩家）
 export function getRegisteredCommunityPlayers(): UserAccount[] {
   const db = getAllAccounts();
-  const currentPhone = localStorage.getItem(CURRENT_USER_KEY) || '13800138000';
+  const currentPhone = localStorage.getItem(CURRENT_USER_KEY) || '';
   
-  // 确保基础真实社区玩家已注册入库
+  // 确保基础真实社区玩家已注册入库 (使用独立虚拟社区 ID，不占用玩家真实手机号)
   const defaultCommunity: { phone: string; nickname: string; avatar: string; points: number }[] = [
-    { phone: '13900000001', nickname: '闽南雀圣·阿豪', avatar: '🦁', points: 15800 },
-    { phone: '13900000002', nickname: '江城赌王·老陈', avatar: '🐯', points: 12600 },
-    { phone: '13900000003', nickname: '金牌理手·小美', avatar: '🌸', points: 9800 },
-    { phone: '13900000004', nickname: '九段棋手·张弛', avatar: '🕶️', points: 18400 },
-    { phone: '13900000005', nickname: '岭南十三水老法师', avatar: '🐲', points: 11200 },
-    { phone: '13900000006', nickname: '香江牌王·阿发', avatar: '🎩', points: 14500 },
-    { phone: '13900000007', nickname: '姑苏第一枪', avatar: '✨', points: 20200 },
+    { phone: 'bot_player_1', nickname: '闽南雀圣·阿豪', avatar: '🦁', points: 15800 },
+    { phone: 'bot_player_2', nickname: '江城赌王·老陈', avatar: '🐯', points: 12600 },
+    { phone: 'bot_player_3', nickname: '金牌理手·小美', avatar: '🌸', points: 9800 },
+    { phone: 'bot_player_4', nickname: '九段棋手·张弛', avatar: '🕶️', points: 18400 },
+    { phone: 'bot_player_5', nickname: '岭南十三水老法师', avatar: '🐲', points: 11200 },
+    { phone: 'bot_player_6', nickname: '香江牌王·阿发', avatar: '🎩', points: 14500 },
+    { phone: 'bot_player_7', nickname: '姑苏第一枪', avatar: '✨', points: 20200 },
   ];
 
   let dbUpdated = false;
@@ -289,7 +286,7 @@ export function getRegisteredCommunityPlayers(): UserAccount[] {
         account: {
           id: `u_${p.phone}`,
           phone: p.phone,
-          username: p.phone,
+          username: p.nickname,
           nickname: p.nickname,
           avatar: p.avatar,
           points: p.points,
@@ -322,27 +319,18 @@ export function getCurrentAccount(): UserAccount {
   }
 
   if (!acc) {
-    const defaultPhone = '13800138000';
-    if (!db[defaultPhone] || !db[defaultPhone].account) {
-      const defaultAcc: UserAccount = {
-        id: `u_${Date.now()}`,
-        phone: defaultPhone,
-        username: defaultPhone,
-        nickname: '十三水雀神',
-        avatar: '👑',
-        points: 10000,
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString()
-      };
-      db[defaultPhone] = {
-        password: '123456',
-        account: defaultAcc
-      };
-      saveAllAccounts(db);
-      authorizePhone(defaultPhone);
-    }
-    localStorage.setItem(CURRENT_USER_KEY, defaultPhone);
-    acc = db[defaultPhone].account;
+    // 游客模式账号：不绑定任何虚假手机号，保证白名单系统纯净
+    const guestAcc: UserAccount = {
+      id: `guest_${Date.now()}`,
+      phone: '',
+      username: '游客玩家',
+      nickname: '十三水雀神',
+      avatar: '👑',
+      points: 10000,
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString()
+    };
+    return guestAcc;
   }
 
   // Ensure safe fallback values on all required properties
@@ -351,7 +339,6 @@ export function getCurrentAccount(): UserAccount {
   }
   if (!acc.nickname) acc.nickname = '十三水雀神';
   if (!acc.avatar) acc.avatar = '👑';
-  if (!acc.phone) acc.phone = '13800138000';
   if (!acc.id) acc.id = `u_${Date.now()}`;
 
   return acc;

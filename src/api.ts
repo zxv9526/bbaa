@@ -387,7 +387,7 @@ export class ApiClient {
         return {
           ok: true,
           response: {
-            text: `➕ <b>为玩家增加积分</b>\n\n使用方式：\n<code>/addpoints 手机号 积分数量</code>\n\n例如：<code>/add 13800138000 5000</code>`
+            text: `➕ <b>为玩家增加积分</b>\n\n使用方式：\n<code>/addpoints 手机号 积分数量</code>\n\n例如：<code>/add 13912345678 5000</code>`
           }
         };
       }
@@ -415,7 +415,7 @@ export class ApiClient {
         return {
           ok: true,
           response: {
-            text: `➖ <b>为玩家扣减积分</b>\n\n使用方式：\n<code>/delpoints 手机号 扣减数量</code>\n\n例如：<code>/del 13800138000 2000</code>`
+            text: `➖ <b>为玩家扣减积分</b>\n\n使用方式：\n<code>/delpoints 手机号 扣减数量</code>\n\n例如：<code>/del 13912345678 2000</code>`
           }
         };
       }
@@ -443,7 +443,7 @@ export class ApiClient {
         return {
           ok: true,
           response: {
-            text: `🎯 <b>设置玩家指定积分</b>\n\n使用方式：\n<code>/setpoints 手机号 目标积分</code>\n\n例如：<code>/set 13800138000 10000</code>`
+            text: `🎯 <b>设置玩家指定积分</b>\n\n使用方式：\n<code>/setpoints 手机号 目标积分</code>\n\n例如：<code>/set 13912345678 10000</code>`
           }
         };
       }
@@ -472,7 +472,7 @@ export class ApiClient {
         return {
           ok: true,
           response: {
-            text: `🔍 <b>玩家档案与积分查询</b>\n\n使用方式：\n<code>/score 手机号或玩家昵称</code>\n\n例如：<code>/score 13800138000</code>`
+            text: `🔍 <b>玩家档案与积分查询</b>\n\n使用方式：\n<code>/score 手机号或玩家昵称</code>\n\n例如：<code>/score 13912345678</code>`
           }
         };
       }
