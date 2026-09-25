@@ -1910,7 +1910,7 @@ export default function App() {
   const activeSession = loadActiveMatchSession(currentAccount.phone);
 
   return (
-    <div className="h-screen h-[100dvh] w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden relative">
+    <div className="h-full h-[100dvh] max-h-[100dvh] w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden relative box-border">
       {/* 1. Header Bar: Minimalist */}
       {gameState === 'menu' && (
         <header className="w-full shrink-0 z-30 px-4 sm:px-8 pt-4 pb-2 flex items-center justify-between">
@@ -1937,7 +1937,7 @@ export default function App() {
       )}
 
       {/* 2. Main Body Content: Minimalist & Clean Two Arena Blocks */}
-      <main className="flex-1 w-full max-w-5xl mx-auto px-1.5 sm:px-4 py-0 flex flex-col items-center justify-center overflow-hidden min-h-0 h-full">
+      <main className="flex-1 w-full max-w-5xl mx-auto px-1 sm:px-4 py-0 flex flex-col items-center justify-between overflow-hidden min-h-0 h-full">
         {gameState === 'menu' && (
           <div className="w-full max-w-4xl flex flex-col items-center justify-center gap-4 sm:gap-6 py-2 sm:py-4 my-auto animate-fade-in-up">
               {/* 🛡️ 契约精神锁定横幅：存在进行中的牌局时醒目展示 */}
@@ -2170,7 +2170,7 @@ export default function App() {
 
         {/* 4. Active Game Table (Arranging / Revealing) */}
         {gameState === 'revealing' && matchResults && (
-          <div className="w-full max-w-6xl flex flex-col items-center gap-6 overflow-y-auto pb-safe p-2 sm:p-4">
+          <div className="w-full max-w-6xl flex flex-col items-center gap-6 overflow-y-auto pb-safe p-2 sm:p-4 pb-[max(env(safe-area-inset-bottom,0px),24px)]">
             <ShowdownStage
               results={matchResults}
               onPlayAgain={() => {
@@ -2215,7 +2215,7 @@ export default function App() {
           </div>
         )}
         {gameState === 'arranging' && (
-          <div className="w-full max-w-5xl h-full flex-1 flex flex-col items-center justify-between gap-1 py-0.5 px-0 min-h-0 overflow-hidden">
+          <div className="w-full max-w-5xl h-full flex-1 flex flex-col items-center justify-between gap-1 py-0.5 px-0 min-h-0 overflow-hidden pb-[max(env(safe-area-inset-bottom,0px),16px)]">
             {/* 🚆 Compact Carriage Header Bar with Live Seating & Chat */}
             <CarriageHeaderBar
               mode={mode}

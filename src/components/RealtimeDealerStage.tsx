@@ -300,52 +300,52 @@ export function RealtimeDealerStage({
     }
   };
 
-  // Render 3D deck
+  // Responsive compact 3D deck
   const renderDeckAnimation = () => {
-    const stackHeight = 12;
+    const stackHeight = 8;
     return (
-      <div className="relative w-44 sm:w-52 h-48 sm:h-56 flex items-center justify-center select-none perspective-800">
+      <div className="relative w-32 sm:w-40 h-22 sm:h-32 flex items-center justify-center select-none perspective-800">
         {Array.from({ length: stackHeight }).map((_, i) => {
           const isTop = i === stackHeight - 1;
-          const yOffset = (stackHeight - 1 - i) * 2;
-          const xOffset = Math.sin(i * 0.4) * 1.5;
+          const yOffset = (stackHeight - 1 - i) * 1.5;
+          const xOffset = Math.sin(i * 0.4) * 1.2;
 
           return (
             <motion.div
               key={i}
-              className="absolute w-24 sm:w-28 h-36 sm:h-40 rounded-xl border border-amber-600/30 shadow-md bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 flex flex-col items-center justify-center p-1.5"
+              className="absolute w-18 sm:w-22 h-26 sm:h-32 rounded-lg border border-amber-600/30 shadow-md bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 flex flex-col items-center justify-center p-1"
               style={{
-                top: `calc(50% - 72px + ${yOffset}px)`,
-                left: `calc(50% - 48px + ${xOffset}px)`,
+                top: `calc(50% - 52px + ${yOffset}px)`,
+                left: `calc(50% - 36px + ${xOffset}px)`,
                 zIndex: i,
               }}
               animate={
                 isShuffling
                   ? {
-                      x: i % 2 === 0 ? [0, -35, 15, 0] : [0, 35, -15, 0],
-                      y: [0, -10, 0],
-                      rotateZ: i % 2 === 0 ? [-8, 6, 0] : [8, -6, 0],
+                      x: i % 2 === 0 ? [0, -25, 10, 0] : [0, 25, -10, 0],
+                      y: [0, -8, 0],
+                      rotateZ: i % 2 === 0 ? [-6, 5, 0] : [6, -5, 0],
                       transition: { duration: 0.28, repeat: Infinity, ease: 'easeInOut' }
                     }
                   : isCutting && isTop
                   ? {
-                      y: [-25, -20, 0],
-                      x: [25, 20, 0],
-                      rotateZ: [12, 10, 0],
+                      y: [-20, -15, 0],
+                      x: [20, 15, 0],
+                      rotateZ: [10, 8, 0],
                       transition: { duration: 0.5, ease: 'easeOut' }
                     }
                   : {}
               }
             >
-              <div className="w-full h-full rounded-lg border border-amber-500/20 bg-slate-900/90 flex flex-col items-center justify-between p-1.5">
-                <div className="w-full flex justify-between text-[9px] text-amber-500/50 font-mono">
+              <div className="w-full h-full rounded-md border border-amber-500/20 bg-slate-900/90 flex flex-col items-center justify-between p-1">
+                <div className="w-full flex justify-between text-[8px] text-amber-500/50 font-mono">
                   <span>13</span>
                   <span>♠</span>
                 </div>
-                <div className="w-9 h-9 rounded-full border border-amber-500/30 flex items-center justify-center bg-amber-500/5">
-                  <span className="text-sm">🎴</span>
+                <div className="w-7 h-7 rounded-full border border-amber-500/30 flex items-center justify-center bg-amber-500/5">
+                  <span className="text-xs">🎴</span>
                 </div>
-                <div className="w-full flex justify-between text-[9px] text-amber-500/50 font-mono rotate-180">
+                <div className="w-full flex justify-between text-[8px] text-amber-500/50 font-mono rotate-180">
                   <span>13</span>
                   <span>♠</span>
                 </div>
@@ -357,13 +357,13 @@ export function RealtimeDealerStage({
         {/* Revealed Cut Card */}
         {cutCard && (
           <motion.div
-            initial={{ scale: 0, y: -40, rotateY: 90 }}
-            animate={{ scale: 1, y: -10, rotateY: 0 }}
+            initial={{ scale: 0, y: -30, rotateY: 90 }}
+            animate={{ scale: 0.9, y: -6, rotateY: 0 }}
             className="absolute z-30"
           >
-            <div className="relative ring-4 ring-amber-400 rounded-xl shadow-2xl">
-              <CardView card={cutCard} size="md" />
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] whitespace-nowrap shadow-md">
+            <div className="relative ring-3 ring-amber-400 rounded-lg shadow-xl">
+              <CardView card={cutCard} size="sm" />
+              <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 font-black text-[8px] whitespace-nowrap shadow-md">
                 切出的吉牌
               </div>
             </div>
@@ -374,7 +374,7 @@ export function RealtimeDealerStage({
   };
 
   return (
-    <div className="w-full h-full max-h-[100dvh] flex flex-col justify-between overflow-hidden p-2 sm:p-3 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 select-none">
+    <div className="w-full h-full max-h-[100dvh] flex flex-col justify-between overflow-hidden p-1 sm:p-2.5 pb-[max(env(safe-area-inset-bottom,0px),18px)] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 select-none box-border">
       
       {/* 1. Header Bar */}
       <div className="w-full flex items-center justify-between px-1 shrink-0">
@@ -512,37 +512,37 @@ export function RealtimeDealerStage({
       </div>
 
       {/* 3. Central Stage (Adaptive Flex, No Scroll, Always Actionable) */}
-      <div className="w-full flex-1 min-h-0 bg-slate-900/60 border border-slate-800 rounded-2xl p-2 sm:p-3 flex flex-col items-center justify-between relative shadow-inner overflow-hidden">
+      <div className="w-full flex-1 min-h-0 bg-slate-900/60 border border-slate-800 rounded-xl sm:rounded-2xl p-1.5 sm:p-2.5 flex flex-col items-center justify-between relative shadow-inner overflow-hidden my-0.5">
         
         {/* Top Status Pill */}
-        <div className="flex items-center gap-2 z-10 shrink-0">
+        <div className="flex items-center gap-1.5 z-10 shrink-0">
           {isHumanDealer ? (
-            <span className="text-xs font-black text-amber-300 px-3 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center gap-1.5 shadow-sm">
-              <Crown className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-[11px] sm:text-xs font-black text-amber-300 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center gap-1 shadow-sm">
+              <Crown className="w-3 h-3 text-amber-400" />
               <span>您是发牌庄家 · 请洗牌、切牌后发牌</span>
             </span>
           ) : (
-            <span className="text-xs font-black text-slate-300 px-3 py-0.5 rounded-full bg-slate-800/90 border border-slate-700 flex items-center gap-1.5 shadow-sm">
-              <span className="text-sm">⏳</span>
+            <span className="text-[11px] sm:text-xs font-black text-slate-300 px-2.5 py-0.5 rounded-full bg-slate-800/90 border border-slate-700 flex items-center gap-1 shadow-sm">
+              <span className="text-xs">⏳</span>
               <span>等待庄家【<strong className="text-amber-300">{currentDealer?.name}</strong>】发牌...</span>
             </span>
           )}
 
-          <span className="text-[11px] text-slate-400 bg-slate-950/60 px-2.5 py-0.5 rounded-full border border-slate-800">
-            已洗牌: <strong className="text-white">{shuffleCount}</strong> 次
+          <span className="text-[10px] sm:text-[11px] text-slate-400 bg-slate-950/60 px-2 py-0.5 rounded-full border border-slate-800">
+            洗牌: <strong className="text-white">{shuffleCount}</strong> 次
           </span>
         </div>
 
         {/* Waiting For Players Notification when only 1 player */}
         {seatedCount < 2 && (
-          <div className="w-full max-w-md bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-1.5 flex items-center justify-between text-xs text-amber-200 shrink-0 z-10">
-            <span className="flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span>当前房间仅 1 人，需 ≥2 位真人入座方可发牌</span>
+          <div className="w-full max-w-md bg-amber-500/10 border border-amber-500/30 rounded-xl px-2.5 py-1 flex items-center justify-between text-[11px] sm:text-xs text-amber-200 shrink-0 z-10">
+            <span className="flex items-center gap-1">
+              <Users className="w-3 h-3 text-amber-400 shrink-0" />
+              <span>当前仅 1 人，需 ≥2 人方可发牌</span>
             </span>
             <button
               onClick={handleCopyInviteLink}
-              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-[11px] font-bold transition cursor-pointer"
+              className="px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-[10px] sm:text-[11px] font-bold transition cursor-pointer"
             >
               复制邀请链接
             </button>
@@ -550,25 +550,25 @@ export function RealtimeDealerStage({
         )}
 
         {/* 3D Animated Deck in the Center */}
-        <div className="flex-1 flex items-center justify-center min-h-0 py-1">
+        <div className="flex-1 flex items-center justify-center min-h-0 py-0.5">
           {renderDeckAnimation()}
         </div>
 
         {/* Core Function Buttons Deck */}
-        <div className="w-full flex flex-col items-center gap-1.5 z-10 shrink-0">
+        <div className="w-full flex flex-col items-center gap-1 z-10 shrink-0">
           {isHumanDealer ? (
             /* DEALER ACTION SUITE */
-            <div className="w-full flex flex-col items-center gap-2">
-              <div className="w-full flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
+            <div className="w-full flex flex-col items-center gap-1.5">
+              <div className="w-full flex items-center justify-center gap-1.5 sm:gap-3 flex-wrap">
                 {/* 1. Shuffle Button */}
                 <button
                   id="btn-realtime-shuffle"
                   onClick={handleManualShuffle}
                   disabled={isShuffling || isDealing}
-                  className="h-11 sm:h-12 px-4 sm:px-5 rounded-xl sm:rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-indigo-500/50 text-indigo-200 hover:text-white text-xs sm:text-sm font-black flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg shadow-indigo-950/50"
+                  className="h-9 sm:h-11 px-3 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border-2 border-indigo-500/50 text-indigo-200 hover:text-white text-xs sm:text-sm font-black flex items-center gap-1 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md shadow-indigo-950/50"
                   title="点击洗牌（支持多次连续洗牌）"
                 >
-                  <RotateCcw className={`w-4 h-4 ${isShuffling ? 'animate-spin text-amber-400' : 'text-indigo-400'}`} />
+                  <RotateCcw className={`w-3.5 h-3.5 ${isShuffling ? 'animate-spin text-amber-400' : 'text-indigo-400'}`} />
                   <span>{shuffleCount > 0 ? `再洗一次 (${shuffleCount})` : '洗牌 (Shuffle)'}</span>
                 </button>
 
@@ -577,11 +577,11 @@ export function RealtimeDealerStage({
                   id="btn-realtime-cut"
                   onClick={handleManualCut}
                   disabled={isShuffling || isCutting || isDealing}
-                  className="h-11 sm:h-12 px-4 sm:px-5 rounded-xl sm:rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-cyan-500/50 text-cyan-200 hover:text-white text-xs sm:text-sm font-black flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg shadow-cyan-950/50"
+                  className="h-9 sm:h-11 px-3 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border-2 border-cyan-500/50 text-cyan-200 hover:text-white text-xs sm:text-sm font-black flex items-center gap-1 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md shadow-cyan-950/50"
                   title="点击切牌"
                 >
-                  <Scissors className="w-4 h-4 text-cyan-400" />
-                  <span>{cutCard ? '重新切牌' : '切牌 (Cut)'}</span>
+                  <Scissors className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>{cutCard ? '重切' : '切牌 (Cut)'}</span>
                 </button>
 
                 {/* 3. Primary Deal Button */}
@@ -589,19 +589,19 @@ export function RealtimeDealerStage({
                   id="btn-realtime-deal"
                   onClick={handleManualDeal}
                   disabled={isShuffling || isCutting || isDealing || seatedCount < 2}
-                  className={`h-11 sm:h-12 px-6 sm:px-8 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 transition active:scale-95 cursor-pointer ${
+                  className={`h-10 sm:h-11 px-5 sm:px-7 rounded-xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${
                     seatedCount >= 2
                       ? 'bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 shadow-amber-950/70 ring-2 ring-amber-300/50'
                       : 'bg-slate-800 text-slate-400 border border-slate-700 opacity-80 cursor-not-allowed'
                   }`}
                   title={seatedCount >= 2 ? '分发手牌并进入理牌对局' : '至少需要 2 位真人玩家入座方可发牌'}
                 >
-                  <Play className="w-4 h-4 fill-current" />
+                  <Play className="w-3.5 h-3.5 fill-current" />
                   <span>
                     {isDealing 
                       ? '发牌中...' 
                       : seatedCount < 2 
-                      ? `等待真人入座 (当前${seatedCount}/2~8人)` 
+                      ? `等待入座 (需≥2人)` 
                       : `立即发牌 (${seatedCount}人对局)`}
                   </span>
                 </button>
@@ -612,17 +612,17 @@ export function RealtimeDealerStage({
                 {seatedCount < 2 && (
                   <button
                     onClick={handleCopyInviteLink}
-                    className="px-3 py-1 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+                    className="px-2.5 py-0.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
                   >
-                    <Copy className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>邀请好友入座 (当前 1/8)</span>
+                    <Copy className="w-3 h-3 text-emerald-400" />
+                    <span>邀请好友 (当前 1/8)</span>
                   </button>
                 )}
 
                 {onRotateDealer && (
                   <button
                     onClick={() => onRotateDealer((dealerIndex + 1) % Math.max(1, seatedCount))}
-                    className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
+                    className="px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
                   >
                     <RefreshCw className="w-3 h-3 text-amber-400" />
                     <span>顺延下一位庄家</span>
@@ -632,29 +632,29 @@ export function RealtimeDealerStage({
             </div>
           ) : (
             /* NON-DEALER ACTION SUITE */
-            <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-center">
+            <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap justify-center">
               <button
                 onClick={handleUrgeDealer}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs sm:text-sm font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
+                className="h-9 sm:h-10 px-3.5 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs sm:text-sm font-black flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-md"
               >
-                <span className="text-sm">⌛</span>
+                <span className="text-xs">⌛</span>
                 <span>催促庄家发牌</span>
               </button>
 
               <button
                 onClick={handleClaimDealerRole}
-                className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs sm:text-sm font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
+                className="h-9 sm:h-10 px-3.5 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs sm:text-sm font-black flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-md"
               >
-                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <Crown className="w-3 h-3 text-amber-400" />
                 <span>换我做庄发牌</span>
               </button>
 
               {seatedCount < 2 && (
                 <button
                   onClick={handleCopyInviteLink}
-                  className="h-10 sm:h-11 px-4 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 text-xs sm:text-sm font-black flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-md"
+                  className="h-9 sm:h-10 px-3 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 text-xs font-black flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-md"
                 >
-                  <Copy className="w-3.5 h-3.5 text-emerald-400" />
+                  <Copy className="w-3 h-3 text-emerald-400" />
                   <span>邀请好友入座</span>
                 </button>
               )}
