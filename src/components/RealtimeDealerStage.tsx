@@ -14,16 +14,17 @@ import {
   ChevronRight,
   ShieldCheck,
   Radio,
-  ExternalLink,
   Volume2,
   Copy,
   Check,
-  RefreshCw
+  RefreshCw,
+  DoorOpen
 } from 'lucide-react';
 
 import { TableTacticalChatBar } from './TableTacticalChatBar';
 import { ChatMessage } from '../types';
 import { CardView } from './CardView';
+import { fetchActiveRooms, ActiveRoomInfo, claimDealerRole } from '../lib/realtimeTableManager';
 
 export interface RealtimeSeatPlayer {
   id: string;
@@ -38,6 +39,8 @@ interface RealtimeDealerStageProps {
   dealerIndex: number;
   players: RealtimeSeatPlayer[];
   currentUserId: string;
+  roomId?: string;
+  onSwitchRoom?: (newRoomId: string) => void;
   onStartDeal: (dealtHands: { [playerId: string]: Card[] }, dealerIndex: number) => void;
   onBackToMenu: () => void;
   onSendMessage?: (type: 'text' | 'voice' | 'quick' | 'emoji', content: string, audioUrl?: string, audioDuration?: number) => void;
@@ -62,6 +65,8 @@ export function RealtimeDealerStage({
   dealerIndex,
   players,
   currentUserId,
+  roomId = '888888',
+  onSwitchRoom,
   onStartDeal,
   onBackToMenu,
   onSendMessage,
@@ -84,7 +89,17 @@ export function RealtimeDealerStage({
   const currentDealer = players[dealerIndex] || players[0];
   const isHumanDealer = Boolean(currentDealer && currentUserId && currentDealer.id === currentUserId);
   const mySeatIndex = players.findIndex(p => p.id === currentUserId);
+
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [showRoomModal, setShowRoomModal] = useState(false);
+  const [activeRooms, setActiveRooms] = useState<ActiveRoomInfo[]>([]);
+  const [customRoomInput, setCustomRoomInput] = useState('');
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3000);
+  };
 
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
   const [seatBubbles, setSeatBubbles] = useState<Record<string, {
@@ -138,277 +153,232 @@ export function RealtimeDealerStage({
   useEffect(() => {
     const raw = seatedCount <= 4 ? createDeck() : createDoubleDeck();
     setDeck(raw);
-    setShuffleCount(0);
-    setCutCard(null);
   }, [seatedCount]);
 
-  // Sync external dealer actions if another real human player is the dealer
+  // Sync external dealer actions
   useEffect(() => {
-    if (!isHumanDealer && syncedShuffleCount !== undefined && syncedShuffleCount > 0) {
+    if (typeof syncedShuffleCount === 'number' && syncedShuffleCount !== shuffleCount) {
       setShuffleCount(syncedShuffleCount);
-      setDealerStep('shuffling');
       setIsShuffling(true);
       sounds.playShuffle();
-      triggerHaptic('medium');
-      const timer = setTimeout(() => {
-        setIsShuffling(false);
-        setDealerStep('idle');
-      }, 700);
-      return () => clearTimeout(timer);
+      triggerHaptic('light');
+      setTimeout(() => setIsShuffling(false), 600);
     }
-  }, [syncedShuffleCount, isHumanDealer]);
+  }, [syncedShuffleCount]);
 
   useEffect(() => {
-    if (!isHumanDealer && syncedCutCard) {
+    if (typeof syncedCutPos === 'number') {
+      setCutSliderPos(syncedCutPos);
+    }
+    if (syncedCutCard) {
       setCutCard(syncedCutCard);
-      if (syncedCutPos !== undefined) {
-        setCutSliderPos(syncedCutPos);
-      }
-      setDealerStep('cutting');
       setIsCutting(true);
       sounds.playCut();
-      triggerHaptic('heavy');
-      const timer = setTimeout(() => {
-        setIsCutting(false);
-        setDealerStep('idle');
-      }, 650);
-      return () => clearTimeout(timer);
+      triggerHaptic('medium');
+      setTimeout(() => setIsCutting(false), 700);
     }
-  }, [syncedCutCard, syncedCutPos, isHumanDealer]);
+  }, [syncedCutPos, syncedCutCard]);
 
   useEffect(() => {
-    if (!isHumanDealer && syncedIsDealing) {
-      setDealerStep('dealing');
+    if (syncedIsDealing) {
       setIsDealing(true);
-      sounds.playDealSequence(seatedCount);
-      triggerHaptic('heavy');
+      sounds.playDeal();
     }
-  }, [syncedIsDealing, isHumanDealer, seatedCount]);
+  }, [syncedIsDealing]);
 
-  // Manual Shuffle Trigger (Dealer only)
+  // Copy invitation link helper
+  const handleCopyInviteLink = () => {
+    try {
+      const url = `${window.location.origin}${window.location.pathname}?mode=realtime&roomId=${encodeURIComponent(roomId)}`;
+      navigator.clipboard.writeText(url);
+      setCopiedInvite(true);
+      setTimeout(() => setCopiedInvite(false), 2000);
+      showToast(`已复制房间 [${roomId}] 邀请链接！好友打开即可同桌对决`);
+      triggerHaptic('light');
+    } catch {
+      showToast(`请复制房间号: ${roomId}`);
+    }
+  };
+
+  // 1. Shuffle Routine
   const handleManualShuffle = () => {
     if (!isHumanDealer || isShuffling || isDealing) return;
     setIsShuffling(true);
-    setDealerStep('shuffling');
-    sounds.playShuffle();
     triggerHaptic('medium');
+    sounds.playShuffle();
 
-    setTimeout(() => {
-      const newShuffled = shuffle(deck);
-      setDeck(newShuffled);
-      const nextCount = shuffleCount + 1;
-      setShuffleCount(nextCount);
-      setIsShuffling(false);
-      setDealerStep('idle');
-      onDealerShuffle?.(nextCount);
-    }, 700);
+    let count = 0;
+    const interval = setInterval(() => {
+      setDeck(prev => shuffle([...prev]));
+      sounds.playShuffle();
+      count++;
+      if (count >= 5) {
+        clearInterval(interval);
+        setIsShuffling(false);
+        const newCount = shuffleCount + 1;
+        setShuffleCount(newCount);
+        setDealerStep('cutting');
+        triggerHaptic('success');
+        if (onDealerShuffle) {
+          onDealerShuffle(newCount);
+        }
+      }
+    }, 110);
   };
 
-  // Manual Cut Trigger (Dealer only)
+  // 2. Cut Routine
   const handleManualCut = () => {
     if (!isHumanDealer || isCutting || isDealing) return;
     setIsCutting(true);
-    setDealerStep('cutting');
+    triggerHaptic('medium');
     sounds.playCut();
-    triggerHaptic('heavy');
 
-    const cutIndex = Math.floor((deck.length * cutSliderPos) / 100);
-    const { deck: cutResult, cutCard: revealedCutCard } = cutDeck(deck, cutIndex);
+    const cutIndex = Math.floor((cutSliderPos / 100) * deck.length);
+    const { cutCard: chosenCard, deck: newDeck } = cutDeck(deck, cutIndex);
+
+    setDeck(newDeck);
+    setCutCard(chosenCard);
 
     setTimeout(() => {
-      setDeck(cutResult);
-      setCutCard(revealedCutCard);
       setIsCutting(false);
-      setDealerStep('idle');
-      onDealerCut?.(cutSliderPos, revealedCutCard);
-    }, 550);
+      setDealerStep('dealing');
+      triggerHaptic('success');
+      if (onDealerCut) {
+        onDealerCut(cutSliderPos, chosenCard);
+      }
+    }, 600);
   };
 
-  // Deal Distribution to Seated Players
-  const executeFinalDeal = (currentDeckToUse: Card[]) => {
-    const hands: { [playerId: string]: Card[] } = {};
-    let deckCopy = [...currentDeckToUse];
-
-    // If deck was never shuffled, shuffle it now for game safety
-    if (shuffleCount === 0) {
-      deckCopy = shuffle(deckCopy);
-    }
-
-    // Give exactly 13 cards to each seated player
-    players.forEach((p, idx) => {
-      const startIdx = idx * 13;
-      hands[p.id] = deckCopy.slice(startIdx, startIdx + 13);
-    });
-
-    onDealerDeal?.(hands, dealerIndex);
-    onStartDeal(hands, dealerIndex);
-  };
-
+  // 3. Deal Routine (strictly real humans only, min 2)
   const handleManualDeal = () => {
-    if (!isHumanDealer || seatedCount < 2 || isDealing) return;
+    if (!isHumanDealer || isDealing || seatedCount < 2) return;
     setIsDealing(true);
     setDealerStep('dealing');
-    sounds.playDealSequence(seatedCount);
     triggerHaptic('heavy');
+    sounds.playDeal();
+
+    let workingDeck = [...deck];
+    if (shuffleCount === 0) {
+      workingDeck = shuffle(workingDeck);
+    }
+
+    const cardsPerPlayer = 13;
+    const hands: { [playerId: string]: Card[] } = {};
+
+    players.forEach((p, idx) => {
+      hands[p.id] = workingDeck.slice(idx * cardsPerPlayer, (idx + 1) * cardsPerPlayer);
+    });
+
+    if (onDealerDeal) {
+      onDealerDeal(hands, dealerIndex);
+    }
 
     setTimeout(() => {
-      executeFinalDeal(deck);
-    }, 850);
+      setIsDealing(false);
+      onStartDeal(hands, dealerIndex);
+    }, 1200);
   };
 
-  // Tactical Urge Dealer (Non-dealer feature)
+  // Non-dealer actions
   const handleUrgeDealer = () => {
-    triggerHaptic('medium');
+    triggerHaptic('light');
     sounds.playCardPick();
     if (onSendMessage) {
-      onSendMessage('quick', `⌛ 庄家【${currentDealer?.name}】请尽快洗牌发牌，大家都在等着呢！`);
+      onSendMessage('quick', '庄家搞快点，等得花儿都谢了！🌸');
     }
   };
 
-  // Takeover / Host dealer rotation
   const handleClaimDealerRole = () => {
-    if (mySeatIndex !== -1 && onRotateDealer) {
-      triggerHaptic('heavy');
+    triggerHaptic('medium');
+    sounds.playCardPick();
+    claimDealerRole(currentUserId);
+    if (onRotateDealer && mySeatIndex !== -1) {
       onRotateDealer(mySeatIndex);
-      if (onSendMessage) {
-        onSendMessage('text', `👑 玩家已切换至第 ${mySeatIndex + 1} 席担任本局庄家`);
-      }
+    }
+    if (onSendMessage) {
+      onSendMessage('text', `我来坐庄发牌！让各位见识下真正的手气 👑`);
     }
   };
 
-  const getSuitSymbol = (suit: Suit) => {
-    switch (suit) {
-      case 'S': return '♠';
-      case 'H': return '♥';
-      case 'C': return '♣';
-      case 'D': return '♦';
-    }
-  };
+  // Render 3D deck
+  const renderDeckAnimation = () => {
+    const stackHeight = 12;
+    return (
+      <div className="relative w-44 sm:w-52 h-48 sm:h-56 flex items-center justify-center select-none perspective-800">
+        {Array.from({ length: stackHeight }).map((_, i) => {
+          const isTop = i === stackHeight - 1;
+          const yOffset = (stackHeight - 1 - i) * 2;
+          const xOffset = Math.sin(i * 0.4) * 1.5;
 
-  const getSuitColor = (suit: Suit) => {
-    return suit === 'H' || suit === 'D' ? 'text-red-500' : 'text-slate-900';
-  };
-
-  const getRankDisplay = (rank: Rank) => {
-    switch (rank) {
-      case 14: return 'A';
-      case 13: return 'K';
-      case 12: return 'Q';
-      case 11: return 'J';
-      default: return rank.toString();
-    }
-  };
-
-  const renderDeckAnimation = () => (
-    <div className="relative w-48 h-32 sm:w-64 sm:h-40 flex items-center justify-center my-2 sm:my-4" style={{ perspective: 1000 }}>
-      <AnimatePresence>
-        {!isDealing && (
-          <>
-            {/* Left Packet (During Shuffle / Base Deck) */}
+          return (
             <motion.div
-              className="absolute w-20 h-28 sm:w-24 sm:h-32 rounded-xl bg-gradient-to-br from-blue-900 to-slate-900 border border-amber-500/50 shadow-[0_0_15px_rgba(0,0,0,0.5)] flex items-center justify-center text-2xl z-10"
-              initial={false}
+              key={i}
+              className="absolute w-24 sm:w-28 h-36 sm:h-40 rounded-xl border border-amber-600/30 shadow-md bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 flex flex-col items-center justify-center p-1.5"
+              style={{
+                top: `calc(50% - 72px + ${yOffset}px)`,
+                left: `calc(50% - 48px + ${xOffset}px)`,
+                zIndex: i,
+              }}
               animate={
                 isShuffling
-                  ? { x: -45, rotateZ: -12, rotateY: 15, z: 10 }
-                  : isCutting
-                  ? { x: -30, y: 15, rotateZ: -3 }
-                  : { x: 0, y: 0, rotateZ: 0, rotateY: 0, z: 0 }
+                  ? {
+                      x: i % 2 === 0 ? [0, -35, 15, 0] : [0, 35, -15, 0],
+                      y: [0, -10, 0],
+                      rotateZ: i % 2 === 0 ? [-8, 6, 0] : [8, -6, 0],
+                      transition: { duration: 0.28, repeat: Infinity, ease: 'easeInOut' }
+                    }
+                  : isCutting && isTop
+                  ? {
+                      y: [-25, -20, 0],
+                      x: [25, 20, 0],
+                      rotateZ: [12, 10, 0],
+                      transition: { duration: 0.5, ease: 'easeOut' }
+                    }
+                  : {}
               }
-              transition={{ type: "spring", stiffness: 220, damping: 20 }}
             >
-              <div className="w-full h-full rounded-lg border border-white/10 flex items-center justify-center text-white/30 text-xl font-bold bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMDUiLz4KPC9zdmc+')]">
-                🀄
-              </div>
-            </motion.div>
-
-            {/* Right Packet (During Shuffle / Cut Top Packet) */}
-            <motion.div
-              className="absolute w-20 h-28 sm:w-24 sm:h-32 rounded-xl bg-gradient-to-br from-red-900 to-slate-900 border border-amber-500/50 shadow-[0_0_20px_rgba(0,0,0,0.6)] flex items-center justify-center text-2xl z-20"
-              initial={false}
-              animate={
-                isShuffling
-                  ? { x: 45, rotateZ: 12, rotateY: -15, z: 10 }
-                  : isCutting
-                  ? { x: 40, y: -25, rotateZ: 4, z: 25 }
-                  : { x: 0, y: -3, rotateZ: 1, rotateY: 0, z: 2 }
-              }
-              transition={{ type: "spring", stiffness: 220, damping: 20 }}
-            >
-              <div className="w-full h-full rounded-lg border border-white/10 flex items-center justify-center text-white/30 text-xl font-bold bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMDUiLz4KPC9zdmc+')]">
-                🀄
-              </div>
-            </motion.div>
-            
-            {/* Cascade Riffle Effect Overlay (Only visible during shuffling) */}
-            {isShuffling && (
-              <motion.div
-                className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                {[...Array(12)].map((_, i) => (
-                  <motion.div
-                    key={i}
-                    className="absolute w-16 h-24 sm:w-20 sm:h-28 bg-slate-200 border border-slate-400 rounded-lg shadow-sm"
-                    initial={{ y: -50, x: i % 2 === 0 ? -25 : 25, rotateZ: i % 2 === 0 ? -15 : 15, opacity: 0 }}
-                    animate={{ y: 0, x: 0, rotateZ: (Math.random() - 0.5) * 8, opacity: 1 }}
-                    transition={{ delay: i * 0.04, duration: 0.15 }}
-                  />
-                ))}
-              </motion.div>
-            )}
-
-            {/* Revealed Cut Card (If Cut) */}
-            {cutCard && !isShuffling && (
-              <motion.div
-                className="absolute z-40 w-16 h-24 sm:w-20 sm:h-28 shadow-2xl rounded-lg"
-                initial={{ scale: 0, y: -60, rotateY: -180, opacity: 0 }}
-                animate={{ scale: 1, y: 0, rotateY: 0, opacity: 1 }}
-                exit={{ scale: 0, opacity: 0 }}
-                transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.15 }}
-              >
-                <div className="w-full h-full transform scale-[0.6] sm:scale-75 origin-top-left absolute inset-0">
-                   <CardView card={cutCard} className="w-[106px] h-[160px] sm:w-[106px] sm:h-[160px] shadow-2xl shadow-amber-900/50" />
+              <div className="w-full h-full rounded-lg border border-amber-500/20 bg-slate-900/90 flex flex-col items-center justify-between p-1.5">
+                <div className="w-full flex justify-between text-[9px] text-amber-500/50 font-mono">
+                  <span>13</span>
+                  <span>♠</span>
                 </div>
-              </motion.div>
-            )}
-          </>
-        )}
-      </AnimatePresence>
+                <div className="w-9 h-9 rounded-full border border-amber-500/30 flex items-center justify-center bg-amber-500/5">
+                  <span className="text-sm">🎴</span>
+                </div>
+                <div className="w-full flex justify-between text-[9px] text-amber-500/50 font-mono rotate-180">
+                  <span>13</span>
+                  <span>♠</span>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
 
-      {/* Flying Cards Animation During Dealing */}
-      <AnimatePresence>
-        {isDealing && (
-          <motion.div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
-            {[...Array(13)].map((_, i) => (
-              <motion.div
-                key={i}
-                className="absolute w-12 h-16 bg-gradient-to-br from-blue-700 to-indigo-900 border border-amber-300 rounded shadow-xl"
-                initial={{ scale: 1, x: 0, y: 0, opacity: 1 }}
-                animate={{ 
-                  scale: 0.6, 
-                  x: (Math.random() - 0.5) * 350, 
-                  y: (Math.random() - 0.5) * 350, 
-                  opacity: 0,
-                  rotateZ: (Math.random() - 0.5) * 720
-                }}
-                transition={{ duration: 0.5, delay: i * 0.05, ease: "easeOut" }}
-              />
-            ))}
+        {/* Revealed Cut Card */}
+        {cutCard && (
+          <motion.div
+            initial={{ scale: 0, y: -40, rotateY: 90 }}
+            animate={{ scale: 1, y: -10, rotateY: 0 }}
+            className="absolute z-30"
+          >
+            <div className="relative ring-4 ring-amber-400 rounded-xl shadow-2xl">
+              <CardView card={cutCard} size="md" />
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] whitespace-nowrap shadow-md">
+                切出的吉牌
+              </div>
+            </div>
           </motion.div>
         )}
-      </AnimatePresence>
-    </div>
-  );
+      </div>
+    );
+  };
 
   return (
-    <div className="w-full h-full flex-1 max-w-4xl mx-auto flex flex-col items-center justify-between gap-1 sm:gap-1.5 py-0.5 px-1 sm:px-2 animate-in fade-in duration-300 min-h-0 overflow-hidden select-none">
+    <div className="w-full h-full max-h-[100dvh] flex flex-col justify-between overflow-hidden p-2 sm:p-3 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 select-none">
       
-      {/* 1. Ultra-clean Header Bar */}
+      {/* 1. Header Bar */}
       <div className="w-full flex items-center justify-between px-1 shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             onClick={onBackToMenu}
             className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
@@ -416,39 +386,45 @@ export function RealtimeDealerStage({
             <span>←</span>
             <span>大厅</span>
           </button>
-          <div className="flex items-center gap-1.5">
+          
+          <div className="flex items-center gap-1 sm:gap-1.5">
             <span className="text-xs sm:text-sm font-black text-white">⚡ 真人实时场</span>
             <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
               第 {round} 局
             </span>
           </div>
+
+          {/* Room Switcher / Manager Badge */}
+          <button
+            onClick={() => {
+              setShowRoomModal(true);
+              fetchActiveRooms().then(setActiveRooms);
+            }}
+            className="px-2.5 py-1 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-200 text-[11px] sm:text-xs font-bold flex items-center gap-1 transition cursor-pointer active:scale-95 shadow-sm"
+            title="点击切换或管理房间"
+          >
+            <DoorOpen className="w-3.5 h-3.5 text-indigo-400" />
+            <span>房号: <strong className="text-amber-300 font-mono">{roomId}</strong></span>
+            <span className="text-[9px] text-indigo-400">▾</span>
+          </button>
         </div>
 
         <div className="flex items-center gap-1.5 text-xs">
           {/* Copy Invite Link */}
           <button
-            onClick={() => {
-              try {
-                const url = window.location.origin + window.location.pathname + '?mode=realtime';
-                navigator.clipboard.writeText(url);
-                setCopiedInvite(true);
-                setTimeout(() => setCopiedInvite(false), 2000);
-                triggerHaptic('light');
-              } catch (e) {
-                console.log(e);
-              }
-            }}
+            onClick={handleCopyInviteLink}
             className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-emerald-500/40 text-emerald-300 hover:text-emerald-200 text-[11px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
-            title="复制房间链接邀请好友"
+            title="复制房间链接邀请好友同桌"
           >
             {copiedInvite ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-emerald-400" />}
-            <span>{copiedInvite ? '已复制链接' : '邀请真人'}</span>
+            <span>{copiedInvite ? '已复制链接' : '邀请牌友'}</span>
           </button>
 
-          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-900 border border-amber-500/40 text-slate-200 text-[11px] sm:text-xs">
+          <div className="hidden sm:flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-900 border border-amber-500/40 text-slate-200 text-[11px]">
             <Crown className="w-3 h-3 text-amber-400" />
             <span>庄家: <strong className="text-amber-300">{dealerIndex + 1}号位</strong></span>
           </div>
+
           <div className={`px-2 py-0.5 rounded-full text-[11px] sm:text-xs font-bold border ${
             seatedCount >= 2
               ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
@@ -475,13 +451,7 @@ export function RealtimeDealerStage({
                 key={`realtime-seat-${idx}`}
                 onClick={() => {
                   if (!isOccupied) {
-                    try {
-                      const url = window.location.origin + window.location.pathname + '?mode=realtime';
-                      navigator.clipboard.writeText(url);
-                      setCopiedInvite(true);
-                      setTimeout(() => setCopiedInvite(false), 2000);
-                      triggerHaptic('light');
-                    } catch (e) {}
+                    handleCopyInviteLink();
                   }
                 }}
                 className={`relative flex-1 min-w-[36px] max-w-[85px] flex flex-col items-center justify-center py-0.5 px-0.5 rounded-lg transition-all border ${
@@ -563,12 +533,28 @@ export function RealtimeDealerStage({
           </span>
         </div>
 
+        {/* Waiting For Players Notification when only 1 player */}
+        {seatedCount < 2 && (
+          <div className="w-full max-w-md bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-1.5 flex items-center justify-between text-xs text-amber-200 shrink-0 z-10">
+            <span className="flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>当前房间仅 1 人，需 ≥2 位真人入座方可发牌</span>
+            </span>
+            <button
+              onClick={handleCopyInviteLink}
+              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-[11px] font-bold transition cursor-pointer"
+            >
+              复制邀请链接
+            </button>
+          </div>
+        )}
+
         {/* 3D Animated Deck in the Center */}
         <div className="flex-1 flex items-center justify-center min-h-0 py-1">
           {renderDeckAnimation()}
         </div>
 
-        {/* Core Function Buttons Deck (Always Prominent, Clear & Tactile) */}
+        {/* Core Function Buttons Deck */}
         <div className="w-full flex flex-col items-center gap-1.5 z-10 shrink-0">
           {isHumanDealer ? (
             /* DEALER ACTION SUITE */
@@ -625,15 +611,11 @@ export function RealtimeDealerStage({
               <div className="flex items-center gap-2 text-xs flex-wrap justify-center">
                 {seatedCount < 2 && (
                   <button
-                    onClick={() => {
-                      try {
-                        window.open(window.location.origin + window.location.pathname + '?mode=realtime', '_blank');
-                      } catch (e) {}
-                    }}
+                    onClick={handleCopyInviteLink}
                     className="px-3 py-1 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-sm"
                   >
-                    <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>新标签页联机 (模拟2人对战)</span>
+                    <Copy className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>邀请好友入座 (当前 1/8)</span>
                   </button>
                 )}
 
@@ -669,15 +651,11 @@ export function RealtimeDealerStage({
 
               {seatedCount < 2 && (
                 <button
-                  onClick={() => {
-                    try {
-                      window.open(window.location.origin + window.location.pathname + '?mode=realtime', '_blank');
-                    } catch (e) {}
-                  }}
+                  onClick={handleCopyInviteLink}
                   className="h-10 sm:h-11 px-4 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 text-xs sm:text-sm font-black flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-md"
                 >
-                  <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>新标签页入座</span>
+                  <Copy className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>邀请好友入座</span>
                 </button>
               )}
             </div>
@@ -685,7 +663,7 @@ export function RealtimeDealerStage({
         </div>
       </div>
 
-      {/* 4. Bottom Tactical Chat Bar (Clean, Focused, Zero Overflow) */}
+      {/* 4. Bottom Tactical Chat Bar */}
       {onSendMessage && onOpenFullChat && (
         <div className="w-full max-w-3xl mx-auto shrink-0 px-0 mt-0.5">
           <TableTacticalChatBar
@@ -700,6 +678,154 @@ export function RealtimeDealerStage({
         </div>
       )}
 
+      {/* 5. Room Management / Switcher Modal */}
+      <AnimatePresence>
+        {showRoomModal && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <DoorOpen className="w-5 h-5 text-indigo-400" />
+                  <span className="font-black text-white text-base">对战房间管理</span>
+                </div>
+                <button
+                  onClick={() => setShowRoomModal(false)}
+                  className="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Current Room Info */}
+              <div className="p-3 rounded-xl bg-slate-950/70 border border-indigo-500/30 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400">当前所在房间:</span>
+                  <span className="font-mono font-black text-amber-300 text-sm">{roomId}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400">在座真人玩家:</span>
+                  <span className="text-emerald-300 font-bold">{seatedCount} / 8 人</span>
+                </div>
+                <button
+                  onClick={handleCopyInviteLink}
+                  className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>复制当前房间邀请链接</span>
+                </button>
+              </div>
+
+              {/* Join by Room Code */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300">输入房间号加入：</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="输入6位房间号 (如 888888)"
+                    value={customRoomInput}
+                    onChange={(e) => setCustomRoomInput(e.target.value.trim())}
+                    className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs font-mono placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
+                    maxLength={10}
+                  />
+                  <button
+                    onClick={() => {
+                      if (!customRoomInput) return;
+                      setShowRoomModal(false);
+                      if (onSwitchRoom) {
+                        onSwitchRoom(customRoomInput);
+                      }
+                    }}
+                    disabled={!customRoomInput}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-xs transition active:scale-95 cursor-pointer"
+                  >
+                    加入
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setShowRoomModal(false);
+                    if (onSwitchRoom) onSwitchRoom('888888');
+                  }}
+                  className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+                >
+                  <span>🏠 返回竞技大厅 (888888)</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+                    setShowRoomModal(false);
+                    if (onSwitchRoom) onSwitchRoom(newCode);
+                  }}
+                  className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
+                >
+                  <span>✨ 创建新私密房间</span>
+                </button>
+              </div>
+
+              {/* Active Room List */}
+              {activeRooms.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="text-[11px] font-bold text-slate-400">服务器活跃房间：</div>
+                  <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
+                    {activeRooms.map(r => (
+                      <div
+                        key={r.roomId}
+                        onClick={() => {
+                          setShowRoomModal(false);
+                          if (onSwitchRoom) onSwitchRoom(r.roomId);
+                        }}
+                        className={`p-2 rounded-xl border flex items-center justify-between text-xs cursor-pointer transition ${
+                          r.roomId === roomId
+                            ? 'bg-indigo-950/80 border-indigo-500/50 text-indigo-200'
+                            : 'bg-slate-950/40 border-slate-800 hover:border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold">{r.roomId}</span>
+                          <span className="text-[10px] text-slate-500">({r.roomName})</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold">
+                            {r.playerCount}/8 人
+                          </span>
+                          {r.roomId === roomId && (
+                            <span className="text-[10px] text-amber-400 font-bold">当前</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast Feedback */}
+      <AnimatePresence>
+        {toastMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-12 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/95 border border-emerald-500/50 text-emerald-300 text-xs font-bold shadow-2xl backdrop-blur-md flex items-center gap-2 pointer-events-none"
+          >
+            <Check className="w-4 h-4 text-emerald-400" />
+            <span>{toastMsg}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

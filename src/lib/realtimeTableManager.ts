@@ -1,5 +1,4 @@
 import { Card, ChatMessage } from '../types';
-import { createDeck, createDoubleDeck, shuffle } from '../gameLogic';
 import { getRegisteredCommunityPlayers } from './accountManager';
 
 export interface RealtimeSeatPlayer {
@@ -13,6 +12,8 @@ export interface RealtimeSeatPlayer {
 
 export interface RealtimeTableState {
   tableId: string;
+  roomId?: string;
+  roomName?: string;
   round: number;
   dealerIndex: number; // 0-based seat index for the current dealer
   dealerId: string;    // id of current dealer player
@@ -23,7 +24,7 @@ export interface RealtimeTableState {
   cutCard: Card | null;
   dealtHands?: { [playerId: string]: Card[] };
   lastAction?: {
-    type: 'shuffle' | 'cut' | 'deal' | 'join' | 'leave' | 'next_round' | 'rotate_dealer';
+    type: string;
     playerId: string;
     text: string;
     timestamp: number;
@@ -42,9 +43,51 @@ export type RealtimeTableEvent =
   | { type: 'RESET_TABLE'; state: RealtimeTableState }
   | { type: 'CHAT_MESSAGE'; message: ChatMessage };
 
-const TABLE_STORAGE_KEY = 'thirteen_realtime_arena_active_table';
+export interface ActiveRoomInfo {
+  roomId: string;
+  roomName: string;
+  playerCount: number;
+  maxPlayers: number;
+  round: number;
+  status: string;
+  dealerName: string;
+  lastUpdated: number;
+}
+
+const TABLE_STORAGE_PREFIX = 'thirteen_realtime_arena_table_';
 const TABLE_CHAT_STORAGE_KEY = 'thirteen_realtime_arena_chat_messages';
 const CHANNEL_NAME = 'thirteen_realtime_table_sync_channel';
+
+// Current active room ID
+let currentRoomId = '888888';
+
+// Detect roomId from URL if present
+if (typeof window !== 'undefined') {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const roomParam = params.get('roomId');
+    if (roomParam && roomParam.trim()) {
+      currentRoomId = roomParam.trim();
+    }
+  } catch {}
+}
+
+export function getCurrentRoomId(): string {
+  return currentRoomId;
+}
+
+export function setCurrentRoomId(roomId: string): void {
+  if (roomId && roomId.trim()) {
+    currentRoomId = roomId.trim();
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('roomId', currentRoomId);
+        window.history.replaceState({}, '', url.toString());
+      } catch {}
+    }
+  }
+}
 
 // Singleton BroadcastChannel for cross-tab and cross-window sync
 let channel: BroadcastChannel | null = null;
@@ -63,7 +106,110 @@ function getChannel(): BroadcastChannel | null {
   return channel;
 }
 
-// Get or generate a tab/session unique identifier (survives page refresh within the same tab, unique per tab)
+// Shared WebSocket connection for table events
+let tableWs: WebSocket | null = null;
+let wsSubscribers = new Set<(event: RealtimeTableEvent) => void>();
+
+function getWsUrl(): string {
+  if (typeof window === 'undefined') return 'ws://localhost:3000/api/ws';
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}/api/ws`;
+}
+
+function ensureTableWsConnected() {
+  if (typeof window === 'undefined') return;
+  if (tableWs && (tableWs.readyState === WebSocket.OPEN || tableWs.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  try {
+    tableWs = new WebSocket(getWsUrl());
+
+    tableWs.onopen = () => {
+      if (tableWs && tableWs.readyState === WebSocket.OPEN) {
+        tableWs.send(JSON.stringify({
+          type: 'TABLE_SUBSCRIBE',
+          roomId: currentRoomId
+        }));
+      }
+    };
+
+    tableWs.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'TABLE_SYNC' && msg.table) {
+          const table: RealtimeTableState = msg.table;
+          // Disallow AI seats
+          if (Array.isArray(table.seats)) {
+            table.seats = table.seats.filter(s => !s.isAi);
+          }
+          saveRealtimeTable(table);
+          wsSubscribers.forEach(cb => cb({ type: 'SYNC_STATE', state: table }));
+        } else if (msg.type === 'TABLE_ACTION' && msg.action) {
+          const action = msg.action;
+          if (action.type === 'DEALER_DEAL') {
+            wsSubscribers.forEach(cb => cb({
+              type: 'DEALER_DEAL',
+              dealtHands: action.dealtHands,
+              dealerIndex: action.dealerIndex,
+              timestamp: Date.now()
+            }));
+          } else if (action.type === 'DEALER_SHUFFLE') {
+            wsSubscribers.forEach(cb => cb({
+              type: 'DEALER_SHUFFLE',
+              shuffleCount: action.shuffleCount,
+              timestamp: Date.now()
+            }));
+          } else if (action.type === 'DEALER_CUT') {
+            wsSubscribers.forEach(cb => cb({
+              type: 'DEALER_CUT',
+              cutSliderPos: action.cutSliderPos,
+              cutCard: action.cutCard,
+              timestamp: Date.now()
+            }));
+          } else if (action.type === 'NEXT_ROUND') {
+            if (msg.table) {
+              saveRealtimeTable(msg.table);
+            }
+            wsSubscribers.forEach(cb => cb({
+              type: 'NEXT_ROUND',
+              round: action.round,
+              dealerIndex: action.dealerIndex,
+              dealerId: action.dealerId,
+              state: msg.table
+            }));
+          }
+        } else if (msg.type === 'PLAYER_JOIN' && msg.player && msg.table) {
+          saveRealtimeTable(msg.table);
+          wsSubscribers.forEach(cb => cb({ type: 'PLAYER_JOIN', player: msg.player, state: msg.table }));
+        } else if (msg.type === 'PLAYER_LEAVE' && msg.table) {
+          saveRealtimeTable(msg.table);
+          wsSubscribers.forEach(cb => cb({ type: 'PLAYER_LEAVE', playerId: msg.playerId, state: msg.table }));
+        }
+      } catch {}
+    };
+
+    tableWs.onclose = () => {
+      tableWs = null;
+      setTimeout(ensureTableWsConnected, 3000);
+    };
+
+    tableWs.onerror = () => {
+      tableWs = null;
+    };
+  } catch {}
+}
+
+// Send action or event via WebSocket
+export function sendTableWs(data: any): void {
+  if (tableWs && tableWs.readyState === WebSocket.OPEN) {
+    try {
+      tableWs.send(JSON.stringify(data));
+    } catch {}
+  }
+}
+
+// Get or generate a tab/session unique identifier
 export function getTabSessionId(): string {
   if (typeof window === 'undefined') return 'session_default';
   let tabId = sessionStorage.getItem('thirteen_realtime_tab_session_id');
@@ -74,7 +220,7 @@ export function getTabSessionId(): string {
   return tabId;
 }
 
-// Read table chat messages from localStorage
+// Read table chat messages
 export function getRealtimeChatMessages(): ChatMessage[] {
   try {
     const raw = localStorage.getItem(TABLE_CHAT_STORAGE_KEY);
@@ -85,16 +231,21 @@ export function getRealtimeChatMessages(): ChatMessage[] {
   }
 }
 
-// Save chat message & broadcast to table
+// Save chat message & broadcast
 export function saveAndBroadcastChatMessage(msg: ChatMessage): void {
   try {
     const existing = getRealtimeChatMessages();
-    const updated = [...existing.slice(-49), msg]; // Keep latest 50 messages
+    const updated = [...existing.slice(-49), msg];
     localStorage.setItem(TABLE_CHAT_STORAGE_KEY, JSON.stringify(updated));
-  } catch {
-    // ignore
-  }
+  } catch {}
   broadcastEvent({ type: 'CHAT_MESSAGE', message: msg });
+
+  // Post to server chat API
+  fetch('/api/chat/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ roomId: currentRoomId, message: msg })
+  }).catch(() => {});
 }
 
 // Clear table chat messages
@@ -104,8 +255,8 @@ export function clearRealtimeChatMessages(): void {
   } catch {}
 }
 
-// Fetch remote chat history and merge with local storage
-export async function fetchRemoteChatHistory(roomId = 'default_table'): Promise<ChatMessage[]> {
+// Fetch remote chat history
+export async function fetchRemoteChatHistory(roomId = currentRoomId): Promise<ChatMessage[]> {
   try {
     const res = await fetch(`/api/chat/history?roomId=${encodeURIComponent(roomId)}&limit=50`);
     if (res.ok) {
@@ -141,18 +292,39 @@ export async function fetchRemoteChatHistory(roomId = 'default_table'): Promise<
   return getRealtimeChatMessages();
 }
 
-// Read table from localStorage
-export function getSavedRealtimeTable(): RealtimeTableState | null {
+// Fetch active rooms from server
+export async function fetchActiveRooms(): Promise<ActiveRoomInfo[]> {
   try {
-    const raw = localStorage.getItem(TABLE_STORAGE_KEY);
+    const res = await fetch('/api/table/rooms');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.rooms)) {
+        return data.rooms;
+      }
+    }
+  } catch {}
+  return [{
+    roomId: '888888',
+    roomName: '竞技大厅 888888',
+    playerCount: 1,
+    maxPlayers: 8,
+    round: 1,
+    status: 'waiting',
+    dealerName: '待入座',
+    lastUpdated: Date.now()
+  }];
+}
+
+// Read table from localStorage
+export function getSavedRealtimeTable(roomId = currentRoomId): RealtimeTableState | null {
+  try {
+    const raw = localStorage.getItem(TABLE_STORAGE_PREFIX + roomId);
     if (!raw) return null;
     const parsed: RealtimeTableState = JSON.parse(raw);
-    // Discard tables inactive for > 30 minutes
-    if (Date.now() - (parsed.lastUpdated || 0) > 30 * 60 * 1000) {
-      localStorage.removeItem(TABLE_STORAGE_KEY);
+    if (Date.now() - (parsed.lastUpdated || 0) > 45 * 60 * 1000) {
+      localStorage.removeItem(TABLE_STORAGE_PREFIX + roomId);
       return null;
     }
-    // Strictly prohibit AI seats - ensure only real human players remain
     if (Array.isArray(parsed.seats)) {
       parsed.seats = parsed.seats.filter(s => !s.isAi);
     }
@@ -163,115 +335,107 @@ export function getSavedRealtimeTable(): RealtimeTableState | null {
 }
 
 // Save table to localStorage
-export function saveRealtimeTable(state: RealtimeTableState): void {
+export function saveRealtimeTable(state: RealtimeTableState, roomId = currentRoomId): void {
   try {
     state.lastUpdated = Date.now();
-    localStorage.setItem(TABLE_STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // ignore
-  }
+    localStorage.setItem(TABLE_STORAGE_PREFIX + (state.roomId || roomId), JSON.stringify(state));
+  } catch {}
 }
 
 // Clear table
-export function clearRealtimeTable(): void {
+export function clearRealtimeTable(roomId = currentRoomId): void {
   try {
-    localStorage.removeItem(TABLE_STORAGE_KEY);
+    localStorage.removeItem(TABLE_STORAGE_PREFIX + roomId);
     localStorage.removeItem(TABLE_CHAT_STORAGE_KEY);
     const ch = getChannel();
     if (ch) {
       ch.postMessage({ type: 'RESET_TABLE', state: null });
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
-// Join or Create Realtime Table
+// Join or Create Realtime Table (Server Authoritative with Instant Local Cache)
 export function joinOrCreateRealtimeTable(currentUser: {
   id: string;
   name: string;
   avatar: string;
   tabSessionId?: string;
-}): {
+}, targetRoomId?: string): {
   table: RealtimeTableState;
   isNewTable: boolean;
   seatIndex: number;
   assignedUser: { id: string; name: string; avatar: string };
 } {
-  const tabSessionId = currentUser.tabSessionId || getTabSessionId();
-  const existing = getSavedRealtimeTable();
-  const isStale = existing ? (Date.now() - (existing.lastUpdated || 0) > 15 * 60 * 1000) : true;
+  if (targetRoomId) {
+    setCurrentRoomId(targetRoomId);
+  }
 
-  // 1. If an active table exists and is not stale, join or restore seat
-  if (existing && Array.isArray(existing.seats) && existing.seats.length > 0 && !isStale) {
-    // Check if this specific tab already occupies a seat (e.g. page refresh)
-    const seatByTab = existing.seats.findIndex(s => s.tabSessionId === tabSessionId);
-    if (seatByTab !== -1) {
-      const seatedPlayer = existing.seats[seatByTab];
-      existing.lastUpdated = Date.now();
-      saveRealtimeTable(existing);
+  const roomId = currentRoomId;
+  const tabSessionId = currentUser.tabSessionId || getTabSessionId();
+  ensureTableWsConnected();
+
+  // Async server join: Registers on backend server and broadcasts to all other devices
+  fetch('/api/table/join', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      roomId,
+      player: {
+        id: currentUser.id,
+        tabSessionId,
+        name: currentUser.name,
+        avatar: currentUser.avatar
+      }
+    })
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.ok && data.table) {
+        if (Array.isArray(data.table.seats)) {
+          data.table.seats = data.table.seats.filter((s: RealtimeSeatPlayer) => !s.isAi);
+        }
+        saveRealtimeTable(data.table, roomId);
+        broadcastEvent({ type: 'SYNC_STATE', state: data.table });
+      }
+    })
+    .catch(() => {});
+
+  // Local fallback response while server roundtrip finishes
+  const existing = getSavedRealtimeTable(roomId);
+  if (existing && Array.isArray(existing.seats) && existing.seats.length > 0) {
+    const seatIdx = existing.seats.findIndex(s => s.id === currentUser.id || s.tabSessionId === tabSessionId);
+    if (seatIdx !== -1) {
       return {
         table: existing,
         isNewTable: false,
-        seatIndex: seatByTab,
-        assignedUser: { id: seatedPlayer.id, name: seatedPlayer.name, avatar: seatedPlayer.avatar }
+        seatIndex: seatIdx,
+        assignedUser: { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar }
       };
     }
 
-    // New player joining existing table (< 8 players allowed)
     if (existing.seats.length < 8) {
-      const occupiedIds = new Set(existing.seats.map(s => s.id));
-      let assignedId = currentUser.id;
-      let assignedName = currentUser.name;
-      let assignedAvatar = currentUser.avatar;
-
-      // If the current account ID is already occupied by an earlier tab/player, assign distinct profile
-      if (occupiedIds.has(assignedId)) {
-        const community = getRegisteredCommunityPlayers();
-        const nextAvailable = community.find(c => !occupiedIds.has(c.phone) && !occupiedIds.has(c.id));
-        if (nextAvailable) {
-          assignedId = nextAvailable.phone || nextAvailable.id;
-          assignedName = nextAvailable.nickname;
-          assignedAvatar = nextAvailable.avatar;
-        } else {
-          const seatNum = existing.seats.length + 1;
-          assignedId = `player_${seatNum}_${tabSessionId.slice(-4)}`;
-          assignedName = `牌友${seatNum}`;
-          assignedAvatar = '🦁';
-        }
-      }
-
       const newSeatIndex = existing.seats.length;
       const newPlayer: RealtimeSeatPlayer = {
-        id: assignedId,
+        id: currentUser.id,
         tabSessionId,
-        name: `${assignedName.replace(/\(\d+号位\)/g, '').trim()} (${newSeatIndex + 1}号位)`,
-        avatar: assignedAvatar,
+        name: `${currentUser.name.replace(/\(\d+号位\)/g, '').trim()} (${newSeatIndex + 1}号位)`,
+        avatar: currentUser.avatar,
         isAi: false,
         score: 0
       };
-
       existing.seats.push(newPlayer);
-      existing.lastAction = {
-        type: 'join',
-        playerId: assignedId,
-        text: `玩家【${assignedName}】入座第 ${newSeatIndex + 1} 席 (绿色 🟢)！`,
-        timestamp: Date.now()
-      };
-      existing.lastUpdated = Date.now();
-
-      saveRealtimeTable(existing);
+      saveRealtimeTable(existing, roomId);
       broadcastEvent({ type: 'PLAYER_JOIN', player: newPlayer, state: existing });
       return {
         table: existing,
         isNewTable: false,
         seatIndex: newSeatIndex,
-        assignedUser: { id: assignedId, name: assignedName, avatar: assignedAvatar }
+        assignedUser: { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar }
       };
     }
   }
 
-  // 2. Otherwise create a clean brand new table with currentUser as Seat 1 and Dealer
+  // Create brand new table
   const firstPlayer: RealtimeSeatPlayer = {
     id: currentUser.id,
     tabSessionId,
@@ -282,7 +446,8 @@ export function joinOrCreateRealtimeTable(currentUser: {
   };
 
   const newTable: RealtimeTableState = {
-    tableId: `table_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    tableId: `table_${roomId}_${Date.now()}`,
+    roomId,
     round: 1,
     dealerIndex: 0,
     dealerId: currentUser.id,
@@ -294,13 +459,13 @@ export function joinOrCreateRealtimeTable(currentUser: {
     lastAction: {
       type: 'join',
       playerId: currentUser.id,
-      text: `玩家【${currentUser.name}】进入实时场锁定 1号位 (庄家)，等待其他玩家加入！`,
+      text: `玩家【${currentUser.name}】进入房间 ${roomId} 入座 1号位 (庄家)！`,
       timestamp: Date.now()
     },
     lastUpdated: Date.now()
   };
 
-  saveRealtimeTable(newTable);
+  saveRealtimeTable(newTable, roomId);
   broadcastEvent({ type: 'SYNC_STATE', state: newTable });
   return {
     table: newTable,
@@ -323,25 +488,27 @@ export function leaveRealtimeTable(identifier: string): RealtimeTableState | nul
 
   if (current.seats.length === 0) {
     clearRealtimeTable();
-    return null;
+  } else {
+    if (current.dealerIndex >= current.seats.length || current.dealerId === leavingPlayer.id) {
+      current.dealerIndex = 0;
+      current.dealerId = current.seats[0]?.id || '';
+    }
+    current.lastAction = {
+      type: 'leave',
+      playerId: leavingPlayer.id,
+      text: `玩家【${leavingPlayer.name}】已离开牌桌`,
+      timestamp: Date.now()
+    };
+    saveRealtimeTable(current);
+    broadcastEvent({ type: 'PLAYER_LEAVE', playerId: leavingPlayer.id, state: current });
   }
 
-  // If the leaving player was the dealer, rotate to seat 0
-  if (current.dealerIndex >= current.seats.length || current.dealerId === leavingPlayer.id) {
-    current.dealerIndex = 0;
-    current.dealerId = current.seats[0]?.id || '';
-  }
+  fetch('/api/table/leave', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ roomId: currentRoomId, playerId: leavingPlayer.id })
+  }).catch(() => {});
 
-  current.lastAction = {
-    type: 'leave',
-    playerId: leavingPlayer.id,
-    text: `玩家【${leavingPlayer.name}】已离开牌桌`,
-    timestamp: Date.now()
-  };
-  current.lastUpdated = Date.now();
-
-  saveRealtimeTable(current);
-  broadcastEvent({ type: 'PLAYER_LEAVE', playerId: leavingPlayer.id, state: current });
   return current;
 }
 
@@ -351,25 +518,19 @@ export function broadcastEvent(event: RealtimeTableEvent): void {
   if (ch) {
     try {
       ch.postMessage(event);
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
+  // Also forward to local WS listeners
+  wsSubscribers.forEach(cb => cb(event));
 }
 
-// Dealer actions (strictly validated by dealerId)
+// Dealer actions
 export function broadcastDealerShuffle(
   shuffleCount: number,
   dealerId: string
 ): boolean {
   const current = getSavedRealtimeTable();
   if (!current) return false;
-
-  const expectedDealer = current.seats[current.dealerIndex];
-  if (expectedDealer && expectedDealer.id !== dealerId && current.dealerId !== dealerId) {
-    console.warn('[RealtimeTable] Non-dealer attempted shuffle:', dealerId);
-    return false;
-  }
 
   current.shuffleCount = shuffleCount;
   current.status = 'shuffling';
@@ -382,6 +543,16 @@ export function broadcastDealerShuffle(
 
   saveRealtimeTable(current);
   broadcastEvent({ type: 'DEALER_SHUFFLE', shuffleCount, timestamp: Date.now() });
+
+  fetch('/api/table/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      roomId: currentRoomId,
+      action: { type: 'DEALER_SHUFFLE', shuffleCount, dealerId }
+    })
+  }).catch(() => {});
+
   return true;
 }
 
@@ -392,12 +563,6 @@ export function broadcastDealerCut(
 ): boolean {
   const current = getSavedRealtimeTable();
   if (!current) return false;
-
-  const expectedDealer = current.seats[current.dealerIndex];
-  if (expectedDealer && expectedDealer.id !== dealerId && current.dealerId !== dealerId) {
-    console.warn('[RealtimeTable] Non-dealer attempted cut:', dealerId);
-    return false;
-  }
 
   current.cutSliderPos = cutSliderPos;
   current.cutCard = cutCard;
@@ -411,6 +576,16 @@ export function broadcastDealerCut(
 
   saveRealtimeTable(current);
   broadcastEvent({ type: 'DEALER_CUT', cutSliderPos, cutCard, timestamp: Date.now() });
+
+  fetch('/api/table/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      roomId: currentRoomId,
+      action: { type: 'DEALER_CUT', cutSliderPos, cutCard, dealerId }
+    })
+  }).catch(() => {});
+
   return true;
 }
 
@@ -421,12 +596,6 @@ export function broadcastDealerDeal(
 ): boolean {
   const current = getSavedRealtimeTable();
   if (!current) return false;
-
-  const expectedDealer = current.seats[current.dealerIndex];
-  if (expectedDealer && expectedDealer.id !== dealerId && current.dealerId !== dealerId) {
-    console.warn('[RealtimeTable] Non-dealer attempted deal:', dealerId);
-    return false;
-  }
 
   current.dealtHands = dealtHands;
   current.dealerIndex = dealerIndex;
@@ -445,6 +614,16 @@ export function broadcastDealerDeal(
     dealerIndex,
     timestamp: Date.now()
   });
+
+  fetch('/api/table/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      roomId: currentRoomId,
+      action: { type: 'DEALER_DEAL', dealtHands, dealerIndex, dealerId }
+    })
+  }).catch(() => {});
+
   return true;
 }
 
@@ -481,15 +660,94 @@ export function advanceToNextRealtimeRound(): RealtimeTableState | null {
     state: current
   });
 
+  fetch('/api/table/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      roomId: currentRoomId,
+      action: {
+        type: 'NEXT_ROUND',
+        round: nextRound,
+        dealerIndex: nextDealerIndex,
+        dealerId: current.dealerId
+      }
+    })
+  }).catch(() => {});
+
   return current;
 }
 
-// Subscribe to table events and storage updates
+// Claim dealer role
+export function claimDealerRole(userId: string): boolean {
+  const current = getSavedRealtimeTable();
+  if (!current || !current.seats) return false;
+  const idx = current.seats.findIndex(s => s.id === userId);
+  if (idx === -1) return false;
+
+  current.dealerIndex = idx;
+  current.dealerId = userId;
+  current.lastAction = {
+    type: 'rotate_dealer',
+    playerId: userId,
+    text: `玩家【${current.seats[idx].name}】已成为新庄家！`,
+    timestamp: Date.now()
+  };
+
+  saveRealtimeTable(current);
+  broadcastEvent({ type: 'SYNC_STATE', state: current });
+
+  fetch('/api/table/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      roomId: currentRoomId,
+      action: { type: 'CLAIM_DEALER', playerId: userId }
+    })
+  }).catch(() => {});
+
+  return true;
+}
+
+// Rotate dealer role
+export function rotateRealtimeDealer(newIndex: number): boolean {
+  const current = getSavedRealtimeTable();
+  if (!current || !current.seats || current.seats.length === 0) return false;
+  const targetIndex = newIndex % current.seats.length;
+  const newDealer = current.seats[targetIndex];
+  if (!newDealer) return false;
+
+  current.dealerIndex = targetIndex;
+  current.dealerId = newDealer.id;
+  current.lastAction = {
+    type: 'rotate_dealer',
+    playerId: newDealer.id,
+    text: `庄家轮转至【${newDealer.name}】！`,
+    timestamp: Date.now()
+  };
+
+  saveRealtimeTable(current);
+  broadcastEvent({ type: 'SYNC_STATE', state: current });
+
+  fetch('/api/table/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      roomId: currentRoomId,
+      action: { type: 'ROTATE_DEALER', newDealerIndex: targetIndex, newDealerId: newDealer.id }
+    })
+  }).catch(() => {});
+
+  return true;
+}
+
+// Subscribe to table events (WebSocket push + BroadcastChannel + HTTP Polling fallback)
 export function subscribeRealtimeTable(
   onEvent: (event: RealtimeTableEvent) => void
 ): () => void {
-  const ch = getChannel();
+  ensureTableWsConnected();
+  wsSubscribers.add(onEvent);
 
+  const ch = getChannel();
   const handleChannelMessage = (e: MessageEvent) => {
     if (e.data && e.data.type) {
       onEvent(e.data as RealtimeTableEvent);
@@ -497,13 +755,14 @@ export function subscribeRealtimeTable(
   };
 
   const handleStorageEvent = (e: StorageEvent) => {
-    if (e.key === TABLE_STORAGE_KEY && e.newValue) {
+    if (e.key === TABLE_STORAGE_PREFIX + currentRoomId && e.newValue) {
       try {
         const state: RealtimeTableState = JSON.parse(e.newValue);
+        if (Array.isArray(state.seats)) {
+          state.seats = state.seats.filter(s => !s.isAi);
+        }
         onEvent({ type: 'SYNC_STATE', state });
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
   };
 
@@ -514,7 +773,31 @@ export function subscribeRealtimeTable(
     window.addEventListener('storage', handleStorageEvent);
   }
 
+  // Active HTTP polling every 2.5s for seamless multi-device cross-browser state synchronization
+  let lastSeenUpdated = 0;
+  const pollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/table/state?roomId=${encodeURIComponent(currentRoomId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.table) {
+          const remoteTable: RealtimeTableState = data.table;
+          if (Array.isArray(remoteTable.seats)) {
+            remoteTable.seats = remoteTable.seats.filter(s => !s.isAi);
+          }
+          if (remoteTable.lastUpdated !== lastSeenUpdated) {
+            lastSeenUpdated = remoteTable.lastUpdated;
+            saveRealtimeTable(remoteTable, currentRoomId);
+            onEvent({ type: 'SYNC_STATE', state: remoteTable });
+          }
+        }
+      }
+    } catch {}
+  }, 2500);
+
   return () => {
+    wsSubscribers.delete(onEvent);
+    clearInterval(pollInterval);
     if (ch) {
       ch.removeEventListener('message', handleChannelMessage);
     }
@@ -523,4 +806,3 @@ export function subscribeRealtimeTable(
     }
   };
 }
-

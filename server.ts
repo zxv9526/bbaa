@@ -49,12 +49,68 @@ interface SignalRecord {
   timestamp: number;
 }
 
+export interface ServerSeatPlayer {
+  id: string;
+  tabSessionId?: string;
+  name: string;
+  avatar: string;
+  isAi: boolean;
+  score: number;
+  lastActive: number;
+}
+
+export interface ServerTableState {
+  tableId: string;
+  roomId: string;
+  roomName: string;
+  round: number;
+  dealerIndex: number;
+  dealerId: string;
+  status: 'waiting' | 'shuffling' | 'cutting' | 'dealing' | 'arranging' | 'revealing';
+  seats: ServerSeatPlayer[];
+  shuffleCount: number;
+  cutSliderPos: number;
+  cutCard: any;
+  dealtHands?: { [playerId: string]: any[] };
+  lastAction?: {
+    type: string;
+    playerId: string;
+    text: string;
+    timestamp: number;
+  };
+  lastUpdated: number;
+}
+
 const voiceFramesBuffer: VoiceFrameRecord[] = [];
 const chatMessagesBuffer: ChatMessageRecord[] = [];
 const signalsBuffer: SignalRecord[] = [];
 const roomPeersMap = new Map<string, Set<string>>(); // roomId -> Set of userIds
+const tablesMap = new Map<string, ServerTableState>(); // roomId -> ServerTableState
 
-// Cleanup old frames & signals periodically
+function getOrCreateTable(rawRoomId: string, customName?: string): ServerTableState {
+  const roomId = String(rawRoomId || "888888").trim();
+  let table = tablesMap.get(roomId);
+  if (!table) {
+    table = {
+      tableId: "tbl_" + roomId + "_" + Date.now().toString(36),
+      roomId,
+      roomName: customName || (roomId === "888888" ? "竞技大厅 888888" : `专属房间 ${roomId}`),
+      round: 1,
+      dealerIndex: 0,
+      dealerId: "",
+      status: "waiting",
+      seats: [],
+      shuffleCount: 0,
+      cutSliderPos: 50,
+      cutCard: null,
+      lastUpdated: Date.now()
+    };
+    tablesMap.set(roomId, table);
+  }
+  return table;
+}
+
+// Cleanup old frames, signals, and stale tables periodically
 setInterval(() => {
   const now = Date.now();
   while (voiceFramesBuffer.length > 0 && now - voiceFramesBuffer[0].timestamp > 60000) {
@@ -67,6 +123,13 @@ setInterval(() => {
   while (chatMessagesBuffer.length > 300 || (chatMessagesBuffer.length > 0 && now - chatMessagesBuffer[0].timestamp > 2 * 3600 * 1000)) {
     chatMessagesBuffer.shift();
   }
+
+  // Cleanup idle private tables (inactive for > 1 hour and no players)
+  tablesMap.forEach((table, rid) => {
+    if (rid !== "888888" && table.seats.length === 0 && now - table.lastUpdated > 3600 * 1000) {
+      tablesMap.delete(rid);
+    }
+  });
 }, 10000);
 
 // -------------------------------------------------------------
@@ -94,6 +157,291 @@ app.get("/api/stats", (req, res) => {
 
 app.post("/api/history", (req, res) => {
   res.json({ ok: true, saved: true });
+});
+
+// -------------------------------------------------------------
+// Real-time Table & Room Management Endpoints (Server Authoritative)
+// -------------------------------------------------------------
+
+// List active rooms
+app.get("/api/table/rooms", (req, res) => {
+  getOrCreateTable("888888"); // Guarantee default arena table exists
+  const rooms = Array.from(tablesMap.values()).map(t => ({
+    roomId: t.roomId,
+    roomName: t.roomName,
+    playerCount: t.seats.length,
+    maxPlayers: 8,
+    round: t.round,
+    status: t.status,
+    dealerName: t.seats[t.dealerIndex]?.name || "待入座",
+    lastUpdated: t.lastUpdated
+  }));
+  res.json({ ok: true, rooms });
+});
+
+// Get table state
+app.get("/api/table/state", (req, res) => {
+  const roomId = String(req.query.roomId || "888888").trim();
+  const table = getOrCreateTable(roomId);
+  res.json({ ok: true, table });
+});
+
+// Join table
+app.post("/api/table/join", (req, res) => {
+  try {
+    const roomId = String(req.body.roomId || "888888").trim();
+    const player = req.body.player;
+    if (!player || !player.id) {
+      res.status(400).json({ ok: false, error: "Missing player payload" });
+      return;
+    }
+
+    const table = getOrCreateTable(roomId, req.body.roomName);
+
+    // 1. Check if this player is already seated (by ID or tabSessionId)
+    const existingIndex = table.seats.findIndex(
+      s => s.id === player.id || (player.tabSessionId && s.tabSessionId === player.tabSessionId)
+    );
+
+    if (existingIndex !== -1) {
+      table.seats[existingIndex].name = player.name || table.seats[existingIndex].name;
+      table.seats[existingIndex].avatar = player.avatar || table.seats[existingIndex].avatar;
+      table.seats[existingIndex].lastActive = Date.now();
+      table.lastUpdated = Date.now();
+
+      broadcastToRoom(roomId, {
+        type: "TABLE_SYNC",
+        table
+      });
+
+      res.json({ ok: true, table, seatIndex: existingIndex });
+      return;
+    }
+
+    // 2. Room capacity check (strict max 8 players, purely human)
+    if (table.seats.length >= 8) {
+      res.json({ ok: false, error: "牌桌已满员 (8/8)", table, isFull: true });
+      return;
+    }
+
+    // 3. New real human player enters
+    const seatIndex = table.seats.length;
+    const newSeat: ServerSeatPlayer = {
+      id: String(player.id),
+      tabSessionId: player.tabSessionId,
+      name: player.name || `玩家${seatIndex + 1}`,
+      avatar: player.avatar || "😎",
+      isAi: false,
+      score: 0,
+      lastActive: Date.now()
+    };
+
+    table.seats.push(newSeat);
+
+    // If first player to enter, assign as dealer
+    if (table.seats.length === 1) {
+      table.dealerIndex = 0;
+      table.dealerId = newSeat.id;
+    }
+
+    table.lastAction = {
+      type: "join",
+      playerId: newSeat.id,
+      text: `玩家【${newSeat.name}】入座第 ${seatIndex + 1} 席！`,
+      timestamp: Date.now()
+    };
+    table.lastUpdated = Date.now();
+
+    // Broadcast updated state to all connected room players
+    broadcastToRoom(roomId, {
+      type: "TABLE_SYNC",
+      table
+    });
+
+    broadcastToRoom(roomId, {
+      type: "PLAYER_JOIN",
+      player: newSeat,
+      table
+    });
+
+    res.json({ ok: true, table, seatIndex });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || "Internal error" });
+  }
+});
+
+// Leave table
+app.post("/api/table/leave", (req, res) => {
+  try {
+    const roomId = String(req.body.roomId || "888888").trim();
+    const playerId = String(req.body.playerId || "");
+    const table = getOrCreateTable(roomId);
+
+    const idx = table.seats.findIndex(s => s.id === playerId);
+    if (idx !== -1) {
+      const leaving = table.seats[idx];
+      table.seats.splice(idx, 1);
+
+      if (table.seats.length === 0) {
+        table.status = "waiting";
+        table.dealerIndex = 0;
+        table.dealerId = "";
+        table.shuffleCount = 0;
+        table.cutCard = null;
+        table.dealtHands = undefined;
+      } else if (table.dealerIndex >= table.seats.length || table.dealerId === leaving.id) {
+        table.dealerIndex = 0;
+        table.dealerId = table.seats[0]?.id || "";
+      }
+
+      table.lastAction = {
+        type: "leave",
+        playerId,
+        text: `玩家【${leaving.name}】已离开牌桌`,
+        timestamp: Date.now()
+      };
+      table.lastUpdated = Date.now();
+
+      broadcastToRoom(roomId, {
+        type: "TABLE_SYNC",
+        table
+      });
+      broadcastToRoom(roomId, {
+        type: "PLAYER_LEAVE",
+        playerId,
+        table
+      });
+    }
+
+    res.json({ ok: true, table });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || "Internal error" });
+  }
+});
+
+// Real-time table actions (shuffle, cut, deal, next_round, claim_dealer, rotate_dealer)
+app.post("/api/table/action", (req, res) => {
+  try {
+    const roomId = String(req.body.roomId || "888888").trim();
+    const action = req.body.action;
+    if (!action || !action.type) {
+      res.status(400).json({ ok: false, error: "Missing action payload" });
+      return;
+    }
+
+    const table = getOrCreateTable(roomId);
+
+    switch (action.type) {
+      case "DEALER_SHUFFLE": {
+        table.shuffleCount = Number(action.shuffleCount || 0);
+        table.status = "shuffling";
+        table.lastAction = {
+          type: "shuffle",
+          playerId: action.dealerId || table.dealerId,
+          text: `庄家正在洗牌 (已洗 ${table.shuffleCount} 次)`,
+          timestamp: Date.now()
+        };
+        break;
+      }
+      case "DEALER_CUT": {
+        table.cutSliderPos = Number(action.cutSliderPos || 50);
+        table.cutCard = action.cutCard || null;
+        table.status = "cutting";
+        table.lastAction = {
+          type: "cut",
+          playerId: action.dealerId || table.dealerId,
+          text: `庄家完成切牌 (切点: ${table.cutSliderPos}%)`,
+          timestamp: Date.now()
+        };
+        break;
+      }
+      case "DEALER_DEAL": {
+        table.dealtHands = action.dealtHands;
+        table.dealerIndex = typeof action.dealerIndex === "number" ? action.dealerIndex : table.dealerIndex;
+        table.status = "arranging";
+        table.lastAction = {
+          type: "deal",
+          playerId: action.dealerId || table.dealerId,
+          text: `庄家已发牌！全桌开始理牌`,
+          timestamp: Date.now()
+        };
+        break;
+      }
+      case "CLAIM_DEALER": {
+        const newIdx = table.seats.findIndex(s => s.id === action.playerId);
+        if (newIdx !== -1) {
+          table.dealerIndex = newIdx;
+          table.dealerId = action.playerId;
+          table.lastAction = {
+            type: "rotate_dealer",
+            playerId: action.playerId,
+            text: `玩家【${table.seats[newIdx].name}】已成为新庄家！`,
+            timestamp: Date.now()
+          };
+        }
+        break;
+      }
+      case "ROTATE_DEALER": {
+        if (table.seats.length > 0) {
+          const nextIdx = (table.dealerIndex + 1) % table.seats.length;
+          table.dealerIndex = nextIdx;
+          table.dealerId = table.seats[nextIdx].id;
+          table.lastAction = {
+            type: "rotate_dealer",
+            playerId: table.dealerId,
+            text: `庄家顺延至【${table.seats[nextIdx].name}】！`,
+            timestamp: Date.now()
+          };
+        }
+        break;
+      }
+      case "NEXT_ROUND": {
+        table.round = (table.round || 1) + 1;
+        if (table.seats.length > 0) {
+          table.dealerIndex = (table.dealerIndex + 1) % table.seats.length;
+          table.dealerId = table.seats[table.dealerIndex].id;
+        }
+        table.shuffleCount = 0;
+        table.cutCard = null;
+        table.dealtHands = undefined;
+        table.status = "waiting";
+        table.lastAction = {
+          type: "next_round",
+          playerId: table.dealerId,
+          text: `进入第 ${table.round} 局，庄家为【${table.seats[table.dealerIndex]?.name || '庄家'}】！`,
+          timestamp: Date.now()
+        };
+        break;
+      }
+      case "RESET_TABLE": {
+        table.round = 1;
+        table.dealerIndex = 0;
+        table.shuffleCount = 0;
+        table.cutCard = null;
+        table.dealtHands = undefined;
+        table.status = "waiting";
+        break;
+      }
+    }
+
+    table.lastUpdated = Date.now();
+
+    // Broadcast both action and updated table state to all clients in room
+    broadcastToRoom(roomId, {
+      type: "TABLE_ACTION",
+      action,
+      table
+    });
+
+    broadcastToRoom(roomId, {
+      type: "TABLE_SYNC",
+      table
+    });
+
+    res.json({ ok: true, table });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || "Internal error" });
+  }
 });
 
 // 1. Tier 3 HTTP Voice Frame Send
@@ -406,6 +754,12 @@ async function startServer() {
               peers: peersInRoom
             }));
 
+            // Send current server-authoritative table state immediately
+            ws.send(JSON.stringify({
+              type: "TABLE_SYNC",
+              table: getOrCreateTable(currentClient.roomId)
+            }));
+
             // Notify other peers in room about new member
             broadcastToRoom(currentClient.roomId, {
               type: "PEER_JOINED",
@@ -546,6 +900,48 @@ async function startServer() {
               volume: Number(volume || 0),
               activeTier: activeTier || "websocket"
             }, currentClient.userId);
+            break;
+          }
+
+          // Real-time table state subscription / request
+          case "TABLE_SUBSCRIBE": {
+            const tableRoomId = msg.roomId || (currentClient ? currentClient.roomId : "888888");
+            ws.send(JSON.stringify({
+              type: "TABLE_SYNC",
+              table: getOrCreateTable(tableRoomId)
+            }));
+            break;
+          }
+
+          // Real-time table event/action pass-through
+          case "TABLE_ACTION": {
+            const tableRoomId = msg.roomId || (currentClient ? currentClient.roomId : "888888");
+            const action = msg.action;
+            if (action && action.type) {
+              const table = getOrCreateTable(tableRoomId);
+              if (action.type === "DEALER_SHUFFLE") {
+                table.shuffleCount = Number(action.shuffleCount || 0);
+                table.status = "shuffling";
+              } else if (action.type === "DEALER_CUT") {
+                table.cutSliderPos = Number(action.cutSliderPos || 50);
+                table.cutCard = action.cutCard || null;
+                table.status = "cutting";
+              } else if (action.type === "DEALER_DEAL") {
+                table.dealtHands = action.dealtHands;
+                table.dealerIndex = typeof action.dealerIndex === "number" ? action.dealerIndex : table.dealerIndex;
+                table.status = "arranging";
+              }
+              table.lastUpdated = Date.now();
+              broadcastToRoom(tableRoomId, {
+                type: "TABLE_ACTION",
+                action,
+                table
+              });
+              broadcastToRoom(tableRoomId, {
+                type: "TABLE_SYNC",
+                table
+              });
+            }
             break;
           }
 

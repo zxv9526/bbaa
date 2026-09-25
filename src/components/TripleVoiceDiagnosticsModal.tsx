@@ -400,7 +400,7 @@ export function TripleVoiceDiagnosticsModal({
 
             {peers.length === 0 ? (
               <div className="py-4 text-center text-xs text-slate-500">
-                牌桌暂无其他在座玩家。点击页面顶部的【新标签页联机对战】加入第二位玩家即可自动建立三重语音链路！
+                牌桌暂无其他在座玩家。点击页面顶部【邀请牌友】发送链接或房间号邀请好友入座即可建立三重语音链路！
               </div>
             ) : (
               <div className="space-y-2">

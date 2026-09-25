@@ -129,7 +129,11 @@ import {
   clearRealtimeChatMessages,
   fetchRemoteChatHistory,
   RealtimeTableEvent,
-  getTabSessionId
+  getTabSessionId,
+  getCurrentRoomId,
+  setCurrentRoomId,
+  rotateRealtimeDealer,
+  claimDealerRole
 } from './lib/realtimeTableManager';
 import {
   saveActiveMatchSession,
@@ -402,6 +406,24 @@ export default function App() {
     });
   }, []);
 
+  // ⚡ URL 参数检测：如果打开链接带有 ?mode=realtime&roomId=...，自动直接进入该房间
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const params = new URLSearchParams(window.location.search);
+      const urlMode = params.get('mode');
+      const urlRoom = params.get('roomId');
+      if (urlRoom && urlRoom.trim()) {
+        setCurrentRoomId(urlRoom.trim());
+      }
+      if (urlMode === 'realtime') {
+        setTimeout(() => {
+          startRealtimeMatch(urlRoom ? urlRoom.trim() : undefined);
+        }, 300);
+      }
+    } catch {}
+  }, []);
+
   // ⚡ 订阅实时多人桌跨页面/跨账号事件同步 (Cross-Tab / Multi-Player Live Arena Table Sync)
   useEffect(() => {
     const unsubscribe = subscribeRealtimeTable((event: RealtimeTableEvent) => {
@@ -595,11 +617,16 @@ export default function App() {
   };
 
   // ⚡ 实时对战场入口：进入轮流发牌与洗牌切牌舞台
-  const startRealtimeMatch = () => {
+  const startRealtimeMatch = (targetRoomId?: string) => {
     if (currentAccount.points <= 0) {
       setShowNoPointsModal(true);
       return;
     }
+
+    if (targetRoomId) {
+      setCurrentRoomId(targetRoomId);
+    }
+    const effectiveRoomId = targetRoomId || getCurrentRoomId();
 
     const myId = currentAccount.phone || currentAccount.id || 'player_user';
     const myName = currentAccount.nickname || playerName || '我';
@@ -627,7 +654,7 @@ export default function App() {
       name: myName,
       avatar: myAvatar,
       tabSessionId
-    });
+    }, effectiveRoomId);
 
     setRealtimeUserId(assignedUser.id);
     setRealtimePlayers(table.seats);
@@ -637,7 +664,7 @@ export default function App() {
     // 加载并同步实时对战场聊天对讲历史
     const savedChat = getRealtimeChatMessages();
     setMessages(savedChat);
-    fetchRemoteChatHistory().then(remoteChat => {
+    fetchRemoteChatHistory(effectiveRoomId).then(remoteChat => {
       if (remoteChat && remoteChat.length > 0) {
         setMessages(remoteChat);
       }
@@ -647,7 +674,7 @@ export default function App() {
     // 🚀 初始化三重语音架构引擎 (WebRTC P2P + WebSocket高速广播 + HTTP轮询保底)
     const mySeat = table.seats.findIndex(p => p.id === assignedUser.id);
     TripleVoiceEngine.getInstance().init({
-      roomId: 'realtime_arena_room',
+      roomId: `realtime_room_${effectiveRoomId}`,
       userId: assignedUser.id,
       name: assignedUser.name,
       avatar: assignedUser.avatar,
@@ -2100,6 +2127,11 @@ export default function App() {
             dealerIndex={realtimeDealerIndex}
             players={realtimePlayers}
             currentUserId={(mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')}
+            roomId={getCurrentRoomId()}
+            onSwitchRoom={(newRoomId) => {
+              setCurrentRoomId(newRoomId);
+              startRealtimeMatch(newRoomId);
+            }}
             onStartDeal={handleRealtimeDealComplete}
             onBackToMenu={() => {
               const tabSessionId = getTabSessionId();
@@ -2131,13 +2163,7 @@ export default function App() {
             }}
             onRotateDealer={(newDIdx) => {
               setRealtimeDealerIndex(newDIdx);
-              const currentTable = getSavedRealtimeTable();
-              if (currentTable) {
-                currentTable.dealerIndex = newDIdx;
-                currentTable.dealerId = currentTable.seats[newDIdx]?.id || currentTable.dealerId;
-                saveRealtimeTable(currentTable);
-                broadcastEvent({ type: 'SYNC_STATE', state: currentTable });
-              }
+              rotateRealtimeDealer(newDIdx);
             }}
           />
         )}
