@@ -155,14 +155,14 @@ setInterval(() => {
   });
 }, 10000);
 
-// Active Realtime Zombie Cleaner: runs every 1.5s to evict seats with >4000ms inactivity
+// Active Realtime Zombie Cleaner: runs every 1.0s to evict seats with >3000ms inactivity
 setInterval(() => {
   const now = Date.now();
   tablesMap.forEach((table, rid) => {
     if (table.seats.length === 0) return;
     const beforeCount = table.seats.length;
-    // Strict threshold: 4 seconds without ping = zombie eviction
-    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 4000);
+    // Strict threshold: 3 seconds without ping = zombie eviction
+    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 3000);
     if (table.seats.length !== beforeCount) {
       if (table.seats.length === 0) {
         table.status = "waiting";
@@ -182,7 +182,7 @@ setInterval(() => {
       broadcastToRoom(rid, { type: "TABLE_SYNC", table });
     }
   });
-}, 1500);
+}, 1000);
 
 // -------------------------------------------------------------
 // HTTP API Endpoints (Tier 3 HTTP Polling + WebRTC HTTP Signaling)
@@ -243,19 +243,18 @@ app.get("/api/table/state", (req, res) => {
   // Update lastActive for current player if specified
   if (playerId || deviceId || tabSessionId) {
     const s = table.seats.find(s => 
-      (deviceId && s.deviceId === deviceId) ||
       (playerId && s.id === playerId) ||
       (tabSessionId && s.tabSessionId === tabSessionId) ||
-      (playerId && s.id && s.id.split('_')[0] === playerId.split('_')[0])
+      (deviceId && s.deviceId === deviceId)
     );
     if (s) {
       s.lastActive = now;
     }
   }
 
-  // Prune seats inactive for > 6s (Strict heartbeat auto-prune for mobile browsers)
+  // Prune seats inactive for > 3s
   const beforeLen = table.seats.length;
-  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 6000);
+  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 3000);
   if (table.seats.length !== beforeLen) {
     table.lastUpdated = now;
     if (table.seats.length === 0) {
@@ -291,15 +290,13 @@ app.post("/api/table/join", (req, res) => {
     const table = getOrCreateTable(roomId, req.body.roomName);
     const now = Date.now();
 
-    // 1. Strict Auto-prune stale seats (older than 4s without active ping)
-    table.seats = table.seats.filter(s => (now - (s.lastActive || 0)) < 4000);
+    // 1. Strict Auto-prune stale seats (older than 3s without active ping)
+    table.seats = table.seats.filter(s => (now - (s.lastActive || 0)) < 3000);
 
-    // 2. Check if this player is already seated (reconnect to existing seat by deviceId, id, tabSessionId or account prefix)
+    // 2. Check if this exact player is already seated (reconnect by exact ID or tabSessionId)
     const existingIndex = table.seats.findIndex(s =>
-      (player.deviceId && s.deviceId === player.deviceId) ||
       s.id === player.id ||
-      (player.tabSessionId && s.tabSessionId === player.tabSessionId) ||
-      (player.id && s.id && s.id.split('_')[0] === player.id.split('_')[0])
+      (player.tabSessionId && s.tabSessionId === player.tabSessionId)
     );
 
     if (existingIndex !== -1) {
@@ -311,14 +308,10 @@ app.post("/api/table/join", (req, res) => {
       table.seats[existingIndex].avatar = player.avatar || table.seats[existingIndex].avatar;
       table.seats[existingIndex].lastActive = now;
 
-      // Cleanly remove any other duplicate residual seats for this player if any exist
+      // Cleanly remove any other duplicate residual seats for this player
       table.seats = table.seats.filter((s, idx) => {
         if (idx === existingIndex) return true;
-        const isDup = (player.deviceId && s.deviceId === player.deviceId) ||
-          s.id === player.id ||
-          (player.tabSessionId && s.tabSessionId === player.tabSessionId) ||
-          (player.id && s.id && s.id.split('_')[0] === player.id.split('_')[0]);
-        return !isDup;
+        return s.id !== player.id && (!player.tabSessionId || s.tabSessionId !== player.tabSessionId);
       });
 
       // Recalculate formatted seat names & indices
@@ -339,19 +332,10 @@ app.post("/api/table/join", (req, res) => {
       return;
     }
 
-    // 3. Smart Eviction if full (8/8): Remove oldest seat with >4s inactivity to make room for active human
+    // 3. Force eviction if full (>= 8): Remove the oldest least-active seat to guarantee active human entry
     if (table.seats.length >= 8) {
-      // Find oldest seat inactive for > 4000ms
-      const staleIndex = table.seats.findIndex(s => now - (s.lastActive || 0) > 4000);
-      if (staleIndex !== -1) {
-        table.seats.splice(staleIndex, 1);
-      }
-    }
-
-    // Room capacity check after smart eviction
-    if (table.seats.length >= 8) {
-      res.json({ ok: false, error: "牌桌已满员 (8/8)，可使用「一键重置/清理僵尸」释放座位", table, isFull: true });
-      return;
+      table.seats.sort((a, b) => (a.lastActive || 0) - (b.lastActive || 0));
+      table.seats.shift();
     }
 
     // 4. New real human player enters next available seat
@@ -373,7 +357,11 @@ app.post("/api/table/join", (req, res) => {
 
     table.seats.push(newSeat);
 
-    // If first player to enter, assign as dealer
+    // Format seat names
+    table.seats.forEach((s, i) => {
+      s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+    });
+
     if (table.seats.length === 1) {
       table.dealerIndex = 0;
       table.dealerId = newSeat.id;
@@ -387,15 +375,8 @@ app.post("/api/table/join", (req, res) => {
     };
     table.lastUpdated = now;
 
-    // Broadcast updated state to all connected room players
     broadcastToRoom(roomId, {
       type: "TABLE_SYNC",
-      table
-    });
-
-    broadcastToRoom(roomId, {
-      type: "PLAYER_JOIN",
-      player: newSeat,
       table
     });
 

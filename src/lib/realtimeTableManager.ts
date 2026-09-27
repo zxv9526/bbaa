@@ -357,13 +357,13 @@ export function clearAllRealtimeCaches(): void {
   } catch {}
 }
 
-// Read table from localStorage (Strict 3-second validity for mobile browsers)
+// Read table from localStorage (Strict 1.5-second validity for mobile browsers)
 export function getSavedRealtimeTable(roomId = currentRoomId): RealtimeTableState | null {
   try {
     const raw = localStorage.getItem(TABLE_STORAGE_PREFIX + roomId);
     if (!raw) return null;
     const parsed: RealtimeTableState = JSON.parse(raw);
-    if (Date.now() - (parsed.lastUpdated || 0) > 3000) {
+    if (Date.now() - (parsed.lastUpdated || 0) > 1500) {
       localStorage.removeItem(TABLE_STORAGE_PREFIX + roomId);
       return null;
     }

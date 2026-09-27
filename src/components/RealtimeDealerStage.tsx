@@ -19,7 +19,7 @@ import {
 import { TableTacticalChatBar } from './TableTacticalChatBar';
 import { ChatMessage } from '../types';
 import { CardView } from './CardView';
-import { claimDealerRole, getTabSessionId, cleanStaleServerSeats, resetServerTable, leaveRealtimeTable } from '../lib/realtimeTableManager';
+import { claimDealerRole, getTabSessionId, getOrCreateDeviceId, cleanStaleServerSeats, resetServerTable, leaveRealtimeTable } from '../lib/realtimeTableManager';
 
 export interface RealtimeSeatPlayer {
   id: string;
@@ -122,6 +122,50 @@ export function RealtimeDealerStage({
       return () => clearTimeout(timer);
     }
   }, [latestMessage]);
+
+  // 高频防僵尸心跳 (每 1.2 秒向服务器发送存活凭证，3秒无心跳服务器自动秒杀离线座位)
+  useEffect(() => {
+    const devId = getOrCreateDeviceId();
+    const sendHeartbeat = () => {
+      fetch(`/api/table/state?roomId=${encodeURIComponent(roomId)}&playerId=${encodeURIComponent(currentUserId)}&deviceId=${encodeURIComponent(devId)}&tabSessionId=${encodeURIComponent(tabId)}&_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' }
+      }).catch(() => {});
+    };
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 1200);
+    return () => clearInterval(interval);
+  }, [roomId, currentUserId, tabId]);
+
+  // 手机切后台、锁屏、关闭页面时瞬间发出解绑请求 (sendBeacon 机制)
+  useEffect(() => {
+    const handleUnloadOrHide = () => {
+      if (document.visibilityState === 'hidden') {
+        const payload = JSON.stringify({
+          roomId,
+          playerId: currentUserId,
+          tabSessionId: tabId
+        });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/table/leave', new Blob([payload], { type: 'application/json' }));
+        } else {
+          fetch('/api/table/leave', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+            keepalive: true
+          }).catch(() => {});
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnloadOrHide);
+    document.addEventListener('visibilitychange', handleUnloadOrHide);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnloadOrHide);
+      document.removeEventListener('visibilitychange', handleUnloadOrHide);
+    };
+  }, [roomId, currentUserId, tabId]);
 
   // 退出实时舞台时自动清理并通知服务器离线释放座位
   useEffect(() => {
