@@ -179,10 +179,12 @@ export function CarriageHeaderBar({
           const avatar = isUser ? '😎' : sub ? sub.avatar : playerObj ? playerObj.avatar : '🪑';
           const name = isUser ? '我' : sub ? sub.playerName : playerObj ? playerObj.name : '待入座';
           const effectiveSpeakerId = externalSpeakerId || activeSpeakerId;
-          const isSpeaking = mode === 'realtime' && effectiveSpeakerId && (
-            (isUser && effectiveSpeakerId.includes('player_user')) ||
-            (!isUser && playerObj && playerObj.id === effectiveSpeakerId) ||
-            (!isUser && sub && sub.playerId === effectiveSpeakerId)
+          const isSpeaking = mode === 'realtime' && isOccupied && Boolean(
+            effectiveSpeakerId && (
+              (isUser && (effectiveSpeakerId.includes('player_user') || (playerObj && playerObj.id === effectiveSpeakerId))) ||
+              (playerObj && (playerObj.id === effectiveSpeakerId || (playerObj as any).phone === effectiveSpeakerId)) ||
+              (sub && (sub.playerId === effectiveSpeakerId || (sub as any).phone === effectiveSpeakerId))
+            )
           );
 
           return (
@@ -191,9 +193,9 @@ export function CarriageHeaderBar({
               onClick={() => mode === 'realtime' && isOccupied && onOpenChat()}
               className={`relative flex-1 min-w-[38px] max-w-[90px] flex flex-col items-center justify-center py-0.5 px-1 rounded-lg transition-all border ${mode === 'realtime' && isOccupied ? 'cursor-pointer group' : ''} ${
                 isSpeaking
-                  ? 'bg-emerald-950/90 border-2 border-red-500 shadow-md shadow-red-500/40 ring-2 ring-red-400/80'
+                  ? 'bg-emerald-900/90 border-2 border-emerald-400 text-emerald-200 shadow-[0_0_18px_rgba(16,185,129,0.9)] ring-4 ring-emerald-400/90 animate-pulse font-black'
                   : mode === 'realtime' && isOccupied
-                  ? 'bg-emerald-950/80 border border-emerald-400 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.25)] font-bold'
+                  ? 'bg-emerald-950/80 border border-emerald-400/60 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.25)] font-bold'
                   : isUser
                   ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 font-bold'
                   : sub
@@ -204,12 +206,16 @@ export function CarriageHeaderBar({
               }`}
               title={`${s + 1}号位: ${name}`}
             >
-              {/* Floating WeChat speech bubble over active speaker */}
-              {isSpeaking && (speakerSnippet || isUser) && (
-                <div className="absolute -top-7 z-30 bg-emerald-600 text-white font-black text-[10px] px-2 py-0.5 rounded-full shadow-xl whitespace-nowrap animate-bounce flex items-center gap-1 border border-emerald-300 pointer-events-none">
-                  <span className="text-[10px]">🎙️</span>
-                  <span className="truncate max-w-[85px]">{isUser ? '发言中...' : speakerSnippet}</span>
-                  <span className="text-[9px] font-mono text-emerald-200">)))</span>
+              {/* Floating green speech wave badge over speaking seat */}
+              {isSpeaking && (
+                <div className="absolute -top-7.5 left-1/2 -translate-x-1/2 z-30 bg-emerald-500 text-slate-950 font-black text-[9px] px-1.5 py-0.5 rounded-full shadow-[0_0_12px_rgba(16,185,129,0.9)] whitespace-nowrap animate-bounce flex items-center gap-1 border border-emerald-200 pointer-events-none">
+                  <span className="text-[9px]">🎙️</span>
+                  <span className="truncate max-w-[80px]">{isUser ? '我发言中' : (speakerSnippet || '正在说话')}</span>
+                  <span className="flex items-center gap-0.5">
+                    <span className="w-0.5 h-1.5 bg-slate-950 rounded-full animate-pulse" />
+                    <span className="w-0.5 h-2.5 bg-slate-950 rounded-full animate-pulse" />
+                    <span className="w-0.5 h-1.5 bg-slate-950 rounded-full animate-pulse" />
+                  </span>
                 </div>
               )}
 
@@ -222,7 +228,7 @@ export function CarriageHeaderBar({
               {/* Realtime Seat Number Tag */}
               {mode === 'realtime' && (
                 <span className={`text-[8px] font-black px-1 rounded leading-tight ${
-                  isOccupied ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'
+                  isSpeaking ? 'bg-emerald-400 text-slate-950 font-black' : isOccupied ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'
                 }`}>
                   {s + 1}号
                 </span>
@@ -230,7 +236,7 @@ export function CarriageHeaderBar({
 
               <div className="text-sm sm:text-base leading-none mb-0.5 mt-0.5">{avatar}</div>
               <div className={`text-[10px] truncate max-w-full font-medium ${
-                mode === 'realtime' && isOccupied ? 'text-emerald-200' : ''
+                isSpeaking ? 'text-emerald-300 font-black' : mode === 'realtime' && isOccupied ? 'text-emerald-200' : ''
               }`}>
                 {isUser ? '我' : name}
               </div>

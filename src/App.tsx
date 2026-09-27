@@ -205,13 +205,64 @@ export default function App() {
   const [ttsEnabled, setTtsEnabled] = useState<boolean>(true);
   const [barrageEnabled, setBarrageEnabled] = useState<boolean>(true);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [globalSpeakingUserId, setGlobalSpeakingUserId] = useState<string | null>(null);
+  const speakingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+
+  // 🔊 语音直接自动播放并触发该玩家席位绿色一闪一闪高亮 (免进抽屉 / 免点击)
+  const triggerVoiceAutoPlayAndHighlight = (msg: {
+    senderId: string;
+    senderName?: string;
+    audioUrl?: string;
+    audioDuration?: number;
+    phrase?: string;
+    content?: string;
+  }) => {
+    const durSec = msg.audioDuration || 2.5;
+    const durMs = Math.max(2000, durSec * 1000);
+
+    // 🟢 亮起对应玩家位置框：绿色一闪一闪
+    setGlobalSpeakingUserId(msg.senderId);
+    if (speakingTimerRef.current) {
+      clearTimeout(speakingTimerRef.current);
+    }
+    speakingTimerRef.current = setTimeout(() => {
+      setGlobalSpeakingUserId(null);
+    }, durMs + 500);
+
+    // 🔊 语音直接自动播放 (无需进入消息抽屉点击)
+    if (msg.audioUrl) {
+      try {
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.pause();
+        }
+        const audio = new Audio(msg.audioUrl);
+        audioPlayerRef.current = audio;
+        setPlayingAudioId(msg.senderId);
+        audio.onended = () => {
+          setPlayingAudioId(null);
+          setGlobalSpeakingUserId(null);
+        };
+        audio.onerror = () => {
+          setPlayingAudioId(null);
+        };
+        audio.play().catch(e => {
+          console.warn('Auto voice play note:', e);
+        });
+      } catch (err) {
+        console.warn('Voice play error:', err);
+      }
+    } else if (msg.phrase && ttsEnabled) {
+      speakTextMessage(msg.phrase);
+    }
+  };
 
   const handlePlayBarrageVoice = (msg: ChatMessage) => {
     if (!msg.audioUrl) return;
     if (playingAudioId === msg.id && audioPlayerRef.current) {
       audioPlayerRef.current.pause();
       setPlayingAudioId(null);
+      setGlobalSpeakingUserId(null);
       return;
     }
     if (audioPlayerRef.current) {
@@ -220,11 +271,19 @@ export default function App() {
     const audio = new Audio(msg.audioUrl);
     audioPlayerRef.current = audio;
     setPlayingAudioId(msg.id);
-    audio.onended = () => setPlayingAudioId(null);
-    audio.onerror = () => setPlayingAudioId(null);
+    setGlobalSpeakingUserId(msg.senderId);
+    audio.onended = () => {
+      setPlayingAudioId(null);
+      setGlobalSpeakingUserId(null);
+    };
+    audio.onerror = () => {
+      setPlayingAudioId(null);
+      setGlobalSpeakingUserId(null);
+    };
     audio.play().catch(e => {
       console.warn('Playback error', e);
       setPlayingAudioId(null);
+      setGlobalSpeakingUserId(null);
     });
   };
 
@@ -477,9 +536,8 @@ export default function App() {
           if (!showChatDrawer) {
             setUnreadCount(c => c + 1);
           }
-          if (ttsEnabled && incoming.type !== 'voice') {
-            speakTextMessage(incoming.content);
-          }
+          // 🔊 自动播放语音并点亮该玩家绿框一闪一闪
+          triggerVoiceAutoPlayAndHighlight(incoming);
         }
       }
     });
@@ -501,17 +559,21 @@ export default function App() {
         : (currentAccount.phone || currentAccount.id || 'player_user');
       
       if (voice.senderId !== effectiveUserId) {
-        setUserIsSpeaking(true);
-        setTimeout(() => setUserIsSpeaking(false), Math.max(1600, (voice.duration || 2) * 1000));
         playIncomingRadioBeep();
         
         if (!showChatDrawer) {
           setUnreadCount(c => c + 1);
         }
 
-        if (voice.phrase && ttsEnabled) {
-          speakTextMessage(voice.phrase);
-        }
+        // 🔊 直接自动播放收到的语音并亮起该玩家绿色闪烁框
+        triggerVoiceAutoPlayAndHighlight({
+          senderId: voice.senderId,
+          senderName: voice.senderName,
+          audioUrl: voice.audioUrl,
+          audioDuration: voice.duration,
+          phrase: voice.phrase,
+          content: voice.phrase || `[实时语音 ${voice.duration || 2}秒]`
+        });
 
         // 将对端传输过来的语音包/战术常用语录入当前聊天流
         const incomingMsg: ChatMessage = {
@@ -542,17 +604,14 @@ export default function App() {
         : (currentAccount.phone || currentAccount.id || 'player_user');
 
       if (incomingMsg.senderId !== effectiveUserId) {
-        setUserIsSpeaking(true);
-        setTimeout(() => setUserIsSpeaking(false), 2200);
         playIncomingRadioBeep();
 
         if (!showChatDrawer) {
           setUnreadCount(c => c + 1);
         }
 
-        if (incomingMsg.type === 'quick' && incomingMsg.content && ttsEnabled) {
-          speakTextMessage(incomingMsg.content);
-        }
+        // 🔊 直接自动播放语音并亮起对应玩家绿框
+        triggerVoiceAutoPlayAndHighlight(incomingMsg);
 
         setMessages(prev => {
           if (prev.some(m => m.id === incomingMsg.id)) return prev;
@@ -1114,6 +1173,10 @@ export default function App() {
     };
 
     setMessages((prev) => [...prev, userMsg]);
+    // 🟢 本地玩家发言：立刻点亮自己的席位绿框
+    setGlobalSpeakingUserId(effectiveUserId);
+    setTimeout(() => setGlobalSpeakingUserId(null), Math.max(1800, (audioDuration || 2.5) * 1000));
+
     if (ttsEnabled && (type === 'quick' || type === 'text')) {
       speakTextMessage(content);
     }
@@ -2259,6 +2322,7 @@ export default function App() {
               setRealtimeDealerIndex(newDIdx);
               rotateRealtimeDealer(newDIdx);
             }}
+            activeSpeakerId={globalSpeakingUserId || (userIsSpeaking ? ((mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')) : null)}
           />
         )}
 
@@ -2335,7 +2399,7 @@ export default function App() {
               points={currentAccount.points}
               onOpenChat={() => mode === 'realtime' && setShowChatDrawer(true)}
               latestMessage={messages[messages.length - 1] || null}
-              activeSpeakerId={userIsSpeaking ? (currentAccount.phone || currentAccount.id || 'player_user') : undefined}
+              activeSpeakerId={globalSpeakingUserId || (userIsSpeaking ? ((mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')) : null)}
               onExit={() => setShowExitModal(true)}
               players={playersInMatch}
               barrageEnabled={barrageEnabled}

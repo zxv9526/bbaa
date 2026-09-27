@@ -55,6 +55,7 @@ interface RealtimeDealerStageProps {
   onDealerDeal?: (dealtHands: { [playerId: string]: Card[] }, dealerIndex: number) => void;
   onRotateDealer?: (newDealerIndex: number) => void;
   unreadCount?: number;
+  activeSpeakerId?: string | null;
 }
 
 export function RealtimeDealerStage({
@@ -80,7 +81,8 @@ export function RealtimeDealerStage({
   onDealerCut,
   onDealerDeal,
   onRotateDealer,
-  unreadCount = 0
+  unreadCount = 0,
+  activeSpeakerId: externalSpeakerId
 }: RealtimeDealerStageProps) {
   const seatedCount = players.length;
   const currentDealer = players[dealerIndex] || players[0];
@@ -92,6 +94,7 @@ export function RealtimeDealerStage({
   const [activeRooms, setActiveRooms] = useState<ActiveRoomInfo[]>([]);
   const [customRoomInput, setCustomRoomInput] = useState('');
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+  const effectiveSpeaker = externalSpeakerId || activeSpeakerId;
   const [seatBubbles, setSeatBubbles] = useState<Record<string, {
     content: string;
     type: 'text' | 'voice' | 'quick' | 'emoji';
@@ -405,7 +408,13 @@ export function RealtimeDealerStage({
             const isOccupied = !!p;
             const isThisDealer = isOccupied && idx === dealerIndex;
             const isMe = isOccupied && (p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId) || (mySeatIndex !== -1 && idx === mySeatIndex));
-            const isSpeaking = isOccupied && activeSpeakerId && p.id === activeSpeakerId;
+            const isSpeaking = isOccupied && Boolean(
+              effectiveSpeaker && (
+                p.id === effectiveSpeaker ||
+                (p as any).phone === effectiveSpeaker ||
+                (isMe && (effectiveSpeaker === currentUserId || effectiveSpeaker.includes('player_user')))
+              )
+            );
             const bubble = isOccupied ? seatBubbles[p.id] : null;
 
             return (
@@ -415,15 +424,26 @@ export function RealtimeDealerStage({
                   !isOccupied 
                     ? 'bg-slate-950/30 border-dashed border-slate-800 text-slate-600'
                     : isSpeaking
-                    ? 'bg-emerald-950/90 border-2 border-emerald-400 text-emerald-200 shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400/80 animate-pulse'
+                    ? 'bg-emerald-900/90 border-2 border-emerald-400 text-emerald-200 shadow-[0_0_18px_rgba(16,185,129,0.9)] ring-4 ring-emerald-400/90 animate-pulse font-black'
                     : isMe
-                    ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
+                    ? 'bg-amber-500/10 border-amber-500/40 text-amber-300 font-bold'
                     : 'bg-emerald-950/30 border border-emerald-500/30 text-emerald-300'
                 }`}
                 title={!isOccupied ? '待入座' : `${p.name}`}
               >
-                {/* Seat Floating Voice/Chat Bubble */}
-                {bubble && (
+                {/* Seat Floating Voice/Chat Bubble & Equalizer */}
+                {isSpeaking ? (
+                  <div className="absolute -top-7.5 left-1/2 -translate-x-1/2 z-30 pointer-events-none whitespace-nowrap">
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[9px] font-black shadow-[0_0_12px_rgba(16,185,129,0.9)] flex items-center gap-1 border border-emerald-200 animate-bounce">
+                      <span>🎙️ {isMe ? '我正在说话' : '正在说话'}</span>
+                      <span className="flex items-center gap-0.5">
+                        <span className="w-0.5 h-1.5 bg-slate-950 rounded-full animate-pulse" />
+                        <span className="w-0.5 h-2.5 bg-slate-950 rounded-full animate-pulse" />
+                        <span className="w-0.5 h-1.5 bg-slate-950 rounded-full animate-pulse" />
+                      </span>
+                    </span>
+                  </div>
+                ) : bubble ? (
                   <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-30 pointer-events-none whitespace-nowrap">
                     {bubble.type === 'emoji' ? (
                       <span className="text-lg drop-shadow-md animate-bounce">{bubble.content}</span>
@@ -437,7 +457,7 @@ export function RealtimeDealerStage({
                       </span>
                     )}
                   </div>
-                )}
+                ) : null}
 
                 {/* Dealer Crown Badge */}
                 {isThisDealer && (
