@@ -59,7 +59,7 @@ const TABLE_CHAT_STORAGE_KEY = 'thirteen_realtime_arena_chat_messages';
 const CHANNEL_NAME = 'thirteen_realtime_table_sync_channel';
 
 // Current active room ID
-let currentRoomId = '888888';
+let currentRoomId = '666666';
 
 // Detect roomId from URL if present
 if (typeof window !== 'undefined') {

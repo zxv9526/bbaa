@@ -61,7 +61,7 @@ export function RealtimeDealerStage({
   dealerIndex,
   players,
   currentUserId,
-  roomId = '888888',
+  roomId = '666666',
   onStartDeal,
   onBackToMenu,
   onSendMessage,
@@ -123,7 +123,7 @@ export function RealtimeDealerStage({
     }
   }, [latestMessage]);
 
-  // 高频防僵尸心跳 (每 1.2 秒向服务器发送存活凭证，3秒无心跳服务器自动秒杀离线座位)
+  // 高频防僵尸心跳 (每 1.0 秒向服务器发送存活凭证，2.5秒无心跳服务器自动秒杀离线座位)
   useEffect(() => {
     const devId = getOrCreateDeviceId();
     const sendHeartbeat = () => {
@@ -133,7 +133,7 @@ export function RealtimeDealerStage({
       }).catch(() => {});
     };
     sendHeartbeat();
-    const interval = setInterval(sendHeartbeat, 1200);
+    const interval = setInterval(sendHeartbeat, 1000);
     return () => clearInterval(interval);
   }, [roomId, currentUserId, tabId]);
 

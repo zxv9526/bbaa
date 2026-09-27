@@ -105,9 +105,10 @@ const roomPeersMap = new Map<string, Set<string>>(); // roomId -> Set of userIds
 const tablesMap = new Map<string, ServerTableState>(); // roomId -> ServerTableState
 
 function normalizeRoomId(rawRoomId: any): string {
-  if (!rawRoomId) return "888888";
+  if (!rawRoomId) return "666666";
   const clean = String(rawRoomId).trim().replace(/^realtime_room_/, "");
-  return clean || "888888";
+  if (clean === "8888" || clean === "888888") return "666666";
+  return clean || "666666";
 }
 
 function getOrCreateTable(rawRoomId: string, customName?: string): ServerTableState {
@@ -117,7 +118,7 @@ function getOrCreateTable(rawRoomId: string, customName?: string): ServerTableSt
     table = {
       tableId: "tbl_" + roomId + "_" + Date.now().toString(36),
       roomId,
-      roomName: customName || (roomId === "888888" ? "竞技大厅 888888" : `专属房间 ${roomId}`),
+      roomName: customName || (roomId === "666666" ? "十三水巅峰大厅 666666" : `专属房间 ${roomId}`),
       round: 1,
       dealerIndex: 0,
       dealerId: "",
@@ -149,20 +150,28 @@ setInterval(() => {
 
   // Cleanup idle private tables (inactive for > 1 hour and no players)
   tablesMap.forEach((table, rid) => {
-    if (rid !== "888888" && table.seats.length === 0 && now - table.lastUpdated > 3600 * 1000) {
+    if (rid === "888888" || rid === "8888") {
+      tablesMap.delete(rid);
+      return;
+    }
+    if (rid !== "666666" && table.seats.length === 0 && now - table.lastUpdated > 3600 * 1000) {
       tablesMap.delete(rid);
     }
   });
 }, 10000);
 
-// Active Realtime Zombie Cleaner: runs every 1.0s to evict seats with >3000ms inactivity
+// Active Realtime Zombie Cleaner: runs every 0.8s to evict seats with >2500ms inactivity
 setInterval(() => {
   const now = Date.now();
   tablesMap.forEach((table, rid) => {
+    if (rid === "888888" || rid === "8888") {
+      tablesMap.delete(rid);
+      return;
+    }
     if (table.seats.length === 0) return;
     const beforeCount = table.seats.length;
-    // Strict threshold: 3 seconds without ping = zombie eviction
-    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 3000);
+    // Strict threshold: 2.5 seconds without ping = instant zombie eviction
+    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 2500);
     if (table.seats.length !== beforeCount) {
       if (table.seats.length === 0) {
         table.status = "waiting";
@@ -182,7 +191,7 @@ setInterval(() => {
       broadcastToRoom(rid, { type: "TABLE_SYNC", table });
     }
   });
-}, 1000);
+}, 800);
 
 // -------------------------------------------------------------
 // HTTP API Endpoints (Tier 3 HTTP Polling + WebRTC HTTP Signaling)
@@ -217,7 +226,9 @@ app.post("/api/history", (req, res) => {
 
 // List active rooms
 app.get("/api/table/rooms", (req, res) => {
-  getOrCreateTable("888888"); // Guarantee default arena table exists
+  tablesMap.delete("888888");
+  tablesMap.delete("8888");
+  getOrCreateTable("666666", "十三水巅峰大厅"); // Guarantee default arena table exists
   const rooms = Array.from(tablesMap.values()).map(t => ({
     roomId: t.roomId,
     roomName: t.roomName,
@@ -233,7 +244,7 @@ app.get("/api/table/rooms", (req, res) => {
 
 // Get table state with heartbeat update and auto-pruning of stale seats
 app.get("/api/table/state", (req, res) => {
-  const roomId = normalizeRoomId(req.query.roomId || "888888");
+  const roomId = normalizeRoomId(req.query.roomId || "666666");
   const playerId = req.query.playerId ? String(req.query.playerId).trim() : null;
   const deviceId = req.query.deviceId ? String(req.query.deviceId).trim() : null;
   const tabSessionId = req.query.tabSessionId ? String(req.query.tabSessionId).trim() : null;
@@ -252,9 +263,9 @@ app.get("/api/table/state", (req, res) => {
     }
   }
 
-  // Prune seats inactive for > 3s
+  // Prune seats inactive for > 2.5s
   const beforeLen = table.seats.length;
-  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 3000);
+  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 2500);
   if (table.seats.length !== beforeLen) {
     table.lastUpdated = now;
     if (table.seats.length === 0) {
@@ -280,7 +291,7 @@ app.get("/api/table/state", (req, res) => {
 // Join table with strict deduplication, stale seat pruning & reliable distinct seat assignment
 app.post("/api/table/join", (req, res) => {
   try {
-    const roomId = normalizeRoomId(req.body.roomId || "888888");
+    const roomId = normalizeRoomId(req.body.roomId || "666666");
     const player = req.body.player;
     if (!player || !player.id) {
       res.status(400).json({ ok: false, error: "Missing player payload" });
@@ -290,8 +301,8 @@ app.post("/api/table/join", (req, res) => {
     const table = getOrCreateTable(roomId, req.body.roomName);
     const now = Date.now();
 
-    // 1. Strict Auto-prune stale seats (older than 3s without active ping)
-    table.seats = table.seats.filter(s => (now - (s.lastActive || 0)) < 3000);
+    // 1. Strict Auto-prune stale seats (older than 2.5s without active ping)
+    table.seats = table.seats.filter(s => (now - (s.lastActive || 0)) < 2500);
 
     // 2. Check if this exact player is already seated (reconnect by exact ID or tabSessionId)
     const existingIndex = table.seats.findIndex(s =>
@@ -389,7 +400,7 @@ app.post("/api/table/join", (req, res) => {
 // Leave table (cleanly removes all matching seats for this device/player/session)
 app.post("/api/table/leave", (req, res) => {
   try {
-    const roomId = normalizeRoomId(req.body.roomId || "888888");
+    const roomId = normalizeRoomId(req.body.roomId || "666666");
     const playerId = String(req.body.playerId || "").trim();
     const deviceId = String(req.body.deviceId || "").trim();
     const tabSessionId = String(req.body.tabSessionId || "").trim();
@@ -400,7 +411,7 @@ app.post("/api/table/leave", (req, res) => {
 
     table.seats = table.seats.filter(s => {
       const matchDevice = deviceId && s.deviceId === deviceId;
-      const matchPlayer = playerId && (s.id === playerId || s.id.split('_')[0] === playerId.split('_')[0]);
+      const matchPlayer = playerId && s.id === playerId;
       const matchTab = tabSessionId && s.tabSessionId === tabSessionId;
       const shouldRemove = matchDevice || matchPlayer || matchTab;
       if (shouldRemove) {
@@ -454,7 +465,7 @@ app.post("/api/table/leave", (req, res) => {
 // Force reset table / Kick all stale zombie players
 app.post("/api/table/reset", (req, res) => {
   try {
-    const roomId = normalizeRoomId(req.body.roomId || "888888");
+    const roomId = normalizeRoomId(req.body.roomId || "666666");
     const table = getOrCreateTable(roomId);
     table.seats = [];
     table.status = "waiting";
@@ -475,13 +486,13 @@ app.post("/api/table/reset", (req, res) => {
   }
 });
 
-// Clean inactive zombie seats (inactive > 3s)
+// Clean inactive zombie seats (inactive > 2.5s)
 app.post("/api/table/clean_stale", (req, res) => {
   try {
-    const roomId = normalizeRoomId(req.body.roomId || "888888");
+    const roomId = normalizeRoomId(req.body.roomId || "666666");
     const table = getOrCreateTable(roomId);
     const now = Date.now();
-    const activeThreshold = 3000; // 3 seconds
+    const activeThreshold = 2500; // 2.5 seconds
     const beforeCount = table.seats.length;
     
     table.seats = table.seats.filter(s => now - (s.lastActive || 0) < activeThreshold);
