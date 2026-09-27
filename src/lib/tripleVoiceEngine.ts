@@ -113,6 +113,7 @@ export class TripleVoiceEngine {
   private localStream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
+  private gainNode: GainNode | null = null;
   private vuAnimFrameId: number | null = null;
   private mediaRecorder: MediaRecorder | null = null;
   private recordedChunks: Blob[] = [];
@@ -398,7 +399,12 @@ export class TripleVoiceEngine {
         const source = this.audioCtx.createMediaStreamSource(this.localStream);
         this.analyser = this.audioCtx.createAnalyser();
         this.analyser.fftSize = 256;
-        source.connect(this.analyser);
+        
+        this.gainNode = this.audioCtx.createGain();
+        this.gainNode.gain.value = 2.0; // 🎤 Boost mic gain by 2x
+        
+        source.connect(this.gainNode);
+        this.gainNode.connect(this.analyser);
         this.startVUMonitor();
       }
 
@@ -430,6 +436,10 @@ export class TripleVoiceEngine {
 
     if (this.audioCtx && this.audioCtx.state !== 'closed') {
       try {
+        if (this.gainNode) {
+          this.gainNode.disconnect();
+          this.gainNode = null;
+        }
         this.audioCtx.close();
       } catch {}
       this.audioCtx = null;

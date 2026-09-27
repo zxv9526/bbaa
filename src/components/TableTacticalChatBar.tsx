@@ -813,7 +813,7 @@ export function TableTacticalChatBar({
       )}
 
       {/* Main Redesigned Tactical Bar (Spacious, Ergonomic, Large Touch Targets, Zero Overflow) */}
-      <div className="w-full bg-slate-900/95 border-2 border-slate-700/80 rounded-xl sm:rounded-2xl p-1.5 sm:p-2 shadow-2xl flex items-center justify-between gap-1.5 sm:gap-2 shrink-0 backdrop-blur-xl">
+      <div className="w-full bg-slate-900/95 border-2 border-slate-700/80 rounded-xl p-1 shadow-2xl flex items-center justify-between gap-1 shrink-0 backdrop-blur-xl">
         
         {/* 1. Left Action Deck: Voice Mic & Quick Interaction */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
@@ -827,15 +827,15 @@ export function TableTacticalChatBar({
               <button
                 onPointerUp={handlePointerUp}
                 onClick={handleMicButtonClick}
-                className={`h-10 sm:h-11 px-3 sm:px-4 rounded-xl text-white font-black text-xs sm:text-sm flex items-center gap-1.5 shadow-xl transition active:scale-95 cursor-pointer touch-none ${
+                className={`h-9 px-2 rounded-lg text-white font-black text-[10px] flex items-center gap-1 shadow-xl transition active:scale-95 cursor-pointer touch-none ${
                   isSlideCancel
                     ? 'bg-amber-600 ring-2 ring-amber-400'
                     : 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/70 animate-pulse'
                 }`}
                 title="点击发送对讲语音，或松开发送"
               >
-                <Radio className="w-3.5 h-3.5 animate-spin" />
-                <span>{isSlideCancel ? '松开取消' : `松开发送 (${recordingSeconds}s)`}</span>
+                <Radio className="w-3 h-3 animate-spin" />
+                <span>{isSlideCancel ? '取消' : `${recordingSeconds}s`}</span>
 
                 {/* Real-time Sound Wave Equalizer from Mic Volume */}
                 <div className="flex items-end gap-0.5 h-3.5 ml-1">
