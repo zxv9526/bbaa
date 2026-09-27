@@ -20,12 +20,13 @@ import {
 import { TableTacticalChatBar } from './TableTacticalChatBar';
 import { ChatMessage } from '../types';
 import { CardView } from './CardView';
-import { fetchActiveRooms, ActiveRoomInfo, claimDealerRole } from '../lib/realtimeTableManager';
+import { fetchActiveRooms, ActiveRoomInfo, claimDealerRole, getTabSessionId } from '../lib/realtimeTableManager';
 
 export interface RealtimeSeatPlayer {
   id: string;
   name: string;
   avatar: string;
+  tabSessionId?: string;
   isAi?: boolean;
   score: number;
 }
@@ -83,8 +84,9 @@ export function RealtimeDealerStage({
 }: RealtimeDealerStageProps) {
   const seatedCount = players.length;
   const currentDealer = players[dealerIndex] || players[0];
-  const isHumanDealer = Boolean(currentDealer && currentUserId && currentDealer.id === currentUserId);
-  const mySeatIndex = players.findIndex(p => p.id === currentUserId);
+  const tabId = getTabSessionId();
+  const mySeatIndex = players.findIndex(p => p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId));
+  const isHumanDealer = Boolean(currentDealer && mySeatIndex !== -1 && dealerIndex === mySeatIndex);
 
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [activeRooms, setActiveRooms] = useState<ActiveRoomInfo[]>([]);
@@ -402,7 +404,7 @@ export function RealtimeDealerStage({
             const p = players[idx];
             const isOccupied = !!p;
             const isThisDealer = isOccupied && idx === dealerIndex;
-            const isMe = isOccupied && p.id === currentUserId;
+            const isMe = isOccupied && (p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId) || (mySeatIndex !== -1 && idx === mySeatIndex));
             const isSpeaking = isOccupied && activeSpeakerId && p.id === activeSpeakerId;
             const bubble = isOccupied ? seatBubbles[p.id] : null;
 

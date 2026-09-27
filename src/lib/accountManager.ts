@@ -319,9 +319,20 @@ export function getCurrentAccount(): UserAccount {
   }
 
   if (!acc) {
-    // 游客模式账号：不绑定任何虚假手机号，保证白名单系统纯净
+    // 游客模式账号：持久化本设备的稳定独立ID，保证每次刷新与入座席位身份稳定
+    let guestId = '';
+    try {
+      guestId = localStorage.getItem('thirteen_guest_player_id') || '';
+      if (!guestId) {
+        guestId = `guest_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+        localStorage.setItem('thirteen_guest_player_id', guestId);
+      }
+    } catch {
+      guestId = `guest_${Date.now()}`;
+    }
+
     const guestAcc: UserAccount = {
-      id: `guest_${Date.now()}`,
+      id: guestId,
       phone: '',
       username: '游客玩家',
       nickname: '十三水雀神',

@@ -7,6 +7,18 @@ import { WebSocketServer, WebSocket } from "ws";
 const app = express();
 const PORT = 3000;
 
+// Enable CORS for all origins, methods, and headers
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
+
 app.use(express.json({ limit: "15mb" }));
 
 // In-memory store for Tier 3 HTTP polling fallback & signaling
@@ -185,17 +197,47 @@ app.get("/api/table/rooms", (req, res) => {
   res.json({ ok: true, rooms });
 });
 
-// Get table state
+// Get table state with heartbeat update and auto-pruning of stale seats
 app.get("/api/table/state", (req, res) => {
-  const roomId = String(req.query.roomId || "888888").trim();
+  const roomId = normalizeRoomId(req.query.roomId || "888888");
+  const playerId = req.query.playerId ? String(req.query.playerId).trim() : null;
+  const tabSessionId = req.query.tabSessionId ? String(req.query.tabSessionId).trim() : null;
   const table = getOrCreateTable(roomId);
+
+  const now = Date.now();
+  // Update lastActive for current player if specified
+  if (playerId || tabSessionId) {
+    const s = table.seats.find(s => (playerId && s.id === playerId) || (tabSessionId && s.tabSessionId === tabSessionId));
+    if (s) {
+      s.lastActive = now;
+    }
+  }
+
+  // Prune seats inactive for > 60s
+  const beforeLen = table.seats.length;
+  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 60000);
+  if (table.seats.length !== beforeLen) {
+    table.lastUpdated = now;
+    if (table.seats.length === 0) {
+      table.status = "waiting";
+      table.dealerIndex = 0;
+      table.dealerId = "";
+      table.shuffleCount = 0;
+      table.cutCard = null;
+    } else if (table.dealerIndex >= table.seats.length) {
+      table.dealerIndex = 0;
+      table.dealerId = table.seats[0]?.id || "";
+    }
+    broadcastToRoom(roomId, { type: "TABLE_SYNC", table });
+  }
+
   res.json({ ok: true, table });
 });
 
-// Join table
+// Join table with stale seat pruning & reliable distinct seat assignment
 app.post("/api/table/join", (req, res) => {
   try {
-    const roomId = String(req.body.roomId || "888888").trim();
+    const roomId = normalizeRoomId(req.body.roomId || "888888");
     const player = req.body.player;
     if (!player || !player.id) {
       res.status(400).json({ ok: false, error: "Missing player payload" });
@@ -203,8 +245,16 @@ app.post("/api/table/join", (req, res) => {
     }
 
     const table = getOrCreateTable(roomId, req.body.roomName);
+    const now = Date.now();
 
-    // 1. Check if this player is already seated (by ID or tabSessionId)
+    // 1. Auto-prune stale seats (older than 60s without ping)
+    table.seats = table.seats.filter(s => {
+      const isThisPlayer = s.id === player.id || (player.tabSessionId && s.tabSessionId === player.tabSessionId);
+      const isRecent = (now - (s.lastActive || 0)) < 60000;
+      return isThisPlayer || isRecent;
+    });
+
+    // 2. Check if this player is already seated (reconnect to existing seat)
     const existingIndex = table.seats.findIndex(
       s => s.id === player.id || (player.tabSessionId && s.tabSessionId === player.tabSessionId)
     );
@@ -212,8 +262,8 @@ app.post("/api/table/join", (req, res) => {
     if (existingIndex !== -1) {
       table.seats[existingIndex].name = player.name || table.seats[existingIndex].name;
       table.seats[existingIndex].avatar = player.avatar || table.seats[existingIndex].avatar;
-      table.seats[existingIndex].lastActive = Date.now();
-      table.lastUpdated = Date.now();
+      table.seats[existingIndex].lastActive = now;
+      table.lastUpdated = now;
 
       broadcastToRoom(roomId, {
         type: "TABLE_SYNC",
@@ -224,22 +274,26 @@ app.post("/api/table/join", (req, res) => {
       return;
     }
 
-    // 2. Room capacity check (strict max 8 players, purely human)
+    // 3. Room capacity check (strict max 8 players, purely human)
     if (table.seats.length >= 8) {
       res.json({ ok: false, error: "牌桌已满员 (8/8)", table, isFull: true });
       return;
     }
 
-    // 3. New real human player enters
+    // 4. New real human player enters next available seat
     const seatIndex = table.seats.length;
+    let finalName = player.name || `玩家${seatIndex + 1}`;
+    finalName = finalName.replace(/\(\d+号位\)/g, '').trim();
+    finalName = `${finalName} (${seatIndex + 1}号位)`;
+
     const newSeat: ServerSeatPlayer = {
       id: String(player.id),
       tabSessionId: player.tabSessionId,
-      name: player.name || `玩家${seatIndex + 1}`,
+      name: finalName,
       avatar: player.avatar || "😎",
       isAi: false,
       score: 0,
-      lastActive: Date.now()
+      lastActive: now
     };
 
     table.seats.push(newSeat);
@@ -254,9 +308,9 @@ app.post("/api/table/join", (req, res) => {
       type: "join",
       playerId: newSeat.id,
       text: `玩家【${newSeat.name}】入座第 ${seatIndex + 1} 席！`,
-      timestamp: Date.now()
+      timestamp: now
     };
-    table.lastUpdated = Date.now();
+    table.lastUpdated = now;
 
     // Broadcast updated state to all connected room players
     broadcastToRoom(roomId, {
@@ -516,15 +570,16 @@ app.get("/api/voice/poll", (req, res) => {
 // 2b. Real-time Multi-Device Chat Message Send & Broadcast
 app.post("/api/chat/send", (req, res) => {
   try {
-    const { roomId = "default_table", message } = req.body;
+    const { roomId = "888888", message } = req.body;
     if (!message || !message.senderId) {
       res.status(400).json({ ok: false, error: "Missing message payload" });
       return;
     }
 
+    const cleanRoomId = normalizeRoomId(roomId);
     const record: ChatMessageRecord = {
       id: message.id || ("msg_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
-      roomId: String(roomId),
+      roomId: cleanRoomId,
       senderId: String(message.senderId),
       senderName: String(message.senderName || "玩家"),
       senderAvatar: String(message.senderAvatar || "😎"),
@@ -555,12 +610,12 @@ app.post("/api/chat/send", (req, res) => {
 // 2c. Real-time Multi-Device Chat Message Poll (for HTTP fallback)
 app.get("/api/chat/poll", (req, res) => {
   try {
-    const roomId = String(req.query.roomId || "default_table");
+    const cleanRoomId = normalizeRoomId(req.query.roomId || "888888");
     const userId = String(req.query.userId || "");
     const since = parseInt(String(req.query.since || "0"), 10);
 
     const newMessages = chatMessagesBuffer.filter(
-      m => m.roomId === roomId && m.senderId !== userId && m.timestamp > since
+      m => normalizeRoomId(m.roomId) === cleanRoomId && m.senderId !== userId && m.timestamp > since
     );
 
     res.json({
@@ -576,11 +631,11 @@ app.get("/api/chat/poll", (req, res) => {
 // 2d. Chat History Fetch (for joining table or refreshing)
 app.get("/api/chat/history", (req, res) => {
   try {
-    const roomId = String(req.query.roomId || "default_table");
+    const cleanRoomId = normalizeRoomId(req.query.roomId || "888888");
     const limit = Math.min(100, parseInt(String(req.query.limit || "50"), 10));
 
     const history = chatMessagesBuffer
-      .filter(m => m.roomId === roomId)
+      .filter(m => normalizeRoomId(m.roomId) === cleanRoomId)
       .slice(-limit);
 
     res.json({

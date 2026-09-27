@@ -157,6 +157,12 @@ export default function App() {
   const [mode, setMode] = useState<GameMode>('realtime');
   const [gameState, setGameState] = useState<'menu' | 'realtime_dealer' | 'arranging' | 'revealing'>('menu');
 
+  const modeRef = useRef<GameMode>(mode);
+  modeRef.current = mode;
+  const gameStateRef = useRef(gameState);
+  gameStateRef.current = gameState;
+  const realtimeUserIdRef = useRef<string>('');
+
   // ⚡ 实时对战场：轮流发牌与牌桌状态 (Live Rotation Dealer Table)
   const [realtimeUserId, setRealtimeUserId] = useState<string>('');
   const [realtimeRound, setRealtimeRound] = useState<number>(1);
@@ -429,13 +435,15 @@ export default function App() {
   // ⚡ 订阅实时多人桌跨页面/跨账号事件同步 (Cross-Tab / Multi-Player Live Arena Table Sync)
   useEffect(() => {
     const unsubscribe = subscribeRealtimeTable((event: RealtimeTableEvent) => {
-      if (mode !== 'realtime' && gameState !== 'realtime_dealer' && gameState !== 'arranging' && gameState !== 'revealing') {
+      // 保证无论在等待、发牌、理牌还是比牌阶段，均能实时响应服务端权威牌桌变更
+      if (modeRef.current !== 'realtime') {
         return;
       }
 
       if (event.type === 'SYNC_STATE' || event.type === 'PLAYER_JOIN' || event.type === 'PLAYER_LEAVE') {
-        if (event.state && event.state.seats) {
-          setRealtimePlayers(event.state.seats);
+        if (event.state && Array.isArray(event.state.seats)) {
+          const validSeats = event.state.seats.filter(s => !s.isAi);
+          setRealtimePlayers(validSeats);
           setRealtimeDealerIndex(event.state.dealerIndex);
           setRealtimeRound(event.state.round);
         }
@@ -454,15 +462,14 @@ export default function App() {
         setSyncedCutCard(null);
         setSyncedIsDealing(false);
         setGameState('realtime_dealer');
+        gameStateRef.current = 'realtime_dealer';
       } else if (event.type === 'CHAT_MESSAGE') {
         const incoming = event.message;
         setMessages((prev) => {
           if (prev.some(m => m.id === incoming.id)) return prev;
           return [...prev, incoming];
         });
-        const effectiveId = (mode === 'realtime' && realtimeUserId) 
-          ? realtimeUserId 
-          : (currentAccount.phone || currentAccount.id || 'player_user');
+        const effectiveId = realtimeUserIdRef.current || (currentAccount.phone || currentAccount.id || 'player_user');
         if (incoming.senderId !== effectiveId) {
           playIncomingRadioBeep();
           if (!showChatDrawer) {
@@ -478,7 +485,7 @@ export default function App() {
     return () => {
       unsubscribe();
     };
-  }, [mode, gameState, currentAccount.phone, currentAccount.id, showChatDrawer, ttsEnabled]);
+  }, [showChatDrawer, ttsEnabled]);
 
   // ⚡ 三重语音与实时聊天传输引擎 (WebRTC P2P + WebSocket 高速广播 + HTTP 轮询保底) 接收监听
   useEffect(() => {
@@ -619,7 +626,7 @@ export default function App() {
   };
 
   // ⚡ 实时对战场入口：进入轮流发牌与洗牌切牌舞台
-  const startRealtimeMatch = (targetRoomId?: string) => {
+  const startRealtimeMatch = async (targetRoomId?: string) => {
     if (currentAccount.points <= 0) {
       setShowNoPointsModal(true);
       return;
@@ -642,6 +649,9 @@ export default function App() {
     }
 
     setMode('realtime');
+    modeRef.current = 'realtime';
+    setGameState('realtime_dealer');
+    gameStateRef.current = 'realtime_dealer';
     setErrorMsg('');
     setMatchResults(null);
     setUseSpecialHand(false);
@@ -649,9 +659,9 @@ export default function App() {
     setSyncedCutCard(null);
     setSyncedIsDealing(false);
 
-    // 加入或创建多人实时牌桌 (保证每台手机/设备拥有独立玩家席位)
-    const tabSessionId = getOrCreateDeviceId();
-    const { table, assignedUser } = joinOrCreateRealtimeTable({
+    // 加入多人实时牌桌：向服务端权威接口入座 (保证每台手机/每个标签页获得独立席位)
+    const tabSessionId = getTabSessionId();
+    const { table, assignedUser, seatIndex } = await joinOrCreateRealtimeTable({
       id: distinctUserId,
       name: myName,
       avatar: myAvatar,
@@ -659,6 +669,7 @@ export default function App() {
     }, effectiveRoomId);
 
     setRealtimeUserId(assignedUser.id);
+    realtimeUserIdRef.current = assignedUser.id;
     setRealtimePlayers(table.seats);
     setRealtimeRound(table.round);
     setRealtimeDealerIndex(table.dealerIndex);
@@ -674,16 +685,13 @@ export default function App() {
     setUnreadCount(0);
 
     // 🚀 初始化三重语音架构引擎 (WebRTC P2P + WebSocket高速广播 + HTTP轮询保底)
-    const mySeat = table.seats.findIndex(p => p.id === assignedUser.id);
     TripleVoiceEngine.getInstance().init({
       roomId: effectiveRoomId,
       userId: assignedUser.id,
       name: assignedUser.name,
       avatar: assignedUser.avatar,
-      seatIndex: Math.max(0, mySeat)
+      seatIndex: Math.max(0, seatIndex)
     });
-
-    setGameState('realtime_dealer');
   };
 
   // ⚡ 庄家发牌完成回调：分发牌张，启动理牌阶段

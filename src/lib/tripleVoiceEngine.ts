@@ -12,6 +12,7 @@ import {
   setRadioChirpSoundEnabled
 } from './chatManager';
 import { ChatMessage } from '../types';
+import { saveRealtimeTable, broadcastEvent } from './realtimeTableManager';
 
 export type TransmissionTier = 'webrtc' | 'websocket' | 'http';
 export type TierPreference = 'auto' | 'webrtc' | 'websocket' | 'http';
@@ -1024,6 +1025,44 @@ export class TripleVoiceEngine {
             setTimeout(() => {
               this.initiateWebRtcOffer(p.userId);
             }, 300);
+          });
+        }
+        break;
+      }
+
+      case 'TABLE_SYNC': {
+        if (msg.table) {
+          saveRealtimeTable(msg.table);
+          broadcastEvent({ type: 'SYNC_STATE', state: msg.table });
+        }
+        break;
+      }
+
+      case 'PLAYER_JOIN': {
+        if (msg.table) {
+          saveRealtimeTable(msg.table);
+          broadcastEvent({ type: 'PLAYER_JOIN', player: msg.player, state: msg.table });
+        }
+        break;
+      }
+
+      case 'PLAYER_LEAVE': {
+        if (msg.table) {
+          saveRealtimeTable(msg.table);
+          broadcastEvent({ type: 'PLAYER_LEAVE', playerId: msg.playerId, state: msg.table });
+        }
+        break;
+      }
+
+      case 'TABLE_ACTION': {
+        if (msg.table) {
+          saveRealtimeTable(msg.table);
+        }
+        if (msg.action) {
+          broadcastEvent({
+            type: msg.action.type,
+            ...msg.action,
+            timestamp: Date.now()
           });
         }
         break;

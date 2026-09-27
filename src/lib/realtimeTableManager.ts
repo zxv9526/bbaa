@@ -185,6 +185,8 @@ function ensureTableWsConnected() {
         } else if (msg.type === 'PLAYER_LEAVE' && msg.table) {
           saveRealtimeTable(msg.table);
           wsSubscribers.forEach(cb => cb({ type: 'PLAYER_LEAVE', playerId: msg.playerId, state: msg.table }));
+        } else if ((msg.type === 'CHAT_MESSAGE_INCOMING' || msg.type === 'CHAT_MESSAGE') && msg.message) {
+          wsSubscribers.forEach(cb => cb({ type: 'CHAT_MESSAGE', message: msg.message }));
         }
       } catch {}
     };
@@ -209,6 +211,15 @@ export function sendTableWs(data: any): void {
   }
 }
 
+// Runtime unique tab instance token (in-memory, guaranteed never duplicated across tabs/windows)
+let runtimeTabInstanceNonce = '';
+if (typeof window !== 'undefined') {
+  if (!(window as any).__thirteen_runtime_tab_nonce) {
+    (window as any).__thirteen_runtime_tab_nonce = 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  }
+  runtimeTabInstanceNonce = (window as any).__thirteen_runtime_tab_nonce;
+}
+
 // Get or generate a persistent device unique identifier
 export function getOrCreateDeviceId(): string {
   if (typeof window === 'undefined') return 'srv_' + Math.random().toString(36).slice(2, 8);
@@ -220,25 +231,21 @@ export function getOrCreateDeviceId(): string {
   return devId;
 }
 
-// Generate guaranteed distinct player ID per device even with shared default phone
-export function getPlayerUniqueId(phoneOrAccount?: string): string {
-  const devId = getOrCreateDeviceId();
-  const cleanPhone = (phoneOrAccount || '').trim().replace(/[^\w]/g, '');
-  if (cleanPhone) {
-    return `${cleanPhone}_${devId.slice(-6)}`;
-  }
-  return devId;
-}
-
-// Get or generate a tab/session unique identifier
+// Get or generate a tab/session unique identifier (isolated per browser window/tab/phone)
 export function getTabSessionId(): string {
   if (typeof window === 'undefined') return 'session_default';
-  let tabId = sessionStorage.getItem('thirteen_realtime_tab_session_id');
-  if (!tabId) {
-    tabId = 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
-    sessionStorage.setItem('thirteen_realtime_tab_session_id', tabId);
+  return runtimeTabInstanceNonce || 'session_' + Math.random().toString(36).slice(2, 8);
+}
+
+// Generate guaranteed distinct player ID per tab & device so multiple windows/phones never collide
+export function getPlayerUniqueId(phoneOrAccount?: string): string {
+  const tabId = getTabSessionId();
+  const cleanPhone = (phoneOrAccount || '').trim().replace(/[^\w]/g, '');
+  if (cleanPhone) {
+    return `${cleanPhone}_${tabId.slice(-6)}`;
   }
-  return tabId;
+  const devId = getOrCreateDeviceId();
+  return `${devId}_${tabId.slice(-6)}`;
 }
 
 // Read table chat messages
@@ -375,18 +382,18 @@ export function clearRealtimeTable(roomId = currentRoomId): void {
   } catch {}
 }
 
-// Join or Create Realtime Table (Server Authoritative with Instant Local Cache)
-export function joinOrCreateRealtimeTable(currentUser: {
+// Join or Create Realtime Table (Server Authoritative)
+export async function joinOrCreateRealtimeTable(currentUser: {
   id: string;
   name: string;
   avatar: string;
   tabSessionId?: string;
-}, targetRoomId?: string): {
+}, targetRoomId?: string): Promise<{
   table: RealtimeTableState;
   isNewTable: boolean;
   seatIndex: number;
   assignedUser: { id: string; name: string; avatar: string };
-} {
+}> {
   if (targetRoomId) {
     setCurrentRoomId(targetRoomId);
   }
@@ -395,33 +402,65 @@ export function joinOrCreateRealtimeTable(currentUser: {
   const tabSessionId = currentUser.tabSessionId || getTabSessionId();
   ensureTableWsConnected();
 
-  // Async server join: Registers on backend server and broadcasts to all other devices
-  fetch('/api/table/join', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      roomId,
-      player: {
-        id: currentUser.id,
-        tabSessionId,
-        name: currentUser.name,
-        avatar: currentUser.avatar
-      }
-    })
-  })
-    .then(res => res.json())
-    .then(data => {
+  // 1. Primary: Server Authoritative Join via REST API
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    const res = await fetch('/api/table/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        roomId,
+        player: {
+          id: currentUser.id,
+          tabSessionId,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        }
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
       if (data.ok && data.table) {
         if (Array.isArray(data.table.seats)) {
           data.table.seats = data.table.seats.filter((s: RealtimeSeatPlayer) => !s.isAi);
         }
         saveRealtimeTable(data.table, roomId);
         broadcastEvent({ type: 'SYNC_STATE', state: data.table });
-      }
-    })
-    .catch(() => {});
 
-  // Local fallback response while server roundtrip finishes
+        const mySeatIdx = typeof data.seatIndex === 'number'
+          ? data.seatIndex
+          : data.table.seats.findIndex((s: any) => s.id === currentUser.id || s.tabSessionId === tabSessionId);
+
+        const assignedSeat = data.table.seats[mySeatIdx] || data.table.seats[data.table.seats.length - 1];
+
+        return {
+          table: data.table,
+          isNewTable: data.table.seats.length === 1,
+          seatIndex: Math.max(0, mySeatIdx),
+          assignedUser: {
+            id: currentUser.id,
+            name: assignedSeat?.name || currentUser.name,
+            avatar: assignedSeat?.avatar || currentUser.avatar
+          }
+        };
+      } else if (data.table) {
+        // Table exists and returned (e.g. room full)
+        saveRealtimeTable(data.table, roomId);
+        broadcastEvent({ type: 'SYNC_STATE', state: data.table });
+      }
+    }
+  } catch (err) {
+    console.warn('[RealtimeTable] Server join request note (using local cache):', err);
+  }
+
+  // 2. Fallback: Local Cache if server is unreachable
   const existing = getSavedRealtimeTable(roomId);
   if (existing && Array.isArray(existing.seats) && existing.seats.length > 0) {
     const seatIdx = existing.seats.findIndex(s => s.id === currentUser.id || s.tabSessionId === tabSessionId);
@@ -456,7 +495,7 @@ export function joinOrCreateRealtimeTable(currentUser: {
     }
   }
 
-  // Create brand new table
+  // 3. Fallback: Create initial table
   const firstPlayer: RealtimeSeatPlayer = {
     id: currentUser.id,
     tabSessionId,
@@ -794,11 +833,19 @@ export function subscribeRealtimeTable(
     window.addEventListener('storage', handleStorageEvent);
   }
 
-  // Active HTTP polling every 2.5s for seamless multi-device cross-browser state synchronization
+  // Active HTTP polling every 1.5s for seamless multi-device cross-browser state synchronization
   let lastSeenUpdated = 0;
-  const pollInterval = setInterval(async () => {
+  let lastSeenSeatsStr = '';
+  let lastChatPollTime = Date.now() - 30000;
+
+  const runPoll = async () => {
     try {
-      const res = await fetch(`/api/table/state?roomId=${encodeURIComponent(currentRoomId)}`);
+      const myId = getPlayerUniqueId();
+      const tabId = getTabSessionId();
+      const res = await fetch(
+        `/api/table/state?roomId=${encodeURIComponent(currentRoomId)}&playerId=${encodeURIComponent(myId)}&tabSessionId=${encodeURIComponent(tabId)}`,
+        { credentials: 'include' }
+      );
       if (res.ok) {
         const data = await res.json();
         if (data.ok && data.table) {
@@ -806,15 +853,36 @@ export function subscribeRealtimeTable(
           if (Array.isArray(remoteTable.seats)) {
             remoteTable.seats = remoteTable.seats.filter(s => !s.isAi);
           }
-          if (remoteTable.lastUpdated !== lastSeenUpdated) {
+          const seatsStr = JSON.stringify(remoteTable.seats);
+          if (remoteTable.lastUpdated !== lastSeenUpdated || seatsStr !== lastSeenSeatsStr) {
             lastSeenUpdated = remoteTable.lastUpdated;
+            lastSeenSeatsStr = seatsStr;
             saveRealtimeTable(remoteTable, currentRoomId);
             onEvent({ type: 'SYNC_STATE', state: remoteTable });
           }
         }
       }
+
+      // Safeguard poll for chat messages
+      const chatRes = await fetch(
+        `/api/chat/poll?roomId=${encodeURIComponent(currentRoomId)}&userId=${encodeURIComponent(myId)}&since=${lastChatPollTime}`,
+        { credentials: 'include' }
+      );
+      if (chatRes.ok) {
+        const chatData = await chatRes.json();
+        if (chatData.ok && Array.isArray(chatData.messages) && chatData.messages.length > 0) {
+          lastChatPollTime = Math.max(lastChatPollTime, ...chatData.messages.map((m: any) => m.timestamp));
+          chatData.messages.forEach((m: ChatMessage) => {
+            onEvent({ type: 'CHAT_MESSAGE', message: m });
+          });
+        }
+      }
     } catch {}
-  }, 2500);
+  };
+
+  // Immediate initial poll
+  runPoll();
+  const pollInterval = setInterval(runPoll, 1500);
 
   return () => {
     wsSubscribers.delete(onEvent);
