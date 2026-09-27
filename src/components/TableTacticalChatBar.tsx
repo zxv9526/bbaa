@@ -812,6 +812,27 @@ export function TableTacticalChatBar({
         </div>
       )}
 
+      {/* Active Speaker Dynamic Audio Wave */}
+      {activeSpeaker && activeSpeaker.isVoice && (
+        <div className="w-full mb-1 flex items-center justify-center gap-1.5 px-2 animate-in fade-in zoom-in duration-300">
+           <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-bold bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700">
+             <span className="truncate max-w-[80px]">{activeSpeaker.name}</span>
+             <div className="flex items-end gap-0.5 h-3">
+               {[...Array(5)].map((_, i) => (
+                 <span
+                   key={i}
+                   className="w-0.5 rounded-full bg-emerald-400 animate-pulse"
+                   style={{
+                     height: `${Math.random() * 80 + 20}%`,
+                     animationDelay: `${i * 150}ms`
+                   }}
+                 />
+               ))}
+             </div>
+           </div>
+        </div>
+      )}
+
       {/* Main Redesigned Tactical Bar (Spacious, Ergonomic, Large Touch Targets, Zero Overflow) */}
       <div className="w-full bg-slate-900/95 border-2 border-slate-700/80 rounded-xl p-1 shadow-2xl flex items-center justify-between gap-1 shrink-0 backdrop-blur-xl">
         
