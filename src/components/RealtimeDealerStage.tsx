@@ -19,7 +19,7 @@ import {
 import { TableTacticalChatBar } from './TableTacticalChatBar';
 import { ChatMessage } from '../types';
 import { CardView } from './CardView';
-import { claimDealerRole, getTabSessionId, getOrCreateDeviceId, cleanStaleServerSeats, resetServerTable, leaveRealtimeTable } from '../lib/realtimeTableManager';
+import { claimDealerRole, getTabSessionId, getOrCreateDeviceId, leaveRealtimeTable } from '../lib/realtimeTableManager';
 
 export interface RealtimeSeatPlayer {
   id: string;
@@ -417,38 +417,6 @@ export function RealtimeDealerStage({
         </div>
 
         <div className="flex items-center gap-1.5 text-xs">
-          <button
-            onClick={async () => {
-              triggerHaptic('medium');
-              const count = await cleanStaleServerSeats(roomId);
-              if (count > 0) {
-                setToastNotice(`🧹 已瞬间踢出 ${count} 位离线僵尸玩家！`);
-              } else {
-                setToastNotice(`✨ 当前牌桌无离线僵尸，连接状态完好`);
-              }
-              setTimeout(() => setToastNotice(null), 2500);
-            }}
-            className="px-2 py-0.5 rounded-full bg-slate-900/90 hover:bg-rose-950/80 border border-slate-700/80 hover:border-rose-500/50 text-slate-300 hover:text-rose-300 text-[10px] font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-sm"
-            title="点击清理无回应的僵尸离线座位"
-          >
-            <span>🧹 清僵尸</span>
-          </button>
-
-          <button
-            onClick={async () => {
-              if (window.confirm('确认要强行重置并清空当前房间的所有座位与状态吗？')) {
-                triggerHaptic('heavy');
-                await resetServerTable(roomId);
-                setToastNotice(`🔄 房间已被强行重置清空，所有座位释放！`);
-                setTimeout(() => setToastNotice(null), 2500);
-              }
-            }}
-            className="px-2 py-0.5 rounded-full bg-slate-900/90 hover:bg-amber-950/80 border border-slate-700/80 hover:border-amber-500/50 text-slate-300 hover:text-amber-300 text-[10px] font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-sm"
-            title="确定强行重置并清空此房间"
-          >
-            <span>🔄 重置</span>
-          </button>
-
           <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-900 border border-amber-500/40 text-slate-200 text-[11px]">
             <Crown className="w-3 h-3 text-amber-400" />
             <span>庄家: <strong className="text-amber-300 font-bold">{dealerIndex + 1}号位</strong></span>
