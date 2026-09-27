@@ -181,8 +181,8 @@ setInterval(() => {
         table.cutCard = null;
         table.dealtHands = undefined;
       } else {
-        table.seats.forEach((s, i) => {
-          s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+        table.seats.forEach(s => {
+          s.name = s.name.replace(/\(\d+号位\)/g, '').trim();
         });
         table.dealerIndex = table.dealerIndex % table.seats.length;
         table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0].id;
@@ -276,8 +276,8 @@ app.get("/api/table/state", (req, res) => {
       table.cutCard = null;
       table.dealtHands = undefined;
     } else {
-      table.seats.forEach((s, i) => {
-        s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+      table.seats.forEach(s => {
+        s.name = s.name.replace(/\(\d+号位\)/g, '').trim();
       });
       table.dealerIndex = table.dealerIndex % table.seats.length;
       table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0].id;
@@ -326,8 +326,8 @@ app.post("/api/table/join", (req, res) => {
       });
 
       // Recalculate formatted seat names & indices
-      table.seats.forEach((s, i) => {
-        s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+      table.seats.forEach(s => {
+        s.name = s.name.replace(/\(\d+号位\)/g, '').trim();
       });
       const realIndex = table.seats.findIndex(s => s.id === player.id);
       table.dealerIndex = table.dealerIndex % Math.max(1, table.seats.length);
@@ -353,7 +353,6 @@ app.post("/api/table/join", (req, res) => {
     const seatIndex = table.seats.length;
     let finalName = player.name || `玩家${seatIndex + 1}`;
     finalName = finalName.replace(/\(\d+号位\)/g, '').trim();
-    finalName = `${finalName} (${seatIndex + 1}号位)`;
 
     const newSeat: ServerSeatPlayer = {
       id: String(player.id),

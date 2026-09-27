@@ -237,14 +237,14 @@ export function getTabSessionId(): string {
   return runtimeTabInstanceNonce || 'session_' + Math.random().toString(36).slice(2, 8);
 }
 
-// Directly use the user's authentic mobile phone number (or stable account ID) as player ID
+// Directly use the user's authentic mobile phone number (or stable distinct tab session) as player ID
 export function getPlayerUniqueId(phoneOrAccount?: string): string {
   const cleanPhone = (phoneOrAccount || '').trim().replace(/[^\w]/g, '');
-  if (cleanPhone) {
+  if (cleanPhone && /^1\d{10}$/.test(cleanPhone)) {
     return cleanPhone;
   }
-  const devId = getOrCreateDeviceId();
-  return devId;
+  const tabId = getTabSessionId();
+  return 'u_' + (cleanPhone || 'guest') + '_' + tabId;
 }
 
 // Read table chat messages

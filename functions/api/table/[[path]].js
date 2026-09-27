@@ -55,9 +55,9 @@ function pruneZombieSeats(table, activeThresholdMs = 2500) {
       table.cutCard = null;
       table.dealtHands = undefined;
     } else {
-      table.seats.forEach((s, i) => {
+      table.seats.forEach(s => {
         if (s.name) {
-          s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+          s.name = s.name.replace(/\(\d+号位\)/g, '').trim();
         }
       });
       table.dealerIndex = table.dealerIndex % table.seats.length;
@@ -193,16 +193,13 @@ export async function onRequest(context) {
       }
 
       const seatIndex = table.seats.length;
-      let finalName = player.name || `玩家${seatIndex + 1}`;
-      if (!finalName.includes('号位')) {
-        finalName = `${finalName} (${seatIndex + 1}号位)`;
-      }
+      const cleanName = (player.name || `玩家${seatIndex + 1}`).replace(/\(\d+号位\)/g, '').trim();
 
       const newSeat = {
         id: String(player.id),
         tabSessionId: player.tabSessionId,
         deviceId: player.deviceId,
-        name: finalName,
+        name: cleanName,
         avatar: player.avatar || "😎",
         isAi: false,
         score: 0,
