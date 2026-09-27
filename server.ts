@@ -63,6 +63,7 @@ interface SignalRecord {
 
 export interface ServerSeatPlayer {
   id: string;
+  deviceId?: string;
   tabSessionId?: string;
   name: string;
   avatar: string;
@@ -201,21 +202,27 @@ app.get("/api/table/rooms", (req, res) => {
 app.get("/api/table/state", (req, res) => {
   const roomId = normalizeRoomId(req.query.roomId || "888888");
   const playerId = req.query.playerId ? String(req.query.playerId).trim() : null;
+  const deviceId = req.query.deviceId ? String(req.query.deviceId).trim() : null;
   const tabSessionId = req.query.tabSessionId ? String(req.query.tabSessionId).trim() : null;
   const table = getOrCreateTable(roomId);
 
   const now = Date.now();
   // Update lastActive for current player if specified
-  if (playerId || tabSessionId) {
-    const s = table.seats.find(s => (playerId && s.id === playerId) || (tabSessionId && s.tabSessionId === tabSessionId));
+  if (playerId || deviceId || tabSessionId) {
+    const s = table.seats.find(s => 
+      (deviceId && s.deviceId === deviceId) ||
+      (playerId && s.id === playerId) ||
+      (tabSessionId && s.tabSessionId === tabSessionId) ||
+      (playerId && s.id && s.id.split('_')[0] === playerId.split('_')[0])
+    );
     if (s) {
       s.lastActive = now;
     }
   }
 
-  // Prune seats inactive for > 60s
+  // Prune seats inactive for > 25s
   const beforeLen = table.seats.length;
-  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 60000);
+  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 25000);
   if (table.seats.length !== beforeLen) {
     table.lastUpdated = now;
     if (table.seats.length === 0) {
@@ -224,9 +231,13 @@ app.get("/api/table/state", (req, res) => {
       table.dealerId = "";
       table.shuffleCount = 0;
       table.cutCard = null;
-    } else if (table.dealerIndex >= table.seats.length) {
-      table.dealerIndex = 0;
-      table.dealerId = table.seats[0]?.id || "";
+      table.dealtHands = undefined;
+    } else {
+      table.seats.forEach((s, i) => {
+        s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+      });
+      table.dealerIndex = table.dealerIndex % table.seats.length;
+      table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0].id;
     }
     broadcastToRoom(roomId, { type: "TABLE_SYNC", table });
   }
@@ -234,7 +245,7 @@ app.get("/api/table/state", (req, res) => {
   res.json({ ok: true, table });
 });
 
-// Join table with stale seat pruning & reliable distinct seat assignment
+// Join table with strict deduplication, stale seat pruning & reliable distinct seat assignment
 app.post("/api/table/join", (req, res) => {
   try {
     const roomId = normalizeRoomId(req.body.roomId || "888888");
@@ -247,22 +258,50 @@ app.post("/api/table/join", (req, res) => {
     const table = getOrCreateTable(roomId, req.body.roomName);
     const now = Date.now();
 
-    // 1. Auto-prune stale seats (older than 60s without ping)
+    // 1. Auto-prune stale seats (older than 25s without ping)
     table.seats = table.seats.filter(s => {
-      const isThisPlayer = s.id === player.id || (player.tabSessionId && s.tabSessionId === player.tabSessionId);
-      const isRecent = (now - (s.lastActive || 0)) < 60000;
+      const isThisPlayer = (player.deviceId && s.deviceId === player.deviceId) ||
+        s.id === player.id ||
+        (player.tabSessionId && s.tabSessionId === player.tabSessionId) ||
+        (player.id && s.id && s.id.split('_')[0] === player.id.split('_')[0]);
+      const isRecent = (now - (s.lastActive || 0)) < 25000;
       return isThisPlayer || isRecent;
     });
 
-    // 2. Check if this player is already seated (reconnect to existing seat)
-    const existingIndex = table.seats.findIndex(
-      s => s.id === player.id || (player.tabSessionId && s.tabSessionId === player.tabSessionId)
+    // 2. Check if this player is already seated (reconnect to existing seat by deviceId, id, tabSessionId or account prefix)
+    const existingIndex = table.seats.findIndex(s =>
+      (player.deviceId && s.deviceId === player.deviceId) ||
+      s.id === player.id ||
+      (player.tabSessionId && s.tabSessionId === player.tabSessionId) ||
+      (player.id && s.id && s.id.split('_')[0] === player.id.split('_')[0])
     );
 
     if (existingIndex !== -1) {
+      // Cleanly update seat properties
+      table.seats[existingIndex].id = String(player.id);
+      table.seats[existingIndex].deviceId = player.deviceId || table.seats[existingIndex].deviceId;
+      table.seats[existingIndex].tabSessionId = player.tabSessionId || table.seats[existingIndex].tabSessionId;
       table.seats[existingIndex].name = player.name || table.seats[existingIndex].name;
       table.seats[existingIndex].avatar = player.avatar || table.seats[existingIndex].avatar;
       table.seats[existingIndex].lastActive = now;
+
+      // Cleanly remove any other duplicate residual seats for this player if any exist
+      table.seats = table.seats.filter((s, idx) => {
+        if (idx === existingIndex) return true;
+        const isDup = (player.deviceId && s.deviceId === player.deviceId) ||
+          s.id === player.id ||
+          (player.tabSessionId && s.tabSessionId === player.tabSessionId) ||
+          (player.id && s.id && s.id.split('_')[0] === player.id.split('_')[0]);
+        return !isDup;
+      });
+
+      // Recalculate formatted seat names & indices
+      table.seats.forEach((s, i) => {
+        s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+      });
+      const realIndex = table.seats.findIndex(s => s.id === player.id);
+      table.dealerIndex = table.dealerIndex % Math.max(1, table.seats.length);
+      table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0]?.id || "";
       table.lastUpdated = now;
 
       broadcastToRoom(roomId, {
@@ -270,7 +309,7 @@ app.post("/api/table/join", (req, res) => {
         table
       });
 
-      res.json({ ok: true, table, seatIndex: existingIndex });
+      res.json({ ok: true, table, seatIndex: Math.max(0, realIndex) });
       return;
     }
 
@@ -288,6 +327,7 @@ app.post("/api/table/join", (req, res) => {
 
     const newSeat: ServerSeatPlayer = {
       id: String(player.id),
+      deviceId: player.deviceId,
       tabSessionId: player.tabSessionId,
       name: finalName,
       avatar: player.avatar || "😎",
@@ -330,18 +370,30 @@ app.post("/api/table/join", (req, res) => {
   }
 });
 
-// Leave table
+// Leave table (cleanly removes all matching seats for this device/player/session)
 app.post("/api/table/leave", (req, res) => {
   try {
-    const roomId = String(req.body.roomId || "888888").trim();
-    const playerId = String(req.body.playerId || "");
+    const roomId = normalizeRoomId(req.body.roomId || "888888");
+    const playerId = String(req.body.playerId || "").trim();
+    const deviceId = String(req.body.deviceId || "").trim();
+    const tabSessionId = String(req.body.tabSessionId || "").trim();
     const table = getOrCreateTable(roomId);
 
-    const idx = table.seats.findIndex(s => s.id === playerId);
-    if (idx !== -1) {
-      const leaving = table.seats[idx];
-      table.seats.splice(idx, 1);
+    const initialCount = table.seats.length;
+    const removedSeats: ServerSeatPlayer[] = [];
 
+    table.seats = table.seats.filter(s => {
+      const matchDevice = deviceId && s.deviceId === deviceId;
+      const matchPlayer = playerId && (s.id === playerId || s.id.split('_')[0] === playerId.split('_')[0]);
+      const matchTab = tabSessionId && s.tabSessionId === tabSessionId;
+      const shouldRemove = matchDevice || matchPlayer || matchTab;
+      if (shouldRemove) {
+        removedSeats.push(s);
+      }
+      return !shouldRemove;
+    });
+
+    if (removedSeats.length > 0 || table.seats.length !== initialCount) {
       if (table.seats.length === 0) {
         table.status = "waiting";
         table.dealerIndex = 0;
@@ -349,14 +401,18 @@ app.post("/api/table/leave", (req, res) => {
         table.shuffleCount = 0;
         table.cutCard = null;
         table.dealtHands = undefined;
-      } else if (table.dealerIndex >= table.seats.length || table.dealerId === leaving.id) {
-        table.dealerIndex = 0;
-        table.dealerId = table.seats[0]?.id || "";
+      } else {
+        table.seats.forEach((s, i) => {
+          s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+        });
+        table.dealerIndex = table.dealerIndex % table.seats.length;
+        table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0].id;
       }
 
+      const leaving = removedSeats[0] || { id: playerId || 'player', name: '玩家' };
       table.lastAction = {
         type: "leave",
-        playerId,
+        playerId: leaving.id,
         text: `玩家【${leaving.name}】已离开牌桌`,
         timestamp: Date.now()
       };
@@ -368,7 +424,7 @@ app.post("/api/table/leave", (req, res) => {
       });
       broadcastToRoom(roomId, {
         type: "PLAYER_LEAVE",
-        playerId,
+        playerId: leaving.id,
         table
       });
     }

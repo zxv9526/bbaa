@@ -347,7 +347,8 @@ export default function App() {
     const handleBeforeUnload = () => {
       if (mode === 'realtime') {
         const tabSessionId = getTabSessionId();
-        leaveRealtimeTable(tabSessionId);
+        const distinctUserId = realtimeUserIdRef.current || getPlayerUniqueId(currentAccount.phone || currentAccount.id);
+        leaveRealtimeTable(distinctUserId, getCurrentRoomId(), { tabSessionId });
         TripleVoiceEngine.getInstance().leave();
       }
     };
@@ -1379,6 +1380,13 @@ export default function App() {
       return;
     }
 
+    if (mode === 'realtime') {
+      const tabSessionId = getTabSessionId();
+      const distinctUserId = realtimeUserId || getPlayerUniqueId(currentAccount.phone || currentAccount.id);
+      leaveRealtimeTable(distinctUserId, getCurrentRoomId(), { tabSessionId });
+      TripleVoiceEngine.getInstance().leave();
+    }
+
     clearActiveMatchSession(currentAccount.phone);
     setCarriageToast({
       show: true,
@@ -1411,6 +1419,13 @@ export default function App() {
       realtimeDealerIndex,
       realtimeRound
     });
+
+    if (mode === 'realtime') {
+      const tabSessionId = getTabSessionId();
+      const distinctUserId = realtimeUserId || getPlayerUniqueId(currentAccount.phone || currentAccount.id);
+      leaveRealtimeTable(distinctUserId, getCurrentRoomId(), { tabSessionId });
+      TripleVoiceEngine.getInstance().leave();
+    }
 
     setCarriageToast({
       show: true,
@@ -1540,8 +1555,12 @@ export default function App() {
     // ⚡ 实时对战场模式：不使用存储牌局，纯动态结算与轮流庄家顺延
     if (mode === 'realtime') {
       try {
+        const effectiveId = (mode === 'realtime' && realtimeUserId) 
+          ? realtimeUserId 
+          : (currentAccount.phone || currentAccount.id || 'player_user');
+
         const fullPlayersList = playersInMatch.map(p => {
-          if (p.id === 'player_user' || !p.isAi) {
+          if (p.id === effectiveId || p.id === 'player_user') {
             return {
               ...p,
               arrangement: userArrangement
@@ -1552,7 +1571,7 @@ export default function App() {
 
         // 动态两两对比算分 (支持2至8人场)
         const allResults = calculateMatchScores(fullPlayersList);
-        const myResult = allResults.find(r => r.playerId === 'player_user') || allResults[0];
+        const myResult = allResults.find(r => r.playerId === effectiveId || r.playerId === 'player_user') || allResults[0];
 
         if (myResult.finalPoints > 0) {
           sounds.playVictory();
@@ -2145,7 +2164,9 @@ export default function App() {
             onStartDeal={handleRealtimeDealComplete}
             onBackToMenu={() => {
               const tabSessionId = getTabSessionId();
-              leaveRealtimeTable(tabSessionId);
+              const distinctUserId = (mode === 'realtime' && realtimeUserId) ? realtimeUserId : getPlayerUniqueId(currentAccount.phone || currentAccount.id);
+              leaveRealtimeTable(distinctUserId, getCurrentRoomId(), { tabSessionId });
+              TripleVoiceEngine.getInstance().leave();
               setGameState('menu');
             }}
             onSendMessage={handleSendMessage}
@@ -2183,6 +2204,7 @@ export default function App() {
           <div className="w-full max-w-6xl flex flex-col items-center gap-6 overflow-y-auto pb-safe p-2 sm:p-4 pb-[max(env(safe-area-inset-bottom,0px),24px)]">
             <ShowdownStage
               results={matchResults}
+              currentUserId={(mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')}
               onPlayAgain={() => {
                 if (mode === 'reservation') {
                   openReservationSeatSelection();
@@ -2218,6 +2240,12 @@ export default function App() {
                   : '极速再来一局 (自动发牌)'
               }
               onBackToMenu={() => {
+                if (mode === 'realtime') {
+                  const tabSessionId = getTabSessionId();
+                  const distinctUserId = (mode === 'realtime' && realtimeUserId) ? realtimeUserId : getPlayerUniqueId(currentAccount.phone || currentAccount.id);
+                  leaveRealtimeTable(distinctUserId, getCurrentRoomId(), { tabSessionId });
+                  TripleVoiceEngine.getInstance().leave();
+                }
                 setGameState('menu');
               }}
               onOpenChat={handleOpenChatDrawer}

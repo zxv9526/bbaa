@@ -400,6 +400,7 @@ export async function joinOrCreateRealtimeTable(currentUser: {
 
   const roomId = currentRoomId;
   const tabSessionId = currentUser.tabSessionId || getTabSessionId();
+  const deviceId = getOrCreateDeviceId();
   ensureTableWsConnected();
 
   // 1. Primary: Server Authoritative Join via REST API
@@ -415,6 +416,7 @@ export async function joinOrCreateRealtimeTable(currentUser: {
         roomId,
         player: {
           id: currentUser.id,
+          deviceId,
           tabSessionId,
           name: currentUser.name,
           avatar: currentUser.avatar
@@ -436,7 +438,7 @@ export async function joinOrCreateRealtimeTable(currentUser: {
 
         const mySeatIdx = typeof data.seatIndex === 'number'
           ? data.seatIndex
-          : data.table.seats.findIndex((s: any) => s.id === currentUser.id || s.tabSessionId === tabSessionId);
+          : data.table.seats.findIndex((s: any) => s.id === currentUser.id || s.tabSessionId === tabSessionId || s.deviceId === deviceId);
 
         const assignedSeat = data.table.seats[mySeatIdx] || data.table.seats[data.table.seats.length - 1];
 
@@ -463,8 +465,13 @@ export async function joinOrCreateRealtimeTable(currentUser: {
   // 2. Fallback: Local Cache if server is unreachable
   const existing = getSavedRealtimeTable(roomId);
   if (existing && Array.isArray(existing.seats) && existing.seats.length > 0) {
-    const seatIdx = existing.seats.findIndex(s => s.id === currentUser.id || s.tabSessionId === tabSessionId);
+    const seatIdx = existing.seats.findIndex(s => s.id === currentUser.id || s.tabSessionId === tabSessionId || (s as any).deviceId === deviceId);
     if (seatIdx !== -1) {
+      existing.seats[seatIdx].id = currentUser.id;
+      existing.seats[seatIdx].tabSessionId = tabSessionId;
+      existing.seats[seatIdx].name = currentUser.name;
+      existing.seats[seatIdx].avatar = currentUser.avatar;
+      saveRealtimeTable(existing, roomId);
       return {
         table: existing,
         isNewTable: false,
@@ -535,39 +542,68 @@ export async function joinOrCreateRealtimeTable(currentUser: {
   };
 }
 
-// Leave table
-export function leaveRealtimeTable(identifier: string): RealtimeTableState | null {
-  const current = getSavedRealtimeTable();
-  if (!current || !current.seats) return null;
+// Leave table (meticulously prunes local storage, notifies broadcast channel & informs server)
+export function leaveRealtimeTable(
+  identifier?: string,
+  targetRoomId?: string,
+  extra?: { tabSessionId?: string; deviceId?: string; playerId?: string }
+): RealtimeTableState | null {
+  const roomId = targetRoomId || currentRoomId || '888888';
+  const playerId = identifier || extra?.playerId || '';
+  const tabSessionId = extra?.tabSessionId || getTabSessionId();
+  const deviceId = extra?.deviceId || getOrCreateDeviceId();
 
-  const idx = current.seats.findIndex(s => s.id === identifier || s.tabSessionId === identifier);
-  if (idx === -1) return current;
+  const current = getSavedRealtimeTable(roomId);
+  if (current && Array.isArray(current.seats)) {
+    const remainingSeats = current.seats.filter(s => {
+      const matchId = playerId && (s.id === playerId || s.id.split('_')[0] === playerId.split('_')[0]);
+      const matchTab = tabSessionId && s.tabSessionId === tabSessionId;
+      const matchDev = deviceId && (s as any).deviceId === deviceId;
+      return !(matchId || matchTab || matchDev);
+    });
 
-  const leavingPlayer = current.seats[idx];
-  current.seats.splice(idx, 1);
-
-  if (current.seats.length === 0) {
-    clearRealtimeTable();
-  } else {
-    if (current.dealerIndex >= current.seats.length || current.dealerId === leavingPlayer.id) {
-      current.dealerIndex = 0;
-      current.dealerId = current.seats[0]?.id || '';
+    current.seats = remainingSeats;
+    if (current.seats.length === 0) {
+      clearRealtimeTable(roomId);
+    } else {
+      current.seats.forEach((s, i) => {
+        s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+      });
+      current.dealerIndex = current.dealerIndex % current.seats.length;
+      current.dealerId = current.seats[current.dealerIndex]?.id || current.seats[0].id;
+      current.lastAction = {
+        type: 'leave',
+        playerId: playerId || 'user',
+        text: `玩家已离开牌桌`,
+        timestamp: Date.now()
+      };
+      saveRealtimeTable(current, roomId);
+      broadcastEvent({ type: 'PLAYER_LEAVE', playerId: playerId || '', state: current });
     }
-    current.lastAction = {
-      type: 'leave',
-      playerId: leavingPlayer.id,
-      text: `玩家【${leavingPlayer.name}】已离开牌桌`,
-      timestamp: Date.now()
-    };
-    saveRealtimeTable(current);
-    broadcastEvent({ type: 'PLAYER_LEAVE', playerId: leavingPlayer.id, state: current });
   }
 
-  fetch('/api/table/leave', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ roomId: currentRoomId, playerId: leavingPlayer.id })
-  }).catch(() => {});
+  // Always inform server via fetch / sendBeacon so seat is guaranteed pruned on backend
+  const payload = JSON.stringify({ roomId, playerId, tabSessionId, deviceId });
+  try {
+    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: 'application/json' });
+      navigator.sendBeacon('/api/table/leave', blob);
+    } else {
+      fetch('/api/table/leave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true
+      }).catch(() => {});
+    }
+  } catch {
+    fetch('/api/table/leave', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      keepalive: true
+    }).catch(() => {});
+  }
 
   return current;
 }

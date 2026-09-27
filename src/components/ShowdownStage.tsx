@@ -24,6 +24,7 @@ import {
 
 interface ShowdownStageProps {
   results: PlayerScoreDetail[];
+  currentUserId?: string;
   onPlayAgain: () => void;
   onQuickPlayAgain?: () => void;
   onBackToMenu: () => void;
@@ -36,6 +37,7 @@ type Step = 'front' | 'middle' | 'back' | 'guns' | 'summary';
 
 export function ShowdownStage({
   results,
+  currentUserId,
   onPlayAgain,
   onQuickPlayAgain,
   onBackToMenu,
@@ -47,7 +49,7 @@ export function ShowdownStage({
   const [autoPlay, setAutoPlay] = useState<boolean>(true);
   const [expandedOppId, setExpandedOppId] = useState<string | null>(null);
 
-  const userResult = results.find(r => r.playerId === 'player_user') || results[0];
+  const userResult = results.find(r => (currentUserId && r.playerId === currentUserId) || r.playerId === 'player_user') || results[0];
   const isSpecialMatch = results.some(r => r.specialHand);
 
   // 👥 计算我与所有对手的战果统计
@@ -216,7 +218,7 @@ export function ShowdownStage({
           : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4'
       }`}>
         {results.map(p => {
-          const isUser = p.playerId === 'player_user';
+          const isUser = p.playerId === userResult.playerId;
           const showFront = stepIndex >= 0;
           const showMid = stepIndex >= 1;
           const showBack = stepIndex >= 2;
