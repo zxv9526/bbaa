@@ -265,105 +265,19 @@ export class ApiClient {
     const arg1 = parts[1];
     const arg2 = parts[2];
 
-    if (
-      rawCmd === '📱 授权手机号' ||
-      rawCmd === '📱 授权名录' ||
-      rawCmd === '授权名录' ||
-      rawCmd === '/授权名录'
-    ) mainCmd = '/authlist';
-    else if (
-      rawCmd === '🧹 一键清理残留' ||
-      rawCmd === '🧹 清理残留' ||
-      rawCmd === '🧹 牌桌清理' ||
-      rawCmd === '清理残留' ||
-      rawCmd === '/清理残留' ||
-      rawCmd === '清理' ||
-      rawCmd === '/清理' ||
-      rawCmd === '一键清理' ||
-      rawCmd === '一键清理残留' ||
-      rawCmd === '/一键清理残留' ||
-      rawCmd === '重置' ||
-      rawCmd === '/重置' ||
-      rawCmd === '重置牌桌' ||
-      rawCmd === '/重置牌桌' ||
-      mainCmd === 'clean' ||
-      mainCmd === 'clear' ||
-      mainCmd === 'reset' ||
-      mainCmd === 'purge' ||
-      mainCmd === 'flush'
-    ) mainCmd = '/clean';
+    if (rawCmd === '📱 授权手机号' || rawCmd === '📱 授权名录') mainCmd = '/authlist';
     else if (rawCmd === '🚫 移除授权' || rawCmd === '🚫 取消授权') mainCmd = '/help_unauth';
     else if (rawCmd === '🗑️ 删除玩家' || rawCmd === '🗑️ 删除账号') mainCmd = '/help_deluser';
     else if (rawCmd === '💰 积分管理' || rawCmd === '💰 调整积分') mainCmd = '/help_points';
-    else if (rawCmd === '👥 活跃玩家' || rawCmd === '👥 玩家名录' || rawCmd === '玩家名录' || rawCmd === '/玩家名录' || mainCmd === 'players') mainCmd = '/players';
-    else if (rawCmd === '🏆 全服风云榜' || rawCmd === '🏆 排行榜' || rawCmd === '排行榜' || rawCmd === '/排行榜') mainCmd = '/rank';
-    else if (rawCmd === '📊 数据总览' || rawCmd === '📊 全局统计' || rawCmd === '统计' || rawCmd === '/统计') mainCmd = '/stats';
+    else if (rawCmd === '👥 活跃玩家' || rawCmd === '👥 玩家名录') mainCmd = '/players';
+    else if (rawCmd === '🏆 全服风云榜' || rawCmd === '🏆 排行榜') mainCmd = '/rank';
+    else if (rawCmd === '📊 数据总览' || rawCmd === '📊 全局统计') mainCmd = '/stats';
     else if (rawCmd === '📜 最新对局' || rawCmd === '📜 对局流水') mainCmd = '/history';
     else if (rawCmd === '🆔 我的状态' || rawCmd === '🆔 身份信息') mainCmd = '/myid';
-    else if (rawCmd === '❓ 帮助说明' || rawCmd === '❓ 指令菜单' || rawCmd === '帮助' || rawCmd === '/帮助') mainCmd = '/help';
+    else if (rawCmd === '❓ 帮助说明' || rawCmd === '❓ 指令菜单') mainCmd = '/help';
 
     const allUsers = getAllUsersList();
     const authPhones = getAuthorizedPhones();
-
-    // 0. 🧹 一键清理残留命令: /clean [房间号/all]
-    if (
-      mainCmd === '/clean' ||
-      mainCmd === '/clear' ||
-      mainCmd === '/cleantable' ||
-      mainCmd === '/cleanall' ||
-      mainCmd === '/cleanresidue' ||
-      mainCmd === '/reset' ||
-      mainCmd === '/cleanrooms' ||
-      mainCmd === '/purge' ||
-      mainCmd === '/flush' ||
-      mainCmd === '/kickall' ||
-      mainCmd === '/清理残留' ||
-      mainCmd === '/清理'
-    ) {
-      const targetRoom = arg1 && arg1 !== 'all' ? arg1 : 'all';
-      let serverMsg = '';
-      try {
-        const res = await fetch('/api/table/clean', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId: targetRoom })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          serverMsg = data.message || '';
-        }
-      } catch {}
-
-      try {
-        localStorage.removeItem('thirteen_realtime_table_888888');
-        localStorage.removeItem('thirteen_realtime_table');
-        localStorage.removeItem('thirteen_active_match_session');
-      } catch {}
-
-      return {
-        ok: true,
-        response: {
-          text: `🧹 <b>十三水 · 牌桌残留一键清理完成</b>\n━━━━━━━━━━━━━━━━━━\n` +
-            `✅ <b>清理范围</b>: <b>${targetRoom === 'all' ? '全服所有房间与牌桌' : `房间 ${targetRoom}`}</b>\n` +
-            `🪑 <b>残留席位</b>: 已全部释放并重置为 <b>0/8</b> 人\n` +
-            `⚡ <b>牌桌状态</b>: 已恢复为崭新就绪 (Status: waiting)\n` +
-            `📡 <b>全服广播</b>: 已向所有在线客户端同步最新牌桌状态！\n\n` +
-            (serverMsg ? `<i>ℹ️ ${serverMsg}</i>` : `<i>💡 所有幽灵占位、死锁席位及孤立会话已被彻底销毁。</i>`),
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: '🧹 清理全服残留 (/clean all)', callback_data: '/clean all' },
-                { text: '🧹 清理当前房间', callback_data: '/clean 888888' }
-              ],
-              [
-                { text: '👥 查看玩家名录', callback_data: '/players' },
-                { text: '📊 全局统计总览', callback_data: '/stats' }
-              ]
-            ]
-          }
-        }
-      };
-    }
 
     if (mainCmd === '/help_unauth') {
       return {
@@ -677,13 +591,10 @@ export class ApiClient {
       ok: true,
       response: {
         text: `🤖 <b>十三水 Bot 管理员指令中心</b>\n✅ <b>管理员状态</b>: 已授权 (Bot Admin)\n━━━━━━━━━━━━━━━━━━\n` +
-          `<b>🧹 牌桌与残留管理：</b>\n` +
-          `• <code>/clean [房间号/all]</code> - <b>一键清理房间残留与幽灵席位</b>\n\n` +
           `<b>📱 手机号授权与注册管理：</b>\n` +
           `• <code>/auth &lt;手机号&gt;</code> - 授权手机号注册\n` +
           `• <code>/unauth &lt;手机号&gt;</code> - 取消手机号授权\n` +
-          `• <code>/authlist</code> - 查看已授权手机号列表\n` +
-          `• <code>/deluser &lt;手机号/昵称&gt;</code> - 彻底删除玩家账号\n\n` +
+          `• <code>/authlist</code> - 查看已授权手机号列表\n\n` +
           `<b>💰 玩家积分管理与查询：</b>\n` +
           `• <code>/score &lt;手机号/昵称&gt;</code> - 搜索玩家并查看积分档案\n` +
           `• <code>/add &lt;手机号&gt; &lt;数量&gt;</code> - 给玩家增加积分\n` +
@@ -694,7 +605,6 @@ export class ApiClient {
           `• <code>/stats</code> - 游戏全局数据总览`,
         reply_markup: {
           inline_keyboard: [
-            [{ text: '🧹 一键清理牌桌残留 (/clean)', callback_data: '/clean' }],
             [{ text: '👥 玩家名录与积分', callback_data: '/players' }, { text: '📱 授权手机号列表', callback_data: '/authlist' }],
             [{ text: '🏆 全服风云榜', callback_data: '/rank' }, { text: '📊 统计总览', callback_data: '/stats' }]
           ]

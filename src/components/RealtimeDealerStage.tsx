@@ -14,8 +14,7 @@ import {
   RefreshCw,
   Hourglass,
   Radio,
-  Check,
-  Bot
+  Check
 } from 'lucide-react';
 
 import { TableTacticalChatBar } from './TableTacticalChatBar';
@@ -57,7 +56,6 @@ interface RealtimeDealerStageProps {
   onRotateDealer?: (newDealerIndex: number) => void;
   unreadCount?: number;
   activeSpeakerId?: string | null;
-  onOpenBotConsole?: () => void;
 }
 
 export function RealtimeDealerStage({
@@ -84,8 +82,7 @@ export function RealtimeDealerStage({
   onDealerDeal,
   onRotateDealer,
   unreadCount = 0,
-  activeSpeakerId: externalSpeakerId,
-  onOpenBotConsole
+  activeSpeakerId: externalSpeakerId
 }: RealtimeDealerStageProps) {
   const seatedCount = players.length;
   const currentDealer = players[dealerIndex] || players[0];
@@ -384,18 +381,6 @@ export function RealtimeDealerStage({
             <span>房号: <strong className="text-amber-300 font-mono">{roomId}</strong></span>
             <span className="text-[9px] text-indigo-400">▾</span>
           </button>
-
-          {/* Bot Console & Quick Clean Trigger */}
-          {onOpenBotConsole && (
-            <button
-              onClick={onOpenBotConsole}
-              className="px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition cursor-pointer active:scale-95 shadow-sm"
-              title="打开 Bot 控制台 / 一键清理残留"
-            >
-              <Bot className="w-3 h-3 text-amber-400" />
-              <span>Bot/清理</span>
-            </button>
-          )}
         </div>
 
         <div className="flex items-center gap-1.5 text-xs">
