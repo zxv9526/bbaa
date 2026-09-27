@@ -82,7 +82,9 @@ export async function onRequest(context) {
         phone TEXT PRIMARY KEY,
         authorized_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );`,
-      `DELETE FROM authorized_phones WHERE phone IN ('13900000000', '13800138000', '18888888888', '13800138001', '13800138002') OR phone LIKE '%13900000000%' OR phone LIKE '%13800138000%';`
+      `DELETE FROM authorized_phones WHERE phone IN ('13900000000', '13800138000', '18888888888', '13800138001', '13800138002') OR phone LIKE '%13900000000%' OR phone LIKE '%13800138000%';`,
+      `DELETE FROM rooms WHERE room_code IN ('8888', '888888');`,
+      `UPDATE rooms SET players_json = '[]' WHERE room_code = '666666';`
     ];
 
     for (const sql of queries) {

@@ -1,17 +1,23 @@
 // Cloudflare Pages Function: /api/table/[[path]]
-// Supports /api/table/join, /api/table/state, /api/table/rooms, /api/table/action, /api/table/leave
+// Serverless Authoritative Table Manager with Instant Zombie Eviction
 
-// In-memory global fallback table storage for Cloudflare Workers
 const globalTables = new Map();
 
+function normalizeRoomId(rawRoomId) {
+  if (!rawRoomId) return "666666";
+  const clean = String(rawRoomId).trim().replace(/^realtime_room_/, "");
+  if (clean === "8888" || clean === "888888") return "666666";
+  return clean || "666666";
+}
+
 function getOrCreateMemoryTable(rawRoomId, customName) {
-  const roomId = String(rawRoomId || "888888").trim().replace(/^realtime_room_/, "") || "888888";
+  const roomId = normalizeRoomId(rawRoomId);
   let table = globalTables.get(roomId);
   if (!table) {
     table = {
       tableId: "tbl_" + roomId + "_" + Date.now().toString(36),
       roomId,
-      roomName: customName || (roomId === "888888" ? "竞技大厅 888888" : `专属房间 ${roomId}`),
+      roomName: customName || (roomId === "666666" ? "十三水巅峰大厅 666666" : `专属房间 ${roomId}`),
       round: 1,
       dealerIndex: 0,
       dealerId: "",
@@ -25,6 +31,41 @@ function getOrCreateMemoryTable(rawRoomId, customName) {
     globalTables.set(roomId, table);
   }
   return table;
+}
+
+// Helper: Prune zombie seats inactive for > 2500ms
+function pruneZombieSeats(table, activeThresholdMs = 2500) {
+  if (!table || !Array.isArray(table.seats)) return 0;
+  const now = Date.now();
+  const beforeCount = table.seats.length;
+
+  table.seats = table.seats.filter(s => {
+    if (!s || s.isAi) return false;
+    const lastActive = s.lastActive || 0;
+    return (now - lastActive) < activeThresholdMs;
+  });
+
+  const removedCount = beforeCount - table.seats.length;
+  if (removedCount > 0) {
+    if (table.seats.length === 0) {
+      table.status = "waiting";
+      table.dealerIndex = 0;
+      table.dealerId = "";
+      table.shuffleCount = 0;
+      table.cutCard = null;
+      table.dealtHands = undefined;
+    } else {
+      table.seats.forEach((s, i) => {
+        if (s.name) {
+          s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+        }
+      });
+      table.dealerIndex = table.dealerIndex % table.seats.length;
+      table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0].id;
+    }
+    table.lastUpdated = now;
+  }
+  return removedCount;
 }
 
 export async function onRequest(context) {
@@ -42,67 +83,84 @@ export async function onRequest(context) {
     return new Response(null, { headers });
   }
 
+  // Auto delete 8888 & 888888
+  globalTables.delete("888888");
+  globalTables.delete("8888");
+
   const url = new URL(context.request.url);
   const pathParts = url.pathname.split('/').filter(Boolean);
   const subAction = pathParts[pathParts.length - 1] || 'state';
 
-  // GET /api/table/rooms
+  // 1. GET /api/table/rooms
   if (subAction === 'rooms' && context.request.method === 'GET') {
-    getOrCreateMemoryTable("888888");
-    const rooms = Array.from(globalTables.values()).map(t => ({
-      roomId: t.roomId,
-      roomName: t.roomName,
-      playerCount: t.seats.length,
-      maxPlayers: 8,
-      round: t.round,
-      status: t.status,
-      dealerName: t.seats[t.dealerIndex]?.name || "待入座",
-      lastUpdated: t.lastUpdated
-    }));
+    const mainTable = getOrCreateMemoryTable("666666");
+    pruneZombieSeats(mainTable);
+
+    const rooms = Array.from(globalTables.values()).map(t => {
+      pruneZombieSeats(t);
+      return {
+        roomId: t.roomId,
+        roomName: t.roomName,
+        playerCount: t.seats.length,
+        maxPlayers: 8,
+        round: t.round,
+        status: t.status,
+        dealerName: t.seats[t.dealerIndex]?.name || "待入座",
+        lastUpdated: t.lastUpdated
+      };
+    });
     return new Response(JSON.stringify({ ok: true, rooms }), { headers });
   }
 
-  // GET /api/table/state?roomId=...
+  // 2. GET /api/table/state
   if ((subAction === 'state' || subAction === 'table') && context.request.method === 'GET') {
-    const rawRoom = url.searchParams.get('roomId') || '888888';
-    const roomId = rawRoom.replace(/^realtime_room_/, '') || '888888';
+    const rawRoom = url.searchParams.get('roomId') || '666666';
+    const roomId = normalizeRoomId(rawRoom);
+    const playerId = url.searchParams.get('playerId');
+    const deviceId = url.searchParams.get('deviceId');
+    const tabSessionId = url.searchParams.get('tabSessionId');
 
-    // If D1 is available, try reading from rooms table
+    const table = getOrCreateMemoryTable(roomId);
+    const now = Date.now();
+
+    // Refresh active timestamp for requesting client
+    if (playerId || deviceId || tabSessionId) {
+      const s = table.seats.find(seat =>
+        (playerId && seat.id === playerId) ||
+        (tabSessionId && seat.tabSessionId === tabSessionId) ||
+        (deviceId && seat.deviceId === deviceId)
+      );
+      if (s) {
+        s.lastActive = now;
+      }
+    }
+
+    // Always prune stale zombies (<2.5s)
+    pruneZombieSeats(table, 2500);
+
+    // Sync state with D1 database if bound
     if (db) {
       try {
-        const row = await db.prepare("SELECT * FROM rooms WHERE room_code = ?").bind(roomId).first();
-        if (row && row.players_json) {
-          const seats = JSON.parse(row.players_json || '[]');
-          const table = {
-            tableId: "tbl_" + roomId,
-            roomId,
-            roomName: row.host_name ? `房间 ${roomId}` : "竞技大厅 888888",
-            round: 1,
-            dealerIndex: 0,
-            dealerId: seats[0]?.id || "",
-            status: row.status || "waiting",
-            seats,
-            shuffleCount: 0,
-            cutSliderPos: 50,
-            cutCard: null,
-            lastUpdated: Date.now()
-          };
-          globalTables.set(roomId, table);
-          return new Response(JSON.stringify({ ok: true, table }), { headers });
-        }
+        await db.prepare(`
+          INSERT INTO rooms (room_code, host_name, max_players, status, players_json, created_at, updated_at)
+          VALUES (?, ?, 8, ?, ?, datetime('now'), datetime('now'))
+          ON CONFLICT(room_code) DO UPDATE SET
+            players_json = ?, status = ?, updated_at = datetime('now')
+        `).bind(
+          roomId, table.seats[0]?.name || 'Host', table.status, JSON.stringify(table.seats),
+          JSON.stringify(table.seats), table.status
+        ).run();
       } catch {}
     }
 
-    const table = getOrCreateMemoryTable(roomId);
     return new Response(JSON.stringify({ ok: true, table }), { headers });
   }
 
-  // POST /api/table/join
+  // 3. POST /api/table/join
   if (subAction === 'join' && context.request.method === 'POST') {
     try {
       const body = await context.request.json();
-      const rawRoom = body.roomId || '888888';
-      const roomId = String(rawRoom).trim().replace(/^realtime_room_/, "") || '888888';
+      const roomId = normalizeRoomId(body.roomId || '666666');
       const player = body.player;
 
       if (!player || !player.id) {
@@ -110,22 +168,28 @@ export async function onRequest(context) {
       }
 
       const table = getOrCreateMemoryTable(roomId, body.roomName);
+      const now = Date.now();
 
-      // Check if already seated
-      const existingIdx = table.seats.findIndex(
-        s => s.id === player.id || (player.tabSessionId && s.tabSessionId === player.tabSessionId)
+      // 3.1 First prune zombies (< 2.5s)
+      pruneZombieSeats(table, 2500);
+
+      // 3.2 Check if player already seated
+      const existingIdx = table.seats.findIndex(s =>
+        s.id === player.id || (player.tabSessionId && s.tabSessionId === player.tabSessionId)
       );
 
       if (existingIdx !== -1) {
         table.seats[existingIdx].name = player.name || table.seats[existingIdx].name;
         table.seats[existingIdx].avatar = player.avatar || table.seats[existingIdx].avatar;
-        table.seats[existingIdx].lastActive = Date.now();
-        table.lastUpdated = Date.now();
+        table.seats[existingIdx].lastActive = now;
+        table.lastUpdated = now;
         return new Response(JSON.stringify({ ok: true, table, seatIndex: existingIdx }), { headers });
       }
 
+      // 3.3 If table is full (8/8), force evict the oldest inactive seat to make space for real active player
       if (table.seats.length >= 8) {
-        return new Response(JSON.stringify({ ok: false, error: "牌桌已满员 (8/8)", table, isFull: true }), { headers });
+        table.seats.sort((a, b) => (a.lastActive || 0) - (b.lastActive || 0));
+        table.seats.shift(); // Evict the least active player
       }
 
       const seatIndex = table.seats.length;
@@ -137,11 +201,12 @@ export async function onRequest(context) {
       const newSeat = {
         id: String(player.id),
         tabSessionId: player.tabSessionId,
+        deviceId: player.deviceId,
         name: finalName,
         avatar: player.avatar || "😎",
         isAi: false,
         score: 0,
-        lastActive: Date.now()
+        lastActive: now
       };
 
       table.seats.push(newSeat);
@@ -155,11 +220,10 @@ export async function onRequest(context) {
         type: "join",
         playerId: newSeat.id,
         text: `玩家【${newSeat.name}】入座第 ${seatIndex + 1} 席！`,
-        timestamp: Date.now()
+        timestamp: now
       };
-      table.lastUpdated = Date.now();
+      table.lastUpdated = now;
 
-      // Persist to D1 if available
       if (db) {
         try {
           await db.prepare(`
@@ -180,26 +244,44 @@ export async function onRequest(context) {
     }
   }
 
-  // POST /api/table/leave
+  // 4. POST /api/table/leave
   if (subAction === 'leave' && context.request.method === 'POST') {
     try {
       const body = await context.request.json();
-      const roomId = String(body.roomId || '888888').trim().replace(/^realtime_room_/, "") || '888888';
+      const roomId = normalizeRoomId(body.roomId || '666666');
       const playerId = String(body.playerId || '');
+      const tabSessionId = String(body.tabSessionId || '');
+      const deviceId = String(body.deviceId || '');
       const table = getOrCreateMemoryTable(roomId);
 
-      const idx = table.seats.findIndex(s => s.id === playerId || s.tabSessionId === playerId);
-      if (idx !== -1) {
-        table.seats.splice(idx, 1);
-        if (table.seats.length === 0) {
-          table.status = "waiting";
-          table.dealerIndex = 0;
-          table.dealerId = "";
-        } else if (table.dealerIndex >= table.seats.length) {
-          table.dealerIndex = 0;
-          table.dealerId = table.seats[0]?.id || "";
-        }
-        table.lastUpdated = Date.now();
+      table.seats = table.seats.filter(s => {
+        const matchDevice = deviceId && s.deviceId === deviceId;
+        const matchPlayer = playerId && s.id === playerId;
+        const matchTab = tabSessionId && s.tabSessionId === tabSessionId;
+        return !(matchDevice || matchPlayer || matchTab);
+      });
+
+      if (table.seats.length === 0) {
+        table.status = "waiting";
+        table.dealerIndex = 0;
+        table.dealerId = "";
+      } else {
+        table.seats.forEach((s, i) => {
+          if (s.name) {
+            s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+          }
+        });
+        table.dealerIndex = table.dealerIndex % table.seats.length;
+        table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0].id;
+      }
+      table.lastUpdated = Date.now();
+
+      if (db) {
+        try {
+          await db.prepare(`
+            UPDATE rooms SET players_json = ?, updated_at = datetime('now') WHERE room_code = ?
+          `).bind(JSON.stringify(table.seats), roomId).run();
+        } catch {}
       }
 
       return new Response(JSON.stringify({ ok: true, table }), { headers });
@@ -208,11 +290,46 @@ export async function onRequest(context) {
     }
   }
 
-  // POST /api/table/action
+  // 5. POST /api/table/clean_stale & /api/table/reset
+  if ((subAction === 'clean_stale' || subAction === 'reset') && context.request.method === 'POST') {
+    try {
+      const body = await context.request.json();
+      const roomId = normalizeRoomId(body.roomId || '666666');
+      const table = getOrCreateMemoryTable(roomId);
+
+      if (subAction === 'reset') {
+        table.seats = [];
+        table.status = "waiting";
+        table.dealerIndex = 0;
+        table.dealerId = "";
+        table.shuffleCount = 0;
+        table.cutCard = null;
+        table.dealtHands = undefined;
+      } else {
+        pruneZombieSeats(table, 2500);
+      }
+
+      table.lastUpdated = Date.now();
+
+      if (db) {
+        try {
+          await db.prepare(`
+            UPDATE rooms SET players_json = ?, updated_at = datetime('now') WHERE room_code = ?
+          `).bind(JSON.stringify(table.seats), roomId).run();
+        } catch {}
+      }
+
+      return new Response(JSON.stringify({ ok: true, table }), { headers });
+    } catch (err) {
+      return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers });
+    }
+  }
+
+  // 6. POST /api/table/action
   if (subAction === 'action' && context.request.method === 'POST') {
     try {
       const body = await context.request.json();
-      const roomId = String(body.roomId || '888888').trim().replace(/^realtime_room_/, "") || '888888';
+      const roomId = normalizeRoomId(body.roomId || '666666');
       const action = body.action;
       const table = getOrCreateMemoryTable(roomId);
 
