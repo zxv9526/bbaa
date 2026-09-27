@@ -33,6 +33,14 @@ function notifyListeners(account: UserAccount) {
 // ----------------------------------------------------
 // 1. 11位手机号严格授权与注册管理 (无默认保护账号，全靠 Bot 动态授权)
 // ----------------------------------------------------
+const DISALLOWED_DEFAULT_PHONES = new Set(['13900000000', '13800138000', '18888888888', '13800138001', '13800138002']);
+
+function isDisallowedPhone(phone: string): boolean {
+  const norm = normalizePhone(phone);
+  if (!norm) return true;
+  return DISALLOWED_DEFAULT_PHONES.has(norm);
+}
+
 export function normalizePhone(phone: string): string {
   if (!phone) return '';
   let cleaned = phone.trim().replace(/[^\d]/g, '');
@@ -48,7 +56,9 @@ export function getAuthorizedPhones(): string[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed.map(normalizePhone).filter(p => /^1\d{10}$/.test(p));
+        return parsed
+          .map(normalizePhone)
+          .filter(p => /^1\d{10}$/.test(p) && !isDisallowedPhone(p));
       }
     }
   } catch {}
@@ -57,7 +67,7 @@ export function getAuthorizedPhones(): string[] {
 
 export function isPhoneAuthorized(phone: string): boolean {
   const norm = normalizePhone(phone);
-  if (!/^1\d{10}$/.test(norm)) return false;
+  if (!/^1\d{10}$/.test(norm) || isDisallowedPhone(norm)) return false;
   const list = getAuthorizedPhones();
   return list.includes(norm);
 }

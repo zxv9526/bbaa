@@ -2,6 +2,13 @@
 // Telegram Bot Webhook & Admin Management for Chinese Poker (十三水)
 
 const inMemoryAuthorizedPhones = new Set();
+const DISALLOWED_DEFAULT_PHONES = new Set(['13900000000', '13800138000', '18888888888', '13800138001', '13800138002']);
+
+function isDisallowedPhone(phone) {
+  const norm = normalizePhoneNum(phone);
+  if (!norm) return true;
+  return DISALLOWED_DEFAULT_PHONES.has(norm);
+}
 
 function normalizePhoneNum(phone) {
   if (!phone) return '';
@@ -17,6 +24,14 @@ export async function onRequest(context) {
   const db = env.DB || env.D1 || env.DATABASE || env.THIRTEEN_WATER_DB;
   const botToken = env.TELEGRAM_BOT_TOKEN || env.BOT_TOKEN || '';
   const adminPassword = env.TELEGRAM_ADMIN_PASSWORD || env.ADMIN_PASSWORD || '';
+
+  // Auto-purge disallowed residual default phones from D1 table if bound
+  if (db) {
+    try {
+      await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_phones (phone TEXT PRIMARY KEY, authorized_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run();
+      await db.prepare(`DELETE FROM authorized_phones WHERE phone IN ('13900000000', '13800138000', '18888888888', '13800138001', '13800138002') OR phone LIKE '%13900000000%' OR phone LIKE '%13800138000%'`).run();
+    } catch {}
+  }
   
   // Parse configured admin IDs (supports numeric IDs, usernames with or without @, comma/space/newline separated)
   const configuredAdminIds = (env.TELEGRAM_ADMIN_IDS || '')
@@ -104,6 +119,10 @@ export async function onRequest(context) {
       const phoneDigits = normalizePhoneNum(rawPhone);
       let authorized = false;
 
+      if (isDisallowedPhone(phoneDigits)) {
+        return new Response(JSON.stringify({ ok: true, phone: phoneDigits, authorized: false }), { headers });
+      }
+
       if (phoneDigits && inMemoryAuthorizedPhones.has(phoneDigits)) {
         authorized = true;
       }
@@ -113,7 +132,7 @@ export async function onRequest(context) {
           await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_phones (phone TEXT PRIMARY KEY, authorized_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run();
           const clean11 = phoneDigits.length > 11 ? phoneDigits.slice(-11) : phoneDigits;
           const res = await db.prepare("SELECT phone FROM authorized_phones WHERE phone = ? OR phone = ? OR phone LIKE ? LIMIT 1").bind(phoneDigits, `+${phoneDigits}`, `%${clean11}`).first();
-          if (res) {
+          if (res && !isDisallowedPhone(res.phone)) {
             authorized = true;
             inMemoryAuthorizedPhones.add(phoneDigits);
           }
@@ -127,7 +146,7 @@ export async function onRequest(context) {
 
     // 1.1c Get Authorized Phones List
     if (action === 'authlist') {
-      let list = Array.from(inMemoryAuthorizedPhones);
+      let list = Array.from(inMemoryAuthorizedPhones).filter(p => !isDisallowedPhone(p));
       if (db) {
         try {
           await db.prepare(`CREATE TABLE IF NOT EXISTS authorized_phones (phone TEXT PRIMARY KEY, authorized_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run();
@@ -135,13 +154,14 @@ export async function onRequest(context) {
           if (res?.results) {
             res.results.forEach(r => {
               const norm = normalizePhoneNum(r.phone);
-              if (norm && !list.includes(norm)) list.push(norm);
+              if (norm && !isDisallowedPhone(norm) && !list.includes(norm)) list.push(norm);
             });
           }
         } catch (e) {
           // ignore
         }
       }
+      list = list.filter(p => !isDisallowedPhone(p));
       return new Response(JSON.stringify({ ok: true, list }), { headers });
     }
 
@@ -753,20 +773,21 @@ async function handleBotCommand(commandText, user, db, adminPassword, configured
   }
 
   if (mainCmd === '/authlist' || mainCmd === '/whitelist') {
-    let list = Array.from(inMemoryAuthorizedPhones);
+    let list = Array.from(inMemoryAuthorizedPhones).filter(p => !isDisallowedPhone(p));
     if (db) {
       try {
         const res = await db.prepare(`SELECT phone FROM authorized_phones ORDER BY authorized_at DESC LIMIT 30`).all();
         if (res?.results) {
           res.results.forEach(r => {
             const norm = normalizePhoneNum(r.phone);
-            if (norm && !list.includes(norm)) list.push(norm);
+            if (norm && !isDisallowedPhone(norm) && !list.includes(norm)) list.push(norm);
           });
         }
       } catch {
         // ignore
       }
     }
+    list = list.filter(p => !isDisallowedPhone(p));
     
     const listStr = list.length > 0
       ? `当前共有 <b>${list.length}</b> 个授权手机号，最近授权列表如下：\n` + list.map(p => `• <code>${p}</code>`).join('\n')

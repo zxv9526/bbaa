@@ -77,7 +77,12 @@ export async function onRequest(context) {
         first_name TEXT,
         role TEXT DEFAULT 'admin',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );`
+      );`,
+      `CREATE TABLE IF NOT EXISTS authorized_phones (
+        phone TEXT PRIMARY KEY,
+        authorized_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );`,
+      `DELETE FROM authorized_phones WHERE phone IN ('13900000000', '13800138000', '18888888888', '13800138001', '13800138002') OR phone LIKE '%13900000000%' OR phone LIKE '%13800138000%';`
     ];
 
     for (const sql of queries) {
