@@ -5,7 +5,8 @@ import {
   loginAccount,
   registerAccount,
   updateProfile,
-  syncWithServerAuth
+  syncWithServerAuth,
+  deleteAccount
 } from '../lib/accountManager';
 import {
   X,
@@ -327,14 +328,35 @@ export function AuthModal({
                 </div>
               </div>
 
-              {/* Account Switch */}
-              <button
-                id="switch-account-btn"
-                onClick={() => setActiveTab('login')}
-                className="w-full py-2.5 rounded-2xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition flex items-center justify-center gap-1.5"
-              >
-                <LogOut className="w-3.5 h-3.5 text-slate-400" /> 切换其他手机账号
-              </button>
+              {/* Account Switch & Delete */}
+              <div className="flex gap-2">
+                <button
+                  id="switch-account-btn"
+                  onClick={() => setActiveTab('login')}
+                  className="flex-1 py-2.5 rounded-2xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition flex items-center justify-center gap-1.5"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-slate-400" /> 切换账号
+                </button>
+
+                {currentAccount.phone && (
+                  <button
+                    id="delete-account-btn"
+                    onClick={async () => {
+                      if (window.confirm(`确认要彻底注销并删除当前账号 (${currentAccount.phone}) 吗？删除后积分与战绩将彻底清空。`)) {
+                        const res = await deleteAccount(currentAccount.phone);
+                        setMessage({ type: res.success ? 'success' : 'error', text: res.message });
+                        setTimeout(() => {
+                          setActiveTab('login');
+                          setMessage(null);
+                        }, 1000);
+                      }
+                    }}
+                    className="px-3 py-2.5 rounded-2xl border border-rose-800/80 bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <span>🗑️ 注销删除账号</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -348,10 +370,11 @@ export function AuthModal({
                   <input
                     id="login-phone-input"
                     type="text"
+                    maxLength={11}
                     required
                     value={loginPhone}
-                    onChange={e => setLoginPhone(e.target.value)}
-                    placeholder="请输入注册手机号..."
+                    onChange={e => setLoginPhone(e.target.value.replace(/[^\d]/g, ''))}
+                    placeholder="请输入 11 位手机号..."
                     className="w-full bg-slate-950 border border-slate-700 rounded-2xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
                   />
                 </div>
@@ -402,7 +425,7 @@ export function AuthModal({
           {activeTab === 'register' && (
             <form onSubmit={handleRegister} className="flex flex-col gap-3">
               <div className="p-2.5 rounded-xl bg-indigo-950/60 border border-indigo-800/60 text-[11px] text-indigo-300 leading-relaxed">
-                💡 <b>注册提示</b>：仅限 <b>Bot 管理员已授权</b> 的手机号方可注册。如未授权请先联系管理员或在 Bot 管理中心授权。
+                💡 <b>注册提示</b>：仅限 <b>11 位标准手机号</b> 且需经 <b>Bot 管理员授权</b> 后方可注册。如未授权请先在 Telegram Bot 中完成授权。
               </div>
 
               <div className="space-y-1">
@@ -412,10 +435,11 @@ export function AuthModal({
                   <input
                     id="reg-phone-input"
                     type="text"
+                    maxLength={11}
                     required
                     value={regPhone}
-                    onChange={e => setRegPhone(e.target.value)}
-                    placeholder="请输入手机号..."
+                    onChange={e => setRegPhone(e.target.value.replace(/[^\d]/g, ''))}
+                    placeholder="请输入 11 位手机号..."
                     className="w-full bg-slate-950 border border-slate-700 rounded-2xl pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
                   />
                 </div>

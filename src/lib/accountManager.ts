@@ -31,14 +31,11 @@ function notifyListeners(account: UserAccount) {
 }
 
 // ----------------------------------------------------
-// 1. 授权手机号白名单管理 (Bot 授权注册机制)
+// 1. 11位手机号严格授权与注册管理 (无默认保护账号，全靠 Bot 动态授权)
 // ----------------------------------------------------
-const INITIAL_AUTHORIZED_PHONES: string[] = [];
-
 export function normalizePhone(phone: string): string {
   if (!phone) return '';
   let cleaned = phone.trim().replace(/[^\d]/g, '');
-  // 如果带有86且为13位，剥离86前缀
   if (cleaned.length === 13 && cleaned.startsWith('861')) {
     cleaned = cleaned.substring(2);
   }
@@ -51,32 +48,30 @@ export function getAuthorizedPhones(): string[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed.map(normalizePhone).filter(Boolean);
+        return parsed.map(normalizePhone).filter(p => /^1\d{10}$/.test(p));
       }
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
   return [];
 }
 
 export function isPhoneAuthorized(phone: string): boolean {
   const norm = normalizePhone(phone);
-  if (!norm) return false;
+  if (!/^1\d{10}$/.test(norm)) return false;
   const list = getAuthorizedPhones();
   return list.includes(norm);
 }
 
 export async function checkOrSyncPhoneAuthorization(phone: string): Promise<boolean> {
   const norm = normalizePhone(phone);
-  if (!norm) return false;
+  if (!/^1\d{10}$/.test(norm)) return false;
 
-  // 1. 本地已授权
+  // 1. 本地白名单存在
   if (isPhoneAuthorized(norm)) {
     return true;
   }
 
-  // 2. 向服务端 API 查询授权状态 (D1 / Bot 授权同步)
+  // 2. 向 Telegram Bot API 实时核验授权
   try {
     const res = await fetch(`/api/telegram?action=checkAuth&phone=${encodeURIComponent(norm)}`);
     if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
@@ -86,11 +81,9 @@ export async function checkOrSyncPhoneAuthorization(phone: string): Promise<bool
         return true;
       }
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
 
-  // 3. 兜底拉取完整授权名录同步
+  // 3. 全量授权列表拉取同步
   try {
     const res = await fetch('/api/telegram?action=authlist');
     if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
@@ -100,33 +93,25 @@ export async function checkOrSyncPhoneAuthorization(phone: string): Promise<bool
         if (isPhoneAuthorized(norm)) return true;
       }
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
 
   return false;
 }
 
 export function authorizePhone(phone: string): { success: boolean; message: string; list: string[] } {
   const norm = normalizePhone(phone);
-  if (!norm) {
-    return { success: false, message: '手机号不能为空', list: getAuthorizedPhones() };
+  if (!/^1\d{10}$/.test(norm)) {
+    return { success: false, message: '手机号必须为 11 位标准手机号码', list: getAuthorizedPhones() };
   }
-  if (!/^\d{5,15}$/.test(norm)) {
-    return { success: false, message: '手机号格式不正确（5-15位数字）', list: getAuthorizedPhones() };
-  }
-
   const list = getAuthorizedPhones();
   if (!list.includes(norm)) {
     list.push(norm);
     localStorage.setItem(AUTHORIZED_PHONES_KEY, JSON.stringify(list));
   }
-
   try {
     fetch(`/api/telegram?action=auth&phone=${encodeURIComponent(norm)}`);
   } catch {}
-
-  return { success: true, message: `✅ 成功授权手机号: ${norm}，现可正常注册`, list };
+  return { success: true, message: `✅ 11位手机号 ${norm} 授权成功`, list };
 }
 
 export async function revokePhone(phone: string): Promise<{ success: boolean; message: string; list: string[] }> {
@@ -142,7 +127,7 @@ export async function revokePhone(phone: string): Promise<{ success: boolean; me
     await fetch(`/api/telegram?action=unauth&phone=${encodeURIComponent(norm || phone)}`);
   } catch {}
 
-  return { success: true, message: `🚫 已取消对手机号 ${norm || phone} 的注册授权`, list };
+  return { success: true, message: `🚫 已移除手机号 ${norm || phone} 授权`, list };
 }
 
 export async function syncWithServerAuth(): Promise<string[]> {
@@ -155,7 +140,7 @@ export async function syncWithServerAuth(): Promise<string[]> {
         let updated = false;
         data.list.forEach((p: string) => {
           const cleanP = normalizePhone(p);
-          if (cleanP && !currentList.includes(cleanP)) {
+          if (/^1\d{10}$/.test(cleanP) && !currentList.includes(cleanP)) {
             currentList.push(cleanP);
             updated = true;
           }
@@ -196,11 +181,11 @@ export async function deleteAccount(phoneOrNickname: string): Promise<{ success:
   const targetAcc = db[targetKey].account;
   const targetPhone = targetAcc.phone;
 
-  // 1. 从本地数据库抹除账号
+  // 1. 从本地数据库彻底抹除账号
   delete db[targetKey];
   saveAllAccounts(db);
 
-  // 2. 撤销手机号授权
+  // 2. 清除授权白名单
   await revokePhone(targetPhone);
 
   // 3. 删除对局流水日志
@@ -208,7 +193,7 @@ export async function deleteAccount(phoneOrNickname: string): Promise<{ success:
     localStorage.removeItem(`${TRANSACTIONS_KEY_PREFIX}${targetPhone}`);
   } catch {}
 
-  // 4. 发送服务端 D1 完全擦除数据
+  // 4. 服务端异步擦除
   try {
     await fetch(`/api/telegram?action=deluser&user=${encodeURIComponent(targetPhone)}`);
     if (targetAcc.nickname) {
@@ -216,24 +201,24 @@ export async function deleteAccount(phoneOrNickname: string): Promise<{ success:
     }
   } catch {}
 
-  // 5. 如果删除的是当前登录用户，进行重置/切换
+  // 5. 如果删除的是当前登录用户，重置为未登录状态
   const currentPhone = localStorage.getItem(CURRENT_USER_KEY);
   if (currentPhone === targetPhone) {
     localStorage.removeItem(CURRENT_USER_KEY);
-    const remainingKeys = Object.keys(db);
+    const remainingKeys = Object.keys(db).filter(k => db[k]?.account?.phone);
     if (remainingKeys.length > 0) {
       const nextAcc = db[remainingKeys[0]].account;
       localStorage.setItem(CURRENT_USER_KEY, nextAcc.phone);
       localStorage.setItem('thirteen_player_name', nextAcc.nickname);
       notifyListeners(nextAcc);
     } else {
-      getCurrentAccount();
+      notifyListeners(getCurrentAccount());
     }
   }
 
   return {
     success: true,
-    message: `玩家 "${targetAcc.nickname}" (${targetPhone}) 及其战绩流水与注册授权已完全删除！`
+    message: `玩家 "${targetAcc.nickname}" (${targetPhone}) 及其数据已完全删除清除！`
   };
 }
 
@@ -381,17 +366,17 @@ export async function registerAccount(
     return { success: false, message: '请输入手机号' };
   }
 
-  // 校验手机号格式：纯数字或手机号常用字符（5-15位）
-  if (!/^\d{5,15}$/.test(cleanPhone)) {
-    return { success: false, message: '请输入有效的手机号码（5-15位数字）' };
+  // 1. 校验手机号格式：必须严格为 11 位数字标准手机号
+  if (!/^1\d{10}$/.test(cleanPhone)) {
+    return { success: false, message: '请输入有效的 11 位标准手机号码' };
   }
 
-  // 必须经 Bot 管理员授权后方可注册（支持本地与服务端 D1/Bot 实时同步）
+  // 2. 必须经 Bot 管理员授权后方可注册
   const authorized = await checkOrSyncPhoneAuthorization(cleanPhone);
   if (!authorized) {
     return {
       success: false,
-      message: `手机号 ${cleanPhone} 未获得Bot管理员授权，无法注册！请先在 Telegram Bot 中发送 "/auth ${cleanPhone}" 授权。`
+      message: `手机号 ${cleanPhone} 未获得 Bot 管理员授权，无法注册！请先在 Telegram Bot 中授权该手机号。`
     };
   }
 

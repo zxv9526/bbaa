@@ -1,7 +1,7 @@
 // Cloudflare Pages Function: /api/telegram
 // Telegram Bot Webhook & Admin Management for Chinese Poker (十三水)
 
-const inMemoryAuthorizedPhones = new Set(['13800138000', '13900000000', '18888888888']);
+const inMemoryAuthorizedPhones = new Set();
 
 function normalizePhoneNum(phone) {
   if (!phone) return '';

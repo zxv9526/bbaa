@@ -357,13 +357,13 @@ export function clearAllRealtimeCaches(): void {
   } catch {}
 }
 
-// Read table from localStorage (Strict 6-second validity for mobile browsers)
+// Read table from localStorage (Strict 3-second validity for mobile browsers)
 export function getSavedRealtimeTable(roomId = currentRoomId): RealtimeTableState | null {
   try {
     const raw = localStorage.getItem(TABLE_STORAGE_PREFIX + roomId);
     if (!raw) return null;
     const parsed: RealtimeTableState = JSON.parse(raw);
-    if (Date.now() - (parsed.lastUpdated || 0) > 6000) {
+    if (Date.now() - (parsed.lastUpdated || 0) > 3000) {
       localStorage.removeItem(TABLE_STORAGE_PREFIX + roomId);
       return null;
     }
@@ -458,9 +458,9 @@ export async function joinOrCreateRealtimeTable(currentUser: {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-    const res = await fetch('/api/table/join', {
+    const res = await fetch(`/api/table/join?_t=${Date.now()}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
       credentials: 'include',
       body: JSON.stringify({
         roomId,
@@ -971,8 +971,8 @@ export function subscribeRealtimeTable(
       const myId = getPlayerUniqueId();
       const tabId = getTabSessionId();
       const res = await fetch(
-        `/api/table/state?roomId=${encodeURIComponent(currentRoomId)}&playerId=${encodeURIComponent(myId)}&tabSessionId=${encodeURIComponent(tabId)}`,
-        { credentials: 'include' }
+        `/api/table/state?roomId=${encodeURIComponent(currentRoomId)}&playerId=${encodeURIComponent(myId)}&tabSessionId=${encodeURIComponent(tabId)}&_t=${Date.now()}`,
+        { credentials: 'include', headers: { 'Cache-Control': 'no-cache' } }
       );
       if (res.ok) {
         const data = await res.json();
@@ -993,7 +993,7 @@ export function subscribeRealtimeTable(
 
       // Safeguard poll for chat messages
       const chatRes = await fetch(
-        `/api/chat/poll?roomId=${encodeURIComponent(currentRoomId)}&userId=${encodeURIComponent(myId)}&since=${lastChatPollTime}`,
+        `/api/chat/poll?roomId=${encodeURIComponent(currentRoomId)}&userId=${encodeURIComponent(myId)}&since=${lastChatPollTime}&_t=${Date.now()}`,
         { credentials: 'include' }
       );
       if (chatRes.ok) {
@@ -1012,6 +1012,17 @@ export function subscribeRealtimeTable(
   runPoll();
   const pollInterval = setInterval(runPoll, 1500);
 
+  // Mobile Page Resume Handler (instant sync when phone is unlocked or app brought to foreground)
+  const handleVisibilityChange = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      runPoll();
+    }
+  };
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+  }
+
   return () => {
     wsSubscribers.delete(onEvent);
     clearInterval(pollInterval);
@@ -1020,6 +1031,9 @@ export function subscribeRealtimeTable(
     }
     if (typeof window !== 'undefined') {
       window.removeEventListener('storage', handleStorageEvent);
+    }
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     }
   };
 }

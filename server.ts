@@ -7,11 +7,15 @@ import { WebSocketServer, WebSocket } from "ws";
 const app = express();
 const PORT = 3000;
 
-// Enable CORS for all origins, methods, and headers
+// Enable CORS for all origins, methods, and headers + Mobile Anti-Cache Headers
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  // Force disabling HTTP cache for all dynamic endpoints (critical for mobile Safari/Chrome)
+  res.header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.header("Pragma", "no-cache");
+  res.header("Expires", "0");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
     return;
@@ -151,6 +155,35 @@ setInterval(() => {
   });
 }, 10000);
 
+// Active Realtime Zombie Cleaner: runs every 1.5s to evict seats with >4000ms inactivity
+setInterval(() => {
+  const now = Date.now();
+  tablesMap.forEach((table, rid) => {
+    if (table.seats.length === 0) return;
+    const beforeCount = table.seats.length;
+    // Strict threshold: 4 seconds without ping = zombie eviction
+    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 4000);
+    if (table.seats.length !== beforeCount) {
+      if (table.seats.length === 0) {
+        table.status = "waiting";
+        table.dealerIndex = 0;
+        table.dealerId = "";
+        table.shuffleCount = 0;
+        table.cutCard = null;
+        table.dealtHands = undefined;
+      } else {
+        table.seats.forEach((s, i) => {
+          s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+        });
+        table.dealerIndex = table.dealerIndex % table.seats.length;
+        table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0].id;
+      }
+      table.lastUpdated = now;
+      broadcastToRoom(rid, { type: "TABLE_SYNC", table });
+    }
+  });
+}, 1500);
+
 // -------------------------------------------------------------
 // HTTP API Endpoints (Tier 3 HTTP Polling + WebRTC HTTP Signaling)
 // -------------------------------------------------------------
@@ -258,15 +291,8 @@ app.post("/api/table/join", (req, res) => {
     const table = getOrCreateTable(roomId, req.body.roomName);
     const now = Date.now();
 
-    // 1. Strict Auto-prune stale seats (older than 6s without active ping)
-    table.seats = table.seats.filter(s => {
-      const isThisPlayer = (player.deviceId && s.deviceId === player.deviceId) ||
-        s.id === player.id ||
-        (player.tabSessionId && s.tabSessionId === player.tabSessionId) ||
-        (player.id && s.id && s.id.split('_')[0] === player.id.split('_')[0]);
-      const isRecent = (now - (s.lastActive || 0)) < 6000;
-      return isThisPlayer || isRecent;
-    });
+    // 1. Strict Auto-prune stale seats (older than 4s without active ping)
+    table.seats = table.seats.filter(s => (now - (s.lastActive || 0)) < 4000);
 
     // 2. Check if this player is already seated (reconnect to existing seat by deviceId, id, tabSessionId or account prefix)
     const existingIndex = table.seats.findIndex(s =>
