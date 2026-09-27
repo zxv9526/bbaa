@@ -342,13 +342,28 @@ export async function fetchActiveRooms(): Promise<ActiveRoomInfo[]> {
   }];
 }
 
-// Read table from localStorage
+// Clear all stale local storage caches for realtime tables
+export function clearAllRealtimeCaches(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(TABLE_STORAGE_PREFIX)) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+  } catch {}
+}
+
+// Read table from localStorage (Strict 6-second validity for mobile browsers)
 export function getSavedRealtimeTable(roomId = currentRoomId): RealtimeTableState | null {
   try {
     const raw = localStorage.getItem(TABLE_STORAGE_PREFIX + roomId);
     if (!raw) return null;
     const parsed: RealtimeTableState = JSON.parse(raw);
-    if (Date.now() - (parsed.lastUpdated || 0) > 45 * 60 * 1000) {
+    if (Date.now() - (parsed.lastUpdated || 0) > 6000) {
       localStorage.removeItem(TABLE_STORAGE_PREFIX + roomId);
       return null;
     }
@@ -369,7 +384,7 @@ export function saveRealtimeTable(state: RealtimeTableState, roomId = currentRoo
   } catch {}
 }
 
-// Clear table
+// Clear table locally and notify
 export function clearRealtimeTable(roomId = currentRoomId): void {
   try {
     localStorage.removeItem(TABLE_STORAGE_PREFIX + roomId);
@@ -379,6 +394,42 @@ export function clearRealtimeTable(roomId = currentRoomId): void {
       ch.postMessage({ type: 'RESET_TABLE', state: null });
     }
   } catch {}
+}
+
+// Force reset server table & clear all seats
+export async function resetServerTable(roomId = currentRoomId): Promise<boolean> {
+  clearRealtimeTable(roomId);
+  clearAllRealtimeCaches();
+  try {
+    const res = await fetch('/api/table/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.ok;
+    }
+  } catch {}
+  return false;
+}
+
+// Clean inactive zombie seats on server
+export async function cleanStaleServerSeats(roomId = currentRoomId): Promise<number> {
+  try {
+    const res = await fetch('/api/table/clean_stale', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && typeof data.cleanedCount === 'number') {
+        return data.cleanedCount;
+      }
+    }
+  } catch {}
+  return 0;
 }
 
 // Join or Create Realtime Table (Server Authoritative)
@@ -451,8 +502,50 @@ export async function joinOrCreateRealtimeTable(currentUser: {
             avatar: assignedSeat?.avatar || currentUser.avatar
           }
         };
-      } else if (data.table) {
-        // Table exists and returned (e.g. room full)
+      } else if (data.table && data.isFull) {
+        // Table exists but room full -> auto clean stale zombie seats & retry join
+        const cleaned = await cleanStaleServerSeats(roomId);
+        if (cleaned > 0) {
+          const retryRes = await fetch('/api/table/join', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              roomId,
+              player: {
+                id: currentUser.id,
+                deviceId,
+                tabSessionId,
+                name: currentUser.name,
+                avatar: currentUser.avatar
+              }
+            })
+          });
+          if (retryRes.ok) {
+            const retryData = await retryRes.json();
+            if (retryData.ok && retryData.table) {
+              if (Array.isArray(retryData.table.seats)) {
+                retryData.table.seats = retryData.table.seats.filter((s: RealtimeSeatPlayer) => !s.isAi);
+              }
+              saveRealtimeTable(retryData.table, roomId);
+              broadcastEvent({ type: 'SYNC_STATE', state: retryData.table });
+              const mySeatIdx = typeof retryData.seatIndex === 'number'
+                ? retryData.seatIndex
+                : retryData.table.seats.findIndex((s: any) => s.id === currentUser.id || s.tabSessionId === tabSessionId || s.deviceId === deviceId);
+              const assignedSeat = retryData.table.seats[mySeatIdx] || retryData.table.seats[retryData.table.seats.length - 1];
+              return {
+                table: retryData.table,
+                isNewTable: retryData.table.seats.length === 1,
+                seatIndex: Math.max(0, mySeatIdx),
+                assignedUser: {
+                  id: currentUser.id,
+                  name: assignedSeat?.name || currentUser.name,
+                  avatar: assignedSeat?.avatar || currentUser.avatar
+                }
+              };
+            }
+          }
+        }
         saveRealtimeTable(data.table, roomId);
         broadcastEvent({ type: 'SYNC_STATE', state: data.table });
       }

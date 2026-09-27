@@ -220,9 +220,9 @@ app.get("/api/table/state", (req, res) => {
     }
   }
 
-  // Prune seats inactive for > 12s
+  // Prune seats inactive for > 6s (Strict heartbeat auto-prune for mobile browsers)
   const beforeLen = table.seats.length;
-  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 12000);
+  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 6000);
   if (table.seats.length !== beforeLen) {
     table.lastUpdated = now;
     if (table.seats.length === 0) {
@@ -258,13 +258,13 @@ app.post("/api/table/join", (req, res) => {
     const table = getOrCreateTable(roomId, req.body.roomName);
     const now = Date.now();
 
-    // 1. Auto-prune stale seats (older than 12s without ping)
+    // 1. Strict Auto-prune stale seats (older than 6s without active ping)
     table.seats = table.seats.filter(s => {
       const isThisPlayer = (player.deviceId && s.deviceId === player.deviceId) ||
         s.id === player.id ||
         (player.tabSessionId && s.tabSessionId === player.tabSessionId) ||
         (player.id && s.id && s.id.split('_')[0] === player.id.split('_')[0]);
-      const isRecent = (now - (s.lastActive || 0)) < 12000;
+      const isRecent = (now - (s.lastActive || 0)) < 6000;
       return isThisPlayer || isRecent;
     });
 
@@ -313,9 +313,18 @@ app.post("/api/table/join", (req, res) => {
       return;
     }
 
-    // 3. Room capacity check (strict max 8 players, purely human)
+    // 3. Smart Eviction if full (8/8): Remove oldest seat with >4s inactivity to make room for active human
     if (table.seats.length >= 8) {
-      res.json({ ok: false, error: "牌桌已满员 (8/8)", table, isFull: true });
+      // Find oldest seat inactive for > 4000ms
+      const staleIndex = table.seats.findIndex(s => now - (s.lastActive || 0) > 4000);
+      if (staleIndex !== -1) {
+        table.seats.splice(staleIndex, 1);
+      }
+    }
+
+    // Room capacity check after smart eviction
+    if (table.seats.length >= 8) {
+      res.json({ ok: false, error: "牌桌已满员 (8/8)，可使用「一键重置/清理僵尸」释放座位", table, isFull: true });
       return;
     }
 
@@ -430,6 +439,69 @@ app.post("/api/table/leave", (req, res) => {
     }
 
     res.json({ ok: true, table });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || "Internal error" });
+  }
+});
+
+// Force reset table / Kick all stale zombie players
+app.post("/api/table/reset", (req, res) => {
+  try {
+    const roomId = normalizeRoomId(req.body.roomId || "888888");
+    const table = getOrCreateTable(roomId);
+    table.seats = [];
+    table.status = "waiting";
+    table.dealerIndex = 0;
+    table.dealerId = "";
+    table.shuffleCount = 0;
+    table.cutCard = null;
+    table.dealtHands = undefined;
+    table.lastUpdated = Date.now();
+    
+    broadcastToRoom(roomId, {
+      type: "TABLE_SYNC",
+      table
+    });
+    res.json({ ok: true, message: "房间已成功重置，所有僵尸座位已完全清空！", table });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || "Internal error" });
+  }
+});
+
+// Clean inactive zombie seats (inactive > 3s)
+app.post("/api/table/clean_stale", (req, res) => {
+  try {
+    const roomId = normalizeRoomId(req.body.roomId || "888888");
+    const table = getOrCreateTable(roomId);
+    const now = Date.now();
+    const activeThreshold = 3000; // 3 seconds
+    const beforeCount = table.seats.length;
+    
+    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < activeThreshold);
+    
+    if (table.seats.length !== beforeCount) {
+      if (table.seats.length === 0) {
+        table.status = "waiting";
+        table.dealerIndex = 0;
+        table.dealerId = "";
+        table.shuffleCount = 0;
+        table.cutCard = null;
+        table.dealtHands = undefined;
+      } else {
+        table.seats.forEach((s, i) => {
+          s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+        });
+        table.dealerIndex = table.dealerIndex % table.seats.length;
+        table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0].id;
+      }
+      table.lastUpdated = now;
+      broadcastToRoom(roomId, {
+        type: "TABLE_SYNC",
+        table
+      });
+    }
+    
+    res.json({ ok: true, message: `已清理 ${beforeCount - table.seats.length} 个不活跃座位`, table, cleanedCount: beforeCount - table.seats.length });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err?.message || "Internal error" });
   }

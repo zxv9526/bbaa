@@ -2285,10 +2285,6 @@ export default function App() {
             players={realtimePlayers}
             currentUserId={(mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')}
             roomId={getCurrentRoomId()}
-            onSwitchRoom={(newRoomId) => {
-              setCurrentRoomId(newRoomId);
-              startRealtimeMatch(newRoomId);
-            }}
             onStartDeal={handleRealtimeDealComplete}
             onBackToMenu={() => {
               const tabSessionId = getTabSessionId();

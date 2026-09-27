@@ -10,7 +10,6 @@ import {
   RotateCcw,
   Users,
   Crown,
-  DoorOpen,
   RefreshCw,
   Hourglass,
   Radio,
@@ -20,7 +19,7 @@ import {
 import { TableTacticalChatBar } from './TableTacticalChatBar';
 import { ChatMessage } from '../types';
 import { CardView } from './CardView';
-import { fetchActiveRooms, ActiveRoomInfo, claimDealerRole, getTabSessionId } from '../lib/realtimeTableManager';
+import { claimDealerRole, getTabSessionId, cleanStaleServerSeats, resetServerTable, leaveRealtimeTable } from '../lib/realtimeTableManager';
 
 export interface RealtimeSeatPlayer {
   id: string;
@@ -37,7 +36,6 @@ interface RealtimeDealerStageProps {
   players: RealtimeSeatPlayer[];
   currentUserId: string;
   roomId?: string;
-  onSwitchRoom?: (newRoomId: string) => void;
   onStartDeal: (dealtHands: { [playerId: string]: Card[] }, dealerIndex: number) => void;
   onBackToMenu: () => void;
   onSendMessage?: (type: 'text' | 'voice' | 'quick' | 'emoji', content: string, audioUrl?: string, audioDuration?: number) => void;
@@ -64,7 +62,6 @@ export function RealtimeDealerStage({
   players,
   currentUserId,
   roomId = '888888',
-  onSwitchRoom,
   onStartDeal,
   onBackToMenu,
   onSendMessage,
@@ -90,10 +87,8 @@ export function RealtimeDealerStage({
   const mySeatIndex = players.findIndex(p => p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId));
   const isHumanDealer = Boolean(currentDealer && mySeatIndex !== -1 && dealerIndex === mySeatIndex);
 
-  const [showRoomModal, setShowRoomModal] = useState(false);
-  const [activeRooms, setActiveRooms] = useState<ActiveRoomInfo[]>([]);
-  const [customRoomInput, setCustomRoomInput] = useState('');
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+  const [toastNotice, setToastNotice] = useState<string | null>(null);
   const effectiveSpeaker = externalSpeakerId || activeSpeakerId;
   const [seatBubbles, setSeatBubbles] = useState<Record<string, {
     content: string;
@@ -375,22 +370,41 @@ export function RealtimeDealerStage({
               第 {round} 局
             </span>
           </div>
-
-          {/* Room Switcher Pill */}
-          <button
-            onClick={() => {
-              setShowRoomModal(true);
-              fetchActiveRooms().then(setActiveRooms);
-            }}
-            className="px-2.5 py-0.5 rounded-full bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-200 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer active:scale-95 shadow-sm"
-          >
-            <DoorOpen className="w-3 h-3 text-indigo-400" />
-            <span>房号: <strong className="text-amber-300 font-mono">{roomId}</strong></span>
-            <span className="text-[9px] text-indigo-400">▾</span>
-          </button>
         </div>
 
         <div className="flex items-center gap-1.5 text-xs">
+          <button
+            onClick={async () => {
+              triggerHaptic('medium');
+              const count = await cleanStaleServerSeats(roomId);
+              if (count > 0) {
+                setToastNotice(`🧹 已瞬间踢出 ${count} 位离线僵尸玩家！`);
+              } else {
+                setToastNotice(`✨ 当前牌桌无离线僵尸，连接状态完好`);
+              }
+              setTimeout(() => setToastNotice(null), 2500);
+            }}
+            className="px-2 py-0.5 rounded-full bg-slate-900/90 hover:bg-rose-950/80 border border-slate-700/80 hover:border-rose-500/50 text-slate-300 hover:text-rose-300 text-[10px] font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-sm"
+            title="点击清理无回应的僵尸离线座位"
+          >
+            <span>🧹 清僵尸</span>
+          </button>
+
+          <button
+            onClick={async () => {
+              if (window.confirm('确认要强行重置并清空当前房间的所有座位与状态吗？')) {
+                triggerHaptic('heavy');
+                await resetServerTable(roomId);
+                setToastNotice(`🔄 房间已被强行重置清空，所有座位释放！`);
+                setTimeout(() => setToastNotice(null), 2500);
+              }
+            }}
+            className="px-2 py-0.5 rounded-full bg-slate-900/90 hover:bg-amber-950/80 border border-slate-700/80 hover:border-amber-500/50 text-slate-300 hover:text-amber-300 text-[10px] font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-sm"
+            title="确定强行重置并清空此房间"
+          >
+            <span>🔄 重置</span>
+          </button>
+
           <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-900 border border-amber-500/40 text-slate-200 text-[11px]">
             <Crown className="w-3 h-3 text-amber-400" />
             <span>庄家: <strong className="text-amber-300 font-bold">{dealerIndex + 1}号位</strong></span>
@@ -633,130 +647,17 @@ export function RealtimeDealerStage({
         </div>
       )}
 
-      {/* 5. Room Management Modal (Pure Room Selection, Zero Invites) */}
+      {/* Toast Notice Banner */}
       <AnimatePresence>
-        {showRoomModal && (
-          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4"
-            >
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <DoorOpen className="w-5 h-5 text-indigo-400" />
-                  <span className="font-black text-white text-base">对战房间切换</span>
-                </div>
-                <button
-                  onClick={() => setShowRoomModal(false)}
-                  className="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer text-sm"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Current Room Info */}
-              <div className="p-3 rounded-xl bg-slate-950/70 border border-indigo-500/30 flex items-center justify-between text-xs">
-                <div>
-                  <span className="text-slate-400">当前所在房间: </span>
-                  <span className="font-mono font-black text-amber-300 text-sm ml-1">{roomId}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">在线人数: </span>
-                  <span className="text-emerald-300 font-bold ml-1">{seatedCount} / 8 人</span>
-                </div>
-              </div>
-
-              {/* Join by Room Code */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300">输入房间号加入：</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="输入房间号 (如 888888)"
-                    value={customRoomInput}
-                    onChange={(e) => setCustomRoomInput(e.target.value.trim())}
-                    className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs font-mono placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
-                    maxLength={10}
-                  />
-                  <button
-                    onClick={() => {
-                      if (!customRoomInput) return;
-                      setShowRoomModal(false);
-                      if (onSwitchRoom) {
-                        onSwitchRoom(customRoomInput);
-                      }
-                    }}
-                    disabled={!customRoomInput}
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-xs transition active:scale-95 cursor-pointer"
-                  >
-                    进入
-                  </button>
-                </div>
-              </div>
-
-              {/* Quick Actions */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => {
-                    setShowRoomModal(false);
-                    if (onSwitchRoom) onSwitchRoom('888888');
-                  }}
-                  className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
-                >
-                  <span>🏠 竞技大厅 (888888)</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-                    setShowRoomModal(false);
-                    if (onSwitchRoom) onSwitchRoom(newCode);
-                  }}
-                  className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
-                >
-                  <span>✨ 创建新房间</span>
-                </button>
-              </div>
-
-              {/* Active Room List */}
-              {activeRooms.length > 0 && (
-                <div className="space-y-1.5 pt-1">
-                  <div className="text-[11px] font-bold text-slate-400">服务器活跃房间：</div>
-                  <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
-                    {activeRooms.map(r => (
-                      <div
-                        key={r.roomId}
-                        onClick={() => {
-                          setShowRoomModal(false);
-                          if (onSwitchRoom) onSwitchRoom(r.roomId);
-                        }}
-                        className={`p-2 rounded-xl border flex items-center justify-between text-xs cursor-pointer transition ${
-                          r.roomId === roomId
-                            ? 'bg-indigo-950/80 border-indigo-500/50 text-indigo-200'
-                            : 'bg-slate-950/40 border-slate-800 hover:border-slate-700 text-slate-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold">{r.roomId}</span>
-                          <span className="text-[10px] text-slate-500">({r.roomName})</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold">
-                            {r.playerCount}/8 人
-                          </span>
-                          {r.roomId === roomId && (
-                            <span className="text-[10px] text-amber-400 font-bold">当前</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          </div>
+        {toastNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+            className="fixed top-12 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-slate-900/95 border border-amber-500/50 text-amber-200 text-xs font-black shadow-2xl backdrop-blur-md flex items-center gap-2 pointer-events-none"
+          >
+            <span>{toastNotice}</span>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
