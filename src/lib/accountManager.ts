@@ -416,7 +416,7 @@ export async function registerAccount(
   }
 
   const newAccount: UserAccount = {
-    id: `u_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    id: cleanPhone,
     phone: cleanPhone,
     username: cleanPhone,
     nickname: cleanNickname,

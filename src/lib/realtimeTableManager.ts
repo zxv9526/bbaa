@@ -237,15 +237,14 @@ export function getTabSessionId(): string {
   return runtimeTabInstanceNonce || 'session_' + Math.random().toString(36).slice(2, 8);
 }
 
-// Generate guaranteed distinct player ID per tab & device so multiple windows/phones never collide
+// Directly use the user's authentic mobile phone number (or stable account ID) as player ID
 export function getPlayerUniqueId(phoneOrAccount?: string): string {
-  const tabId = getTabSessionId();
   const cleanPhone = (phoneOrAccount || '').trim().replace(/[^\w]/g, '');
   if (cleanPhone) {
-    return `${cleanPhone}_${tabId.slice(-6)}`;
+    return cleanPhone;
   }
   const devId = getOrCreateDeviceId();
-  return `${devId}_${tabId.slice(-6)}`;
+  return devId;
 }
 
 // Read table chat messages
