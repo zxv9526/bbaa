@@ -45,6 +45,7 @@ import { SpecialHandLabModal } from './components/SpecialHandLabModal';
 import { initCardSkins } from './lib/cardSkin';
 import {
   getCurrentAccount,
+  isUserLoggedIn,
   subscribeAccount,
   addPoints,
   getRegisteredCommunityPlayers
@@ -601,6 +602,30 @@ export default function App() {
     round?: number,
     prevResult?: { roundIndex: number; seatNumber: number; pointsWon: number } | null
   ) => {
+    // 🛡️ 账号限制：必须登录已授权手机号，没有游客
+    if (!isUserLoggedIn(currentAccount)) {
+      setShowAuthModal(true);
+      setCarriageToast({
+        show: true,
+        msg: '⚠️ 大篷车预约场必须登录已授权的手机号，请先登录！',
+        pts: 0
+      });
+      setTimeout(() => setCarriageToast(null), 3500);
+      return;
+    }
+
+    // 🛡️ 积分门槛限制：没有积分不允许进入游戏场
+    if (currentAccount.points <= 0) {
+      setShowNoPointsModal(true);
+      setCarriageToast({
+        show: true,
+        msg: '⚠️ 您的积分为 0，无法参加大篷车预约场！请联系管理员充值上分。',
+        pts: 0
+      });
+      setTimeout(() => setCarriageToast(null), 3500);
+      return;
+    }
+
     const targetRound = typeof round === 'number' ? Math.max(1, round) : getPlayerCarriageIndexProgress('reservation');
     
     const cycleInfo = getReservationCycleInfo(targetRound);
@@ -628,8 +653,27 @@ export default function App() {
 
   // ⚡ 实时对战场入口：进入轮流发牌与洗牌切牌舞台
   const startRealtimeMatch = async (targetRoomId?: string) => {
+    // 🛡️ 账号限制：必须登录已授权手机号，没有游客
+    if (!isUserLoggedIn(currentAccount)) {
+      setShowAuthModal(true);
+      setCarriageToast({
+        show: true,
+        msg: '⚠️ 实时发牌赛场必须登录已授权手机号，请先登录！',
+        pts: 0
+      });
+      setTimeout(() => setCarriageToast(null), 3500);
+      return;
+    }
+
+    // 🛡️ 积分门槛限制：没有积分不允许进入游戏场
     if (currentAccount.points <= 0) {
       setShowNoPointsModal(true);
+      setCarriageToast({
+        show: true,
+        msg: '⚠️ 您的积分为 0，无法进入实时对战场！请联系管理员充值上分。',
+        pts: 0
+      });
+      setTimeout(() => setCarriageToast(null), 3500);
       return;
     }
 
@@ -829,10 +873,29 @@ export default function App() {
     roundOverride?: number,
     forceExactSeat: boolean = false
   ) => {
-    // 🛡️ 积分门槛限制：没有积分不允许进入真实牌局
-    if (currentAccount.points <= 0) {
-      setShowNoPointsModal(true);
-      return;
+    // 🛡️ 练习场以外的比赛场次：必须已登录授权手机号且积分 > 0
+    if (selectedMode !== 'practice') {
+      if (!isUserLoggedIn(currentAccount)) {
+        setShowAuthModal(true);
+        setCarriageToast({
+          show: true,
+          msg: '⚠️ 比赛场次必须登录已授权手机号，请先登录！',
+          pts: 0
+        });
+        setTimeout(() => setCarriageToast(null), 3500);
+        return;
+      }
+
+      if (currentAccount.points <= 0) {
+        setShowNoPointsModal(true);
+        setCarriageToast({
+          show: true,
+          msg: '⚠️ 您的积分为 0，无法进入比赛场！请联系管理员充值上分。',
+          pts: 0
+        });
+        setTimeout(() => setCarriageToast(null), 3500);
+        return;
+      }
     }
 
     // ⚡ 实时场直接路由至轮流发牌模式
@@ -2707,9 +2770,9 @@ export default function App() {
             setMessages([]);
             clearRealtimeChatMessages();
           }}
-          currentUserId={currentAccount.id || currentAccount.phone || 'player_user'}
-          currentUserName={currentAccount.nickname || playerName || '我'}
-          currentUserAvatar={currentAccount.avatar || '😎'}
+          currentUserId={(mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')}
+          currentUserName={currentAccount.nickname || playerName || '十三水雀神'}
+          currentUserAvatar={currentAccount.avatar || '👑'}
           ttsEnabled={ttsEnabled}
           onToggleTts={() => setTtsEnabled(!ttsEnabled)}
         />

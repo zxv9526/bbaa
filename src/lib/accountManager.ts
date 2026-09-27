@@ -307,6 +307,12 @@ export function getRegisteredCommunityPlayers(): UserAccount[] {
     .filter(acc => acc.phone !== currentPhone);
 }
 
+// 检查用户是否已登录真实账号
+export function isUserLoggedIn(acc?: UserAccount): boolean {
+  const target = acc || getCurrentAccount();
+  return Boolean(target && target.phone && target.phone.trim().length > 0);
+}
+
 // 获取当前登录账号
 export function getCurrentAccount(): UserAccount {
   const currentPhone = localStorage.getItem(CURRENT_USER_KEY);
@@ -319,38 +325,27 @@ export function getCurrentAccount(): UserAccount {
   }
 
   if (!acc) {
-    // 游客模式账号：持久化本设备的稳定独立ID，保证每次刷新与入座席位身份稳定
-    let guestId = '';
-    try {
-      guestId = localStorage.getItem('thirteen_guest_player_id') || '';
-      if (!guestId) {
-        guestId = `guest_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
-        localStorage.setItem('thirteen_guest_player_id', guestId);
-      }
-    } catch {
-      guestId = `guest_${Date.now()}`;
-    }
-
-    const guestAcc: UserAccount = {
-      id: guestId,
+    // 未登录用户：默认 0 积分，不能直接进入预约场和实时对战场，必须注册/登录手机号并获得上分
+    const unloggedAcc: UserAccount = {
+      id: '',
       phone: '',
-      username: '游客玩家',
-      nickname: '十三水雀神',
-      avatar: '👑',
-      points: 10000,
+      username: '未登录用户',
+      nickname: '未登录玩家',
+      avatar: '👤',
+      points: 0,
       createdAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString()
     };
-    return guestAcc;
+    return unloggedAcc;
   }
 
   // Ensure safe fallback values on all required properties
   if (typeof acc.points !== 'number' || isNaN(acc.points)) {
-    acc.points = 10000;
+    acc.points = 0;
   }
   if (!acc.nickname) acc.nickname = '十三水雀神';
   if (!acc.avatar) acc.avatar = '👑';
-  if (!acc.id) acc.id = `u_${Date.now()}`;
+  if (!acc.id) acc.id = acc.phone || `u_${Date.now()}`;
 
   return acc;
 }
@@ -421,7 +416,7 @@ export async function registerAccount(
     username: cleanPhone,
     nickname: cleanNickname,
     avatar: avatar || '👑',
-    points: 10000, // 注册初始赠送 10,000 体验积分
+    points: 0, // 新用户注册初始积分为 0，不再赠送积分，需由管理员授权上分
     createdAt: new Date().toISOString(),
     lastLoginAt: new Date().toISOString()
   };
