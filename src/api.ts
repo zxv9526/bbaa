@@ -261,10 +261,29 @@ export class ApiClient {
     // Local simulator fallback when API is not running directly
     let rawCmd = (command || '').trim();
     
-    // 智能无前缀简化：如果输入的是11位手机号（或带有加号/区号），且不以 / 开头，则自动视作 /auth 手机号
+    // 智能无前缀简化增强：
+    // 1. 如果输入的是11位手机号（或带+86），且不以 / 开头 -> /auth <phone>
     const phoneRegex = /^(\+?86)?1[3-9]\d{9}$/;
     if (!rawCmd.startsWith('/') && phoneRegex.test(rawCmd)) {
       rawCmd = `/auth ${rawCmd}`;
+    }
+    // 2. 如果输入格式为 "手机号 积分" (例如: 13912345678 +5000 或 13912345678 5000) -> /add <phone> <amount>
+    else if (!rawCmd.startsWith('/') && /^(\+?86)?1[3-9]\d{9}\s+[\+\-]?\d+$/.test(rawCmd)) {
+      const partsArr = rawCmd.split(/\s+/);
+      const p = partsArr[0];
+      const val = partsArr[1];
+      if (val.startsWith('+')) {
+        rawCmd = `/add ${p} ${val.slice(1)}`;
+      } else if (val.startsWith('-')) {
+        rawCmd = `/del ${p} ${val.slice(1)}`;
+      } else {
+        rawCmd = `/add ${p} ${val}`;
+      }
+    }
+    // 3. 如果输入格式为 "手机号 del" 或 "手机号 删除" -> /deluser <phone>
+    else if (!rawCmd.startsWith('/') && /^(\+?86)?1[3-9]\d{9}\s+(del|delete|删除|移除)$/i.test(rawCmd)) {
+      const partsArr = rawCmd.split(/\s+/);
+      rawCmd = `/deluser ${partsArr[0]}`;
     }
 
     const parts = rawCmd.split(/\s+/);
