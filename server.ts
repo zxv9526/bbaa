@@ -854,6 +854,74 @@ app.get("/api/voice/status", (req, res) => {
 });
 
 // -------------------------------------------------------------
+// 6. Telegram Bot & Phone Auth Backend Endpoint Service
+// -------------------------------------------------------------
+const serverAuthorizedPhones = new Set<string>();
+const DISALLOWED_DEFAULT_PHONES = new Set(['13900000000', '13800138000', '18888888888', '13800138001', '13800138002']);
+
+function normalizeServerPhone(phone: any): string {
+  if (!phone) return '';
+  let cleaned = String(phone).trim().replace(/[^\d]/g, '');
+  if (cleaned.length === 13 && cleaned.startsWith('861')) {
+    cleaned = cleaned.substring(2);
+  }
+  return cleaned;
+}
+
+app.all("/api/telegram", (req, res) => {
+  try {
+    const action = String(req.query.action || req.body?.action || "status");
+    const rawPhone = String(req.query.phone || req.body?.phone || req.query.user || req.body?.user || "");
+    const cleanPhone = normalizeServerPhone(rawPhone);
+
+    // Auto-clean disallowed default phones
+    if (cleanPhone && DISALLOWED_DEFAULT_PHONES.has(cleanPhone)) {
+      serverAuthorizedPhones.delete(cleanPhone);
+    }
+
+    if (action === "checkAuth") {
+      const isDisallowed = !cleanPhone || DISALLOWED_DEFAULT_PHONES.has(cleanPhone) || !/^1\d{10}$/.test(cleanPhone);
+      const authorized = !isDisallowed && serverAuthorizedPhones.has(cleanPhone);
+      res.json({ ok: true, phone: cleanPhone, authorized });
+      return;
+    }
+
+    if (action === "authlist") {
+      const list = Array.from(serverAuthorizedPhones).filter(p => /^1\d{10}$/.test(p) && !DISALLOWED_DEFAULT_PHONES.has(p));
+      res.json({ ok: true, list });
+      return;
+    }
+
+    if (action === "auth" || action === "authorize") {
+      if (cleanPhone && /^1\d{10}$/.test(cleanPhone) && !DISALLOWED_DEFAULT_PHONES.has(cleanPhone)) {
+        serverAuthorizedPhones.add(cleanPhone);
+      }
+      const list = Array.from(serverAuthorizedPhones).filter(p => /^1\d{10}$/.test(p) && !DISALLOWED_DEFAULT_PHONES.has(p));
+      res.json({ ok: true, phone: cleanPhone, list });
+      return;
+    }
+
+    if (action === "unauth" || action === "revoke" || action === "deluser") {
+      if (cleanPhone) {
+        serverAuthorizedPhones.delete(cleanPhone);
+      }
+      const list = Array.from(serverAuthorizedPhones).filter(p => /^1\d{10}$/.test(p) && !DISALLOWED_DEFAULT_PHONES.has(p));
+      res.json({ ok: true, phone: cleanPhone, list });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      message: "Telegram API Endpoint Service is Operational.",
+      authorizedPhonesCount: serverAuthorizedPhones.size,
+      list: Array.from(serverAuthorizedPhones)
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || "Internal error" });
+  }
+});
+
+// -------------------------------------------------------------
 // WebSocket Server (Tier 2 WebSocket Frame Broadcast + Tier 1 Signaling)
 // -------------------------------------------------------------
 

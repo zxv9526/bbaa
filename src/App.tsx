@@ -142,6 +142,7 @@ import {
   saveActiveMatchSession,
   loadActiveMatchSession,
   clearActiveMatchSession,
+  validateAndCleanStorage,
   ActiveMatchSession
 } from './lib/matchPersistence';
 import { saveMatchReplay } from './lib/matchReplay';
@@ -381,6 +382,9 @@ export default function App() {
 
   // 1. On Mount: Auto-check and initialize D1 database & load player stats & card skins & restore unfinished match
   useEffect(() => {
+    // 🛡️ 校验 localStorage 存储版本：过期或坏死数据自动触发 clearActiveMatchSession 清理
+    validateAndCleanStorage(currentAccount?.phone);
+
     ApiClient.initializeDatabase();
     initCardSkins();
     refreshPlayerStats(playerName);

@@ -6,7 +6,8 @@ import {
   registerAccount,
   updateProfile,
   syncWithServerAuth,
-  deleteAccount
+  deleteAccount,
+  checkOrSyncPhoneAuthorization
 } from '../lib/accountManager';
 import {
   X,
@@ -429,7 +430,26 @@ export function AuthModal({
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-300">手机号码</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-300">手机号码</label>
+                  {regPhone.length === 11 && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setMessage(null);
+                        const isAuth = await checkOrSyncPhoneAuthorization(regPhone);
+                        if (isAuth) {
+                          setMessage({ type: 'success', text: `✅ 手机号 ${regPhone} 已通过 Bot 授权，可以正常提交注册！` });
+                        } else {
+                          setMessage({ type: 'error', text: `❌ 手机号 ${regPhone} 暂未查到 Bot 授权，请确认在 Telegram Bot 中已发送授权！` });
+                        }
+                      }}
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 transition"
+                    >
+                      🔄 实时核验 Bot 授权
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input

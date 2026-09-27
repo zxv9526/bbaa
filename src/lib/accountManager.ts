@@ -74,7 +74,7 @@ export function isPhoneAuthorized(phone: string): boolean {
 
 export async function checkOrSyncPhoneAuthorization(phone: string): Promise<boolean> {
   const norm = normalizePhone(phone);
-  if (!/^1\d{10}$/.test(norm)) return false;
+  if (!/^1\d{10}$/.test(norm) || isDisallowedPhone(norm)) return false;
 
   // 1. 本地白名单存在
   if (isPhoneAuthorized(norm)) {
@@ -84,9 +84,9 @@ export async function checkOrSyncPhoneAuthorization(phone: string): Promise<bool
   // 2. 向 Telegram Bot API 实时核验授权
   try {
     const res = await fetch(`/api/telegram?action=checkAuth&phone=${encodeURIComponent(norm)}`);
-    if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+    if (res.ok) {
       const data = await res.json();
-      if (data.authorized) {
+      if (data && data.authorized) {
         authorizePhone(norm);
         return true;
       }
@@ -96,9 +96,9 @@ export async function checkOrSyncPhoneAuthorization(phone: string): Promise<bool
   // 3. 全量授权列表拉取同步
   try {
     const res = await fetch('/api/telegram?action=authlist');
-    if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+    if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data.list) && data.list.length > 0) {
+      if (data && Array.isArray(data.list) && data.list.length > 0) {
         data.list.forEach((p: string) => authorizePhone(p));
         if (isPhoneAuthorized(norm)) return true;
       }
