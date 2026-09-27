@@ -31,6 +31,7 @@ import { CardSkinModal } from './components/CardSkinModal';
 import { AuthModal } from './components/AuthModal';
 import { PointsManagementModal } from './components/PointsManagementModal';
 import { NoPointsModal } from './components/NoPointsModal';
+import { BotConsoleModal } from './components/BotConsoleModal';
 import { ChatDrawer } from './components/ChatDrawer';
 import { ChatFloatingWidget } from './components/ChatFloatingWidget';
 import { TableTacticalChatBar } from './components/TableTacticalChatBar';
@@ -88,7 +89,9 @@ import {
   Gem,
   Gift,
   Train,
-  History
+  History,
+  Bot,
+  Trash2
 } from 'lucide-react';
 
 import {
@@ -304,6 +307,7 @@ export default function App() {
   const [showReplayModal, setShowReplayModal] = useState(false);
   const [showReservationModal, setShowReservationModal] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
+  const [showBotConsoleModal, setShowBotConsoleModal] = useState(false);
   const [showSeatModal, setShowSeatModal] = useState(false);
   const [seatModalRound, setSeatModalRound] = useState<number>(1);
   const [seatModalCarriage, setSeatModalCarriage] = useState<Carriage | null>(null);
@@ -1179,6 +1183,44 @@ export default function App() {
 
     if (ttsEnabled && (type === 'quick' || type === 'text')) {
       speakTextMessage(content);
+    }
+
+    // 🤖 支持在聊天框直接输入 Bot 指令如 /clean, /清理残留, /auth 等
+    const trimmed = content.trim();
+    if (type === 'text' && (trimmed.startsWith('/') || trimmed === '清理残留' || trimmed === '清理' || trimmed === '一键清理' || trimmed === '重置' || trimmed === '重置牌桌')) {
+      ApiClient.simulateTelegramCommand(trimmed).then(res => {
+        const botText = res.response?.text || '指令已执行。';
+        const cleanText = botText.replace(/<[^>]+>/g, '');
+        const botMsg: ChatMessage = {
+          id: 'msg_bot_' + Date.now(),
+          senderId: 'admin_bot',
+          senderName: '🤖 十三水管理Bot',
+          senderAvatar: '🤖',
+          isUser: false,
+          type: 'text',
+          content: cleanText,
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, botMsg]);
+        if (trimmed.startsWith('/clean') || trimmed.startsWith('/clear') || trimmed.startsWith('/reset') || trimmed.includes('清理')) {
+          setRealtimePlayers([]);
+          setRealtimeRound(1);
+          setRealtimeDealerIndex(0);
+          try {
+            localStorage.removeItem('thirteen_realtime_table_888888');
+            localStorage.removeItem('thirteen_realtime_table');
+            localStorage.removeItem('thirteen_active_match_session');
+          } catch {}
+          setCarriageToast({
+            show: true,
+            msg: '🧹 Bot 已完成全服残留席位清理！',
+            pts: 0
+          });
+          setTimeout(() => setCarriageToast(null), 3500);
+        }
+      }).catch(err => {
+        console.warn('Bot command error:', err);
+      });
     }
 
     // 在实时场向全桌真人玩家广播消息并持久化
@@ -2248,6 +2290,14 @@ export default function App() {
               {/* Lobby Quick Tool Shelf */}
               <div className="w-full flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2 border-t border-slate-800/50">
                 <button
+                  onClick={() => setShowBotConsoleModal(true)}
+                  className="px-4 py-2 sm:px-5 sm:py-2.5 rounded-full bg-gradient-to-r from-amber-500/20 via-indigo-950/80 to-red-500/20 hover:from-amber-500/30 hover:to-red-500/30 border border-amber-500/60 text-amber-300 hover:text-white text-xs sm:text-sm font-black flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+                  title="打开 Bot 管理控制台，支持执行 /clean 清理残留、授权与积分管理"
+                >
+                  <Bot className="w-4 h-4 text-amber-400" />
+                  <span>🤖 Bot 控制台 (清理残留)</span>
+                </button>
+                <button
                   onClick={() => setShowRuleModal(true)}
                   className="px-4 py-2 sm:px-5 sm:py-2.5 rounded-full bg-slate-900/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm cursor-pointer"
                 >
@@ -2323,6 +2373,7 @@ export default function App() {
               rotateRealtimeDealer(newDIdx);
             }}
             activeSpeakerId={globalSpeakingUserId || (userIsSpeaking ? ((mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')) : null)}
+            onOpenBotConsole={() => setShowBotConsoleModal(true)}
           />
         )}
 
@@ -2841,6 +2892,28 @@ export default function App() {
           onToggleTts={() => setTtsEnabled(!ttsEnabled)}
         />
       )}
+
+      {/* 🤖 Telegram / Bot Admin Console Modal */}
+      <BotConsoleModal
+        isOpen={showBotConsoleModal}
+        onClose={() => setShowBotConsoleModal(false)}
+        onTableReset={() => {
+          setRealtimePlayers([]);
+          setRealtimeRound(1);
+          setRealtimeDealerIndex(0);
+          try {
+            localStorage.removeItem('thirteen_realtime_table_888888');
+            localStorage.removeItem('thirteen_realtime_table');
+            localStorage.removeItem('thirteen_active_match_session');
+          } catch {}
+          setCarriageToast({
+            show: true,
+            msg: '🧹 牌桌与全服残留席位已全部清空重置！',
+            pts: 0
+          });
+          setTimeout(() => setCarriageToast(null), 3500);
+        }}
+      />
     </div>
   );
 }
