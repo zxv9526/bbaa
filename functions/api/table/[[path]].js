@@ -33,8 +33,8 @@ function getOrCreateMemoryTable(rawRoomId, customName) {
   return table;
 }
 
-// Helper: Prune zombie seats inactive for > 2500ms
-function pruneZombieSeats(table, activeThresholdMs = 2500) {
+// Helper: Prune zombie seats inactive for > 8000ms (8 seconds) to handle network jitter gracefully
+function pruneZombieSeats(table, activeThresholdMs = 8000) {
   if (!table || !Array.isArray(table.seats)) return 0;
   const now = Date.now();
   const beforeCount = table.seats.length;
@@ -61,11 +61,39 @@ function pruneZombieSeats(table, activeThresholdMs = 2500) {
         }
       });
       table.dealerIndex = table.dealerIndex % table.seats.length;
-      table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0].id;
+      table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0]?.id || "";
     }
     table.lastUpdated = now;
   }
   return removedCount;
+}
+
+// Load authoritative table from D1 DB or memory
+async function loadAuthoritativeTable(db, roomId, customName) {
+  const normRoom = normalizeRoomId(roomId);
+  let table = globalTables.get(normRoom);
+
+  if (db) {
+    try {
+      const row = await db.prepare('SELECT players_json, status FROM rooms WHERE room_code = ?').bind(normRoom).first();
+      if (row && row.players_json) {
+        const dbSeats = JSON.parse(row.players_json);
+        if (Array.isArray(dbSeats)) {
+          if (!table) {
+            table = getOrCreateMemoryTable(normRoom, customName);
+          }
+          // Merge seats from D1
+          table.seats = dbSeats;
+          if (row.status) table.status = row.status;
+        }
+      }
+    } catch {}
+  }
+
+  if (!table) {
+    table = getOrCreateMemoryTable(normRoom, customName);
+  }
+  return table;
 }
 
 export async function onRequest(context) {
@@ -120,7 +148,7 @@ export async function onRequest(context) {
     const deviceId = url.searchParams.get('deviceId');
     const tabSessionId = url.searchParams.get('tabSessionId');
 
-    const table = getOrCreateMemoryTable(roomId);
+    const table = await loadAuthoritativeTable(db, roomId);
     const now = Date.now();
 
     // Refresh active timestamp for requesting client
@@ -135,8 +163,8 @@ export async function onRequest(context) {
       }
     }
 
-    // Always prune stale zombies (<2.5s)
-    pruneZombieSeats(table, 2500);
+    // Always prune stale zombies (>8000ms)
+    pruneZombieSeats(table, 8000);
 
     // Sync state with D1 database if bound
     if (db) {
@@ -167,11 +195,11 @@ export async function onRequest(context) {
         return new Response(JSON.stringify({ ok: false, error: "Missing player payload" }), { status: 400, headers });
       }
 
-      const table = getOrCreateMemoryTable(roomId, body.roomName);
+      const table = await loadAuthoritativeTable(db, roomId, body.roomName);
       const now = Date.now();
 
-      // 3.1 First prune zombies (< 2.5s)
-      pruneZombieSeats(table, 2500);
+      // 3.1 First prune zombies (> 8000ms)
+      pruneZombieSeats(table, 8000);
 
       // 3.2 Check if player already seated
       const existingIdx = table.seats.findIndex(s =>

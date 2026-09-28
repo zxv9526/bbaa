@@ -160,7 +160,7 @@ setInterval(() => {
   });
 }, 10000);
 
-// Active Realtime Zombie Cleaner: runs every 0.8s to evict seats with >2500ms inactivity
+// Active Realtime Zombie Cleaner: runs every 1.5s to evict seats with >8000ms inactivity
 setInterval(() => {
   const now = Date.now();
   tablesMap.forEach((table, rid) => {
@@ -170,8 +170,8 @@ setInterval(() => {
     }
     if (table.seats.length === 0) return;
     const beforeCount = table.seats.length;
-    // Strict threshold: 2.5 seconds without ping = instant zombie eviction
-    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 2500);
+    // Threshold: 8.0 seconds without ping = zombie eviction
+    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 8000);
     if (table.seats.length !== beforeCount) {
       if (table.seats.length === 0) {
         table.status = "waiting";
