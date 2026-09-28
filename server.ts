@@ -73,6 +73,8 @@ export interface ServerSeatPlayer {
   avatar: string;
   isAi: boolean;
   score: number;
+  seatIndex: number; // 0-7: 0-based fixed seat slot index
+  seatNumber: number; // 1-8: 1-based display seat slot number
   lastActive: number;
 }
 
@@ -288,7 +290,7 @@ app.get("/api/table/state", (req, res) => {
   res.json({ ok: true, table });
 });
 
-// Join table with strict deduplication, stale seat pruning & reliable distinct seat assignment
+// Join table with precise 1-8 slot seat assignment, strict deduplication & stale seat pruning
 app.post("/api/table/join", (req, res) => {
   try {
     const roomId = normalizeRoomId(req.body.roomId || "666666");
@@ -304,19 +306,54 @@ app.post("/api/table/join", (req, res) => {
     // 1. Strict Auto-prune stale seats (older than 2.5s without active ping)
     table.seats = table.seats.filter(s => (now - (s.lastActive || 0)) < 2500);
 
-    // 2. Check if this exact player is already seated (reconnect by exact ID or tabSessionId)
+    // 2. Parse target seat index (0..7)
+    let requestedSeatIdx: number | undefined = undefined;
+    if (typeof req.body.targetSeatIndex === 'number' && req.body.targetSeatIndex >= 0 && req.body.targetSeatIndex <= 7) {
+      requestedSeatIdx = Math.floor(req.body.targetSeatIndex);
+    }
+
+    // 3. Check if target seat is already occupied by someone else
+    if (requestedSeatIdx !== undefined) {
+      const occupant = table.seats.find(s => s.seatIndex === requestedSeatIdx);
+      if (occupant && occupant.id !== player.id && occupant.tabSessionId !== player.tabSessionId) {
+        res.status(409).json({ ok: false, error: `${requestedSeatIdx + 1}号座位已被其他玩家入座，请选择其他空位！`, table });
+        return;
+      }
+    }
+
+    // 4. Check if this player is already seated (update seat or switch seat)
     const existingIndex = table.seats.findIndex(s =>
       s.id === player.id ||
       (player.tabSessionId && s.tabSessionId === player.tabSessionId)
     );
+
+    let assignedSeatIndex = requestedSeatIdx;
+    if (assignedSeatIndex === undefined) {
+      if (existingIndex !== -1 && typeof table.seats[existingIndex].seatIndex === 'number') {
+        assignedSeatIndex = table.seats[existingIndex].seatIndex;
+      } else {
+        const occupiedSet = new Set(table.seats.map(s => s.seatIndex));
+        for (let i = 0; i < 8; i++) {
+          if (!occupiedSet.has(i)) {
+            assignedSeatIndex = i;
+            break;
+          }
+        }
+        if (assignedSeatIndex === undefined) assignedSeatIndex = 0;
+      }
+    }
+
+    let finalName = (player.name || `玩家${assignedSeatIndex + 1}`).replace(/\(\d+号位\)/g, '').trim();
 
     if (existingIndex !== -1) {
       // Cleanly update seat properties
       table.seats[existingIndex].id = String(player.id);
       table.seats[existingIndex].deviceId = player.deviceId || table.seats[existingIndex].deviceId;
       table.seats[existingIndex].tabSessionId = player.tabSessionId || table.seats[existingIndex].tabSessionId;
-      table.seats[existingIndex].name = player.name || table.seats[existingIndex].name;
+      table.seats[existingIndex].name = finalName;
       table.seats[existingIndex].avatar = player.avatar || table.seats[existingIndex].avatar;
+      table.seats[existingIndex].seatIndex = assignedSeatIndex;
+      table.seats[existingIndex].seatNumber = assignedSeatIndex + 1;
       table.seats[existingIndex].lastActive = now;
 
       // Cleanly remove any other duplicate residual seats for this player
@@ -325,11 +362,6 @@ app.post("/api/table/join", (req, res) => {
         return s.id !== player.id && (!player.tabSessionId || s.tabSessionId !== player.tabSessionId);
       });
 
-      // Recalculate formatted seat names & indices
-      table.seats.forEach(s => {
-        s.name = s.name.replace(/\(\d+号位\)/g, '').trim();
-      });
-      const realIndex = table.seats.findIndex(s => s.id === player.id);
       table.dealerIndex = table.dealerIndex % Math.max(1, table.seats.length);
       table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0]?.id || "";
       table.lastUpdated = now;
@@ -339,21 +371,11 @@ app.post("/api/table/join", (req, res) => {
         table
       });
 
-      res.json({ ok: true, table, seatIndex: Math.max(0, realIndex) });
+      res.json({ ok: true, table, seatIndex: assignedSeatIndex });
       return;
     }
 
-    // 3. Force eviction if full (>= 8): Remove the oldest least-active seat to guarantee active human entry
-    if (table.seats.length >= 8) {
-      table.seats.sort((a, b) => (a.lastActive || 0) - (b.lastActive || 0));
-      table.seats.shift();
-    }
-
-    // 4. New real human player enters next available seat
-    const seatIndex = table.seats.length;
-    let finalName = player.name || `玩家${seatIndex + 1}`;
-    finalName = finalName.replace(/\(\d+号位\)/g, '').trim();
-
+    // 5. New player enters chosen seat slot
     const newSeat: ServerSeatPlayer = {
       id: String(player.id),
       deviceId: player.deviceId,
@@ -362,15 +384,12 @@ app.post("/api/table/join", (req, res) => {
       avatar: player.avatar || "😎",
       isAi: false,
       score: 0,
+      seatIndex: assignedSeatIndex,
+      seatNumber: assignedSeatIndex + 1,
       lastActive: now
     };
 
     table.seats.push(newSeat);
-
-    // Format seat names
-    table.seats.forEach((s, i) => {
-      s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
-    });
 
     if (table.seats.length === 1) {
       table.dealerIndex = 0;
@@ -380,7 +399,7 @@ app.post("/api/table/join", (req, res) => {
     table.lastAction = {
       type: "join",
       playerId: newSeat.id,
-      text: `玩家【${newSeat.name}】入座第 ${seatIndex + 1} 席！`,
+      text: `玩家【${newSeat.name}】就座 ${assignedSeatIndex + 1} 号席！`,
       timestamp: now
     };
     table.lastUpdated = now;
@@ -390,7 +409,7 @@ app.post("/api/table/join", (req, res) => {
       table
     });
 
-    res.json({ ok: true, table, seatIndex });
+    res.json({ ok: true, table, seatIndex: assignedSeatIndex });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err?.message || "Internal error" });
   }
@@ -410,7 +429,7 @@ app.post("/api/table/leave", (req, res) => {
 
     table.seats = table.seats.filter(s => {
       const matchDevice = deviceId && s.deviceId === deviceId;
-      const matchPlayer = playerId && s.id === playerId;
+      const matchPlayer = playerId && (s.id === playerId || s.id.includes(playerId) || playerId.includes(s.id));
       const matchTab = tabSessionId && s.tabSessionId === tabSessionId;
       const shouldRemove = matchDevice || matchPlayer || matchTab;
       if (shouldRemove) {
@@ -428,8 +447,10 @@ app.post("/api/table/leave", (req, res) => {
         table.cutCard = null;
         table.dealtHands = undefined;
       } else {
-        table.seats.forEach((s, i) => {
-          s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+        table.seats.forEach(s => {
+          if (s.name) {
+            s.name = s.name.replace(/\(\d+号位\)/g, '').trim();
+          }
         });
         table.dealerIndex = table.dealerIndex % table.seats.length;
         table.dealerId = table.seats[table.dealerIndex]?.id || table.seats[0].id;

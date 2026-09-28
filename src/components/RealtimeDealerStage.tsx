@@ -28,6 +28,8 @@ export interface RealtimeSeatPlayer {
   tabSessionId?: string;
   isAi?: boolean;
   score: number;
+  seatIndex?: number;
+  seatNumber?: number;
 }
 
 interface RealtimeDealerStageProps {
@@ -84,7 +86,10 @@ export function RealtimeDealerStage({
   const seatedCount = players.length;
   const currentDealer = players[dealerIndex] || players[0];
   const tabId = getTabSessionId();
-  const mySeatIndex = players.findIndex(p => p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId));
+  const mySeat = players.find(p => p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId));
+  const mySeatIndex = mySeat && typeof mySeat.seatIndex === 'number'
+    ? mySeat.seatIndex
+    : players.findIndex(p => p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId));
   const isHumanDealer = Boolean(currentDealer && mySeatIndex !== -1 && dealerIndex === mySeatIndex);
 
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
@@ -437,7 +442,7 @@ export function RealtimeDealerStage({
       <div className="w-full bg-slate-950/70 border border-emerald-950/60 rounded-xl p-1 shrink-0 shadow-inner">
         <div className="w-full flex items-center justify-between gap-1 overflow-x-auto no-scrollbar">
           {Array.from({ length: 8 }).map((_, idx) => {
-            const p = players[idx];
+            const p = players.find(seat => (typeof seat.seatIndex === 'number' ? seat.seatIndex === idx : players.indexOf(seat) === idx));
             const isOccupied = !!p;
             const isThisDealer = isOccupied && idx === dealerIndex;
             const isMe = isOccupied && (p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId) || (mySeatIndex !== -1 && idx === mySeatIndex));

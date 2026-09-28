@@ -201,27 +201,65 @@ export async function onRequest(context) {
       // 3.1 First prune zombies (> 8000ms)
       pruneZombieSeats(table, 8000);
 
-      // 3.2 Check if player already seated
+      // 3.2 Parse target seat index (0..7)
+      let requestedSeatIdx = undefined;
+      if (typeof body.targetSeatIndex === 'number' && body.targetSeatIndex >= 0 && body.targetSeatIndex <= 7) {
+        requestedSeatIdx = Math.floor(body.targetSeatIndex);
+      }
+
+      // Check if target seat occupied by someone else
+      if (requestedSeatIdx !== undefined) {
+        const occupant = table.seats.find(s => s.seatIndex === requestedSeatIdx);
+        if (occupant && occupant.id !== player.id && occupant.tabSessionId !== player.tabSessionId) {
+          return new Response(JSON.stringify({
+            ok: false,
+            error: `${requestedSeatIdx + 1}号座位已被其他玩家入座，请选择其他空位！`,
+            table
+          }), { status: 409, headers });
+        }
+      }
+
+      // 3.3 Check if player already seated
       const existingIdx = table.seats.findIndex(s =>
         s.id === player.id || (player.tabSessionId && s.tabSessionId === player.tabSessionId)
       );
 
+      let assignedSeatIndex = requestedSeatIdx;
+      if (assignedSeatIndex === undefined) {
+        if (existingIdx !== -1 && typeof table.seats[existingIdx].seatIndex === 'number') {
+          assignedSeatIndex = table.seats[existingIdx].seatIndex;
+        } else {
+          const occupiedSet = new Set(table.seats.map(s => s.seatIndex));
+          for (let i = 0; i < 8; i++) {
+            if (!occupiedSet.has(i)) {
+              assignedSeatIndex = i;
+              break;
+            }
+          }
+          if (assignedSeatIndex === undefined) assignedSeatIndex = 0;
+        }
+      }
+
+      const cleanName = (player.name || `玩家${assignedSeatIndex + 1}`).replace(/\(\d+号位\)/g, '').trim();
+
       if (existingIdx !== -1) {
-        table.seats[existingIdx].name = player.name || table.seats[existingIdx].name;
+        table.seats[existingIdx].name = cleanName;
         table.seats[existingIdx].avatar = player.avatar || table.seats[existingIdx].avatar;
+        table.seats[existingIdx].seatIndex = assignedSeatIndex;
+        table.seats[existingIdx].seatNumber = assignedSeatIndex + 1;
         table.seats[existingIdx].lastActive = now;
         table.lastUpdated = now;
-        return new Response(JSON.stringify({ ok: true, table, seatIndex: existingIdx }), { headers });
-      }
 
-      // 3.3 If table is full (8/8), force evict the oldest inactive seat to make space for real active player
-      if (table.seats.length >= 8) {
-        table.seats.sort((a, b) => (a.lastActive || 0) - (b.lastActive || 0));
-        table.seats.shift(); // Evict the least active player
-      }
+        if (db) {
+          try {
+            await db.prepare(`
+              UPDATE rooms SET players_json = ?, updated_at = datetime('now') WHERE room_code = ?
+            `).bind(JSON.stringify(table.seats), roomId).run();
+          } catch {}
+        }
 
-      const seatIndex = table.seats.length;
-      const cleanName = (player.name || `玩家${seatIndex + 1}`).replace(/\(\d+号位\)/g, '').trim();
+        return new Response(JSON.stringify({ ok: true, table, seatIndex: assignedSeatIndex }), { headers });
+      }
 
       const newSeat = {
         id: String(player.id),
@@ -231,6 +269,8 @@ export async function onRequest(context) {
         avatar: player.avatar || "😎",
         isAi: false,
         score: 0,
+        seatIndex: assignedSeatIndex,
+        seatNumber: assignedSeatIndex + 1,
         lastActive: now
       };
 
@@ -244,7 +284,7 @@ export async function onRequest(context) {
       table.lastAction = {
         type: "join",
         playerId: newSeat.id,
-        text: `玩家【${newSeat.name}】入座第 ${seatIndex + 1} 席！`,
+        text: `玩家【${newSeat.name}】就座 ${assignedSeatIndex + 1} 号席！`,
         timestamp: now
       };
       table.lastUpdated = now;
@@ -263,7 +303,7 @@ export async function onRequest(context) {
         } catch {}
       }
 
-      return new Response(JSON.stringify({ ok: true, table, seatIndex }), { headers });
+      return new Response(JSON.stringify({ ok: true, table, seatIndex: assignedSeatIndex }), { headers });
     } catch (err) {
       return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers });
     }
@@ -277,11 +317,11 @@ export async function onRequest(context) {
       const playerId = String(body.playerId || '');
       const tabSessionId = String(body.tabSessionId || '');
       const deviceId = String(body.deviceId || '');
-      const table = getOrCreateMemoryTable(roomId);
+      const table = await loadAuthoritativeTable(db, roomId);
 
       table.seats = table.seats.filter(s => {
         const matchDevice = deviceId && s.deviceId === deviceId;
-        const matchPlayer = playerId && s.id === playerId;
+        const matchPlayer = playerId && (s.id === playerId || s.id.includes(playerId) || playerId.includes(s.id));
         const matchTab = tabSessionId && s.tabSessionId === tabSessionId;
         return !(matchDevice || matchPlayer || matchTab);
       });
@@ -290,10 +330,13 @@ export async function onRequest(context) {
         table.status = "waiting";
         table.dealerIndex = 0;
         table.dealerId = "";
+        table.shuffleCount = 0;
+        table.cutCard = null;
+        table.dealtHands = undefined;
       } else {
-        table.seats.forEach((s, i) => {
+        table.seats.forEach(s => {
           if (s.name) {
-            s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+            s.name = s.name.replace(/\(\d+号位\)/g, '').trim();
           }
         });
         table.dealerIndex = table.dealerIndex % table.seats.length;
@@ -304,8 +347,8 @@ export async function onRequest(context) {
       if (db) {
         try {
           await db.prepare(`
-            UPDATE rooms SET players_json = ?, updated_at = datetime('now') WHERE room_code = ?
-          `).bind(JSON.stringify(table.seats), roomId).run();
+            UPDATE rooms SET players_json = ?, status = ?, updated_at = datetime('now') WHERE room_code = ?
+          `).bind(JSON.stringify(table.seats), table.status, roomId).run();
         } catch {}
       }
 

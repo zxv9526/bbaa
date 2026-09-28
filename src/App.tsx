@@ -136,7 +136,9 @@ import {
   getCurrentRoomId,
   setCurrentRoomId,
   rotateRealtimeDealer,
-  claimDealerRole
+  claimDealerRole,
+  fetchRealtimeRoomState,
+  RealtimeTableState
 } from './lib/realtimeTableManager';
 import {
   saveActiveMatchSession,
@@ -306,6 +308,7 @@ export default function App() {
   const [showReservationModal, setShowReservationModal] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
   const [showSeatModal, setShowSeatModal] = useState(false);
+  const [lobbyRealtimeTable, setLobbyRealtimeTable] = useState<RealtimeTableState | null>(null);
   const [seatModalRound, setSeatModalRound] = useState<number>(1);
   const [seatModalCarriage, setSeatModalCarriage] = useState<Carriage | null>(null);
   const [previousRoundResult, setPreviousRoundResult] = useState<{
@@ -379,6 +382,26 @@ export default function App() {
     });
     setTimeout(() => setCarriageToast(null), 4000);
   };
+
+  // ⚡ 实时对战场大厅席位状态轮询 (每 1.2 秒刷新 1-8 号位置红绿占用状态)
+  useEffect(() => {
+    if (gameState !== 'menu') return;
+    let isMounted = true;
+    const pollSeats = async () => {
+      try {
+        const table = await fetchRealtimeRoomState('666666');
+        if (isMounted && table) {
+          setLobbyRealtimeTable(table);
+        }
+      } catch {}
+    };
+    pollSeats();
+    const interval = setInterval(pollSeats, 1200);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [gameState]);
 
   // 1. On Mount: Auto-check and initialize D1 database & load player stats & card skins & restore unfinished match
   useEffect(() => {
@@ -716,8 +739,8 @@ export default function App() {
     startNewMatch('reservation', seatIndex, roundIndex, true);
   };
 
-  // ⚡ 实时对战场入口：进入轮流发牌与洗牌切牌舞台
-  const startRealtimeMatch = async (targetRoomId?: string) => {
+  // ⚡ 实时对战场入口：进入轮流发牌与洗牌切牌舞台 (支持指定选座 1-8 号)
+  const startRealtimeMatch = async (targetRoomId?: string, targetSeatIndex?: number) => {
     // 🛡️ 账号限制：必须登录已授权手机号，没有游客
     if (!isUserLoggedIn(currentAccount)) {
       setShowAuthModal(true);
@@ -769,14 +792,14 @@ export default function App() {
     setSyncedCutCard(null);
     setSyncedIsDealing(false);
 
-    // 加入多人实时牌桌：向服务端权威接口入座 (保证每台手机/每个标签页获得独立席位)
+    // 加入多人实时牌桌：向服务端权威接口入座 (指定座位编号或首个可用槽位)
     const tabSessionId = getTabSessionId();
     const { table, assignedUser, seatIndex } = await joinOrCreateRealtimeTable({
       id: distinctUserId,
       name: myName,
       avatar: myAvatar,
       tabSessionId
-    }, effectiveRoomId);
+    }, effectiveRoomId, targetSeatIndex);
 
     setRealtimeUserId(assignedUser.id);
     realtimeUserIdRef.current = assignedUser.id;
@@ -802,6 +825,49 @@ export default function App() {
       avatar: assignedUser.avatar,
       seatIndex: Math.max(0, seatIndex)
     });
+  };
+
+  // ⚡ 彻底退出实时对战场并瞬时清理席位残留 (确保大厅对应红座瞬间变绿)
+  const handleExitRealtimeTableToLobby = async (targetRoomId?: string) => {
+    const tabSessionId = getTabSessionId();
+    const myDistinctId = realtimeUserId || getPlayerUniqueId(currentAccount.phone || currentAccount.id);
+    const deviceId = getOrCreateDeviceId();
+    const rid = targetRoomId || getCurrentRoomId() || '666666';
+
+    // 1. 本地大厅 0 延迟秒变绿：将自己从 lobbyRealtimeTable.seats 中瞬时剔除
+    setLobbyRealtimeTable(prev => {
+      if (!prev || !Array.isArray(prev.seats)) return prev;
+      return {
+        ...prev,
+        seats: prev.seats.filter(s => !(s.id === myDistinctId || s.tabSessionId === tabSessionId || (s as any).deviceId === deviceId))
+      };
+    });
+
+    // 2. 本地牌桌与语音引擎解散退出
+    await leaveRealtimeTable(myDistinctId, rid, { tabSessionId, deviceId, playerId: myDistinctId });
+    TripleVoiceEngine.getInstance().leave();
+    clearActiveMatchSession(currentAccount.phone);
+
+    // 3. 立即强制向服务端发包退出
+    try {
+      await fetch('/api/table/leave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomId: rid,
+          playerId: myDistinctId,
+          tabSessionId,
+          deviceId
+        })
+      });
+      // 重新拉取大厅最新权威状态
+      const fresh = await fetchRealtimeRoomState(rid);
+      if (fresh) {
+        setLobbyRealtimeTable(fresh);
+      }
+    } catch {}
+
+    setGameState('menu');
   };
 
   // ⚡ 庄家发牌完成回调：分发牌张，启动理牌阶段
@@ -1513,10 +1579,8 @@ export default function App() {
     }
 
     if (mode === 'realtime') {
-      const tabSessionId = getTabSessionId();
-      const distinctUserId = realtimeUserId || getPlayerUniqueId(currentAccount.phone || currentAccount.id);
-      leaveRealtimeTable(distinctUserId, getCurrentRoomId(), { tabSessionId });
-      TripleVoiceEngine.getInstance().leave();
+      handleExitRealtimeTableToLobby();
+      return;
     }
 
     clearActiveMatchSession(currentAccount.phone);
@@ -1553,15 +1617,13 @@ export default function App() {
     });
 
     if (mode === 'realtime') {
-      const tabSessionId = getTabSessionId();
-      const distinctUserId = realtimeUserId || getPlayerUniqueId(currentAccount.phone || currentAccount.id);
-      leaveRealtimeTable(distinctUserId, getCurrentRoomId(), { tabSessionId });
-      TripleVoiceEngine.getInstance().leave();
+      handleExitRealtimeTableToLobby();
+      return;
     }
 
     setCarriageToast({
       show: true,
-      msg: `💾 第 ${mode === 'realtime' ? realtimeRound : carriageIndex} 局手牌进度已保存，再次进入将继续完成！`,
+      msg: `💾 第 ${carriageIndex} 局手牌进度已保存，再次进入将继续完成！`,
       pts: 0
     });
     setTimeout(() => setCarriageToast(null), 3000);
@@ -2192,59 +2254,124 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* SECTION 2: 实时对战场 */}
+                {/* SECTION 2: 实时对战场 (移除点击进入按钮，重构为 1-8 号精确选座面板) */}
                 <div
                   id="arena-realtime-section"
-                  onClick={() => {
-                    if (currentAccount.points <= 0) {
-                      setShowNoPointsModal(true);
-                      return;
-                    }
-                    startRealtimeMatch();
-                  }}
-                  className="relative bg-gradient-to-br from-red-950/80 via-slate-900 to-amber-950/90 border-2 border-amber-500/50 p-4 sm:p-5 rounded-3xl flex flex-col justify-between gap-3 sm:gap-4 cursor-pointer transition-all duration-300 group shadow-xl hover:border-amber-400 hover:-translate-y-1 hover:shadow-red-950/80"
+                  className="relative bg-gradient-to-br from-red-950/80 via-slate-900 to-amber-950/90 border-2 border-amber-500/50 p-4 sm:p-5 rounded-3xl flex flex-col justify-between gap-3 sm:gap-4 shadow-xl hover:border-amber-400/80 transition-all duration-300"
                 >
-                  <div className="space-y-2 sm:space-y-3">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-red-600 text-slate-950 flex items-center justify-center text-xl sm:text-2xl font-black shadow-lg shadow-red-600/30 group-hover:scale-110 transition">
-                        ⚡
+                      <div className="flex items-center gap-2">
+                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-red-600 text-slate-950 flex items-center justify-center text-lg sm:text-xl font-black shadow-md shadow-red-600/30">
+                          ⚡
+                        </div>
+                        <div>
+                          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-1.5">
+                            <span>实时对战场</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-bold">
+                              房号 666666
+                            </span>
+                          </h2>
+                        </div>
                       </div>
-                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+
+                      <span className="text-[10px] sm:text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
                         <Crown className="w-3 h-3 text-amber-400" />
-                        轮流发牌 · 庄家洗牌切牌
+                        <span>≥2人开局 · 轮流坐庄</span>
                       </span>
                     </div>
 
-                    <div>
-                      <h2 className="text-2xl font-black text-white group-hover:text-amber-300 transition tracking-tight">
-                        实时对战场
-                      </h2>
-                      <p className="text-xs sm:text-sm text-slate-300 mt-1.5 leading-relaxed">
-                        动态开桌 · 轮流做庄 · 至少2人就座触发发牌 · 真实洗牌切牌与实时语音对讲。
-                      </p>
-                    </div>
-
-                    <div className="space-y-1 text-[11px] sm:text-xs text-slate-400">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-amber-400 font-bold">✓</span>
-                        <span>庄家特权：交错洗牌 & 滑动切牌</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-amber-400 font-bold">✓</span>
-                        <span>最少2人开局 · 庄家顺延轮换</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-amber-400 font-bold">✓</span>
-                        <span>真实牌桌对讲 & 战术语音</span>
-                      </div>
-                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      请自选 <strong className="text-amber-300">1~8 号</strong> 专属席位入座开局。已有玩家位置变红，空位点击即可直接入座！
+                    </p>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between font-bold text-amber-400 group-hover:text-amber-300">
-                    <span className="text-sm">进入实时发牌赛场</span>
-                    <div className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-red-600 text-slate-950 text-xs font-black flex items-center gap-1.5 group-hover:translate-x-1 transition shadow-lg shadow-red-600/30">
-                      <span>立即入桌</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
+                  {/* 1-8 号专属选座网格 (已有玩家变红，空位翠绿可点) */}
+                  <div className="pt-2 border-t border-slate-800/80">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
+                        <span>🪑 牌桌 8 席选位</span>
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          (已入座 {lobbyRealtimeTable?.seats?.length || 0}/8 人)
+                        </span>
+                      </span>
+
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <span className="flex items-center gap-1 text-emerald-400">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" /> 空闲可选
+                        </span>
+                        <span className="flex items-center gap-1 text-rose-400">
+                          <span className="w-2 h-2 rounded-full bg-rose-500" /> 已有人就座
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                      {Array.from({ length: 8 }).map((_, idx) => {
+                        const seatNum = idx + 1;
+                        const seatedPlayer = lobbyRealtimeTable?.seats?.find(s => (typeof s.seatIndex === 'number' ? s.seatIndex === idx : false));
+                        const isOccupied = Boolean(seatedPlayer);
+                        const myDistinctId = getPlayerUniqueId(currentAccount.phone || currentAccount.id);
+                        const tabId = getTabSessionId();
+                        const isMe = Boolean(isOccupied && (seatedPlayer?.id === myDistinctId || (seatedPlayer?.tabSessionId && seatedPlayer?.tabSessionId === tabId)));
+
+                        return (
+                          <button
+                            key={`lobby-seat-slot-${idx}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (isOccupied && !isMe) {
+                                sounds.playError();
+                                setCarriageToast({
+                                  show: true,
+                                  msg: `⚠️ ${seatNum}号位已被【${seatedPlayer?.name || '其他玩家'}】就座，请点击其他绿色空位！`,
+                                  pts: 0
+                                });
+                                setTimeout(() => setCarriageToast(null), 3000);
+                                return;
+                              }
+                              triggerHaptic('medium');
+                              startRealtimeMatch('666666', idx);
+                            }}
+                            className={`relative p-1.5 sm:p-2 rounded-xl flex flex-col items-center justify-between border transition-all duration-200 active:scale-95 group/seat ${
+                              isOccupied
+                                ? isMe
+                                  ? 'bg-gradient-to-b from-amber-950/90 via-red-950/80 to-slate-950 border-2 border-amber-400 shadow-md shadow-amber-950/60 ring-2 ring-amber-400/50 cursor-pointer animate-pulse'
+                                  : 'bg-gradient-to-b from-rose-950/90 via-red-950/85 to-slate-950 border-2 border-rose-500/80 text-rose-200 shadow-md shadow-rose-950/50 cursor-not-allowed opacity-95 hover:border-rose-400'
+                                : 'bg-gradient-to-b from-emerald-950/40 via-slate-900/80 to-slate-950 border border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-900/40 text-emerald-300 shadow-sm cursor-pointer hover:scale-105'
+                            }`}
+                            title={isOccupied ? (isMe ? '这是您的座位，点击进入对局' : `${seatNum}号位已被【${seatedPlayer?.name}】就座`) : `点击入座 ${seatNum} 号位`}
+                          >
+                            {/* 座位号与状态徽标 */}
+                            <div className="flex items-center justify-between w-full">
+                              <span className={`text-[9px] font-black px-1 rounded ${
+                                isOccupied 
+                                  ? (isMe ? 'bg-amber-500/30 text-amber-300' : 'bg-rose-500/30 text-rose-300')
+                                  : 'bg-emerald-500/20 text-emerald-400'
+                              }`}>
+                                {seatNum}号
+                              </span>
+                              <span className="text-[8px] font-bold">
+                                {isOccupied ? (isMe ? '👑我' : '🔴满') : '🟢空'}
+                              </span>
+                            </div>
+
+                            {/* 席位头像 */}
+                            <div className="text-lg sm:text-xl my-0.5">
+                              {isOccupied ? (seatedPlayer?.avatar || '😎') : '🪑'}
+                            </div>
+
+                            {/* 席位名称/提示 */}
+                            <div className="w-full text-center">
+                              <span className={`text-[9px] font-bold block truncate ${
+                                isOccupied ? (isMe ? 'text-amber-300 font-black' : 'text-rose-300') : 'text-emerald-400 group-hover/seat:text-emerald-200'
+                              }`}>
+                                {isOccupied ? (isMe ? '回到牌桌' : (seatedPlayer?.name?.replace(/\(.*\)/, '') || '已就座')) : '选座'}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -2290,13 +2417,7 @@ export default function App() {
             currentUserId={(mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')}
             roomId={getCurrentRoomId()}
             onStartDeal={handleRealtimeDealComplete}
-            onBackToMenu={() => {
-              const tabSessionId = getTabSessionId();
-              const distinctUserId = (mode === 'realtime' && realtimeUserId) ? realtimeUserId : getPlayerUniqueId(currentAccount.phone || currentAccount.id);
-              leaveRealtimeTable(distinctUserId, getCurrentRoomId(), { tabSessionId });
-              TripleVoiceEngine.getInstance().leave();
-              setGameState('menu');
-            }}
+            onBackToMenu={() => handleExitRealtimeTableToLobby()}
             onSendMessage={handleSendMessage}
             onOpenFullChat={handleOpenChatDrawer}
             unreadCount={unreadCount}
@@ -2370,12 +2491,10 @@ export default function App() {
               }
               onBackToMenu={() => {
                 if (mode === 'realtime') {
-                  const tabSessionId = getTabSessionId();
-                  const distinctUserId = (mode === 'realtime' && realtimeUserId) ? realtimeUserId : getPlayerUniqueId(currentAccount.phone || currentAccount.id);
-                  leaveRealtimeTable(distinctUserId, getCurrentRoomId(), { tabSessionId });
-                  TripleVoiceEngine.getInstance().leave();
+                  handleExitRealtimeTableToLobby();
+                } else {
+                  setGameState('menu');
                 }
-                setGameState('menu');
               }}
               onOpenChat={handleOpenChatDrawer}
             />

@@ -8,6 +8,9 @@ export interface RealtimeSeatPlayer {
   avatar: string;
   isAi: boolean;
   score: number;
+  seatIndex?: number; // 0-7: 0-based fixed seat index
+  seatNumber?: number; // 1-8: 1-based display seat number
+  lastActive?: number;
 }
 
 export interface RealtimeTableState {
@@ -432,13 +435,30 @@ export async function cleanStaleServerSeats(roomId = currentRoomId): Promise<num
   return 0;
 }
 
-// Join or Create Realtime Table (Server Authoritative)
+// Fetch authoritative realtime table state for lobby seats display
+export async function fetchRealtimeRoomState(roomId = currentRoomId): Promise<RealtimeTableState | null> {
+  try {
+    const res = await fetch(`/api/table/state?roomId=${encodeURIComponent(roomId)}&_t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && data.table) {
+        return data.table;
+      }
+    }
+  } catch {}
+  return getSavedRealtimeTable(roomId);
+}
+
+// Join or Create Realtime Table (Server Authoritative with Specific Target Seat)
 export async function joinOrCreateRealtimeTable(currentUser: {
   id: string;
   name: string;
   avatar: string;
   tabSessionId?: string;
-}, targetRoomId?: string): Promise<{
+}, targetRoomId?: string, targetSeatIndex?: number): Promise<{
   table: RealtimeTableState;
   isNewTable: boolean;
   seatIndex: number;
@@ -464,6 +484,7 @@ export async function joinOrCreateRealtimeTable(currentUser: {
       credentials: 'include',
       body: JSON.stringify({
         roomId,
+        targetSeatIndex,
         player: {
           id: currentUser.id,
           deviceId,
@@ -488,9 +509,9 @@ export async function joinOrCreateRealtimeTable(currentUser: {
 
         const mySeatIdx = typeof data.seatIndex === 'number'
           ? data.seatIndex
-          : data.table.seats.findIndex((s: any) => s.id === currentUser.id || s.tabSessionId === tabSessionId || s.deviceId === deviceId);
+          : (typeof targetSeatIndex === 'number' ? targetSeatIndex : data.table.seats.findIndex((s: any) => s.id === currentUser.id || s.tabSessionId === tabSessionId || s.deviceId === deviceId));
 
-        const assignedSeat = data.table.seats[mySeatIdx] || data.table.seats[data.table.seats.length - 1];
+        const assignedSeat = data.table.seats.find((s: any) => s.seatIndex === mySeatIdx) || data.table.seats[mySeatIdx] || data.table.seats[data.table.seats.length - 1];
 
         return {
           table: data.table,
@@ -512,6 +533,7 @@ export async function joinOrCreateRealtimeTable(currentUser: {
             credentials: 'include',
             body: JSON.stringify({
               roomId,
+              targetSeatIndex,
               player: {
                 id: currentUser.id,
                 deviceId,
@@ -531,8 +553,8 @@ export async function joinOrCreateRealtimeTable(currentUser: {
               broadcastEvent({ type: 'SYNC_STATE', state: retryData.table });
               const mySeatIdx = typeof retryData.seatIndex === 'number'
                 ? retryData.seatIndex
-                : retryData.table.seats.findIndex((s: any) => s.id === currentUser.id || s.tabSessionId === tabSessionId || s.deviceId === deviceId);
-              const assignedSeat = retryData.table.seats[mySeatIdx] || retryData.table.seats[retryData.table.seats.length - 1];
+                : (typeof targetSeatIndex === 'number' ? targetSeatIndex : retryData.table.seats.findIndex((s: any) => s.id === currentUser.id || s.tabSessionId === tabSessionId || s.deviceId === deviceId));
+              const assignedSeat = retryData.table.seats.find((s: any) => s.seatIndex === mySeatIdx) || retryData.table.seats[mySeatIdx] || retryData.table.seats[retryData.table.seats.length - 1];
               return {
                 table: retryData.table,
                 isNewTable: retryData.table.seats.length === 1,
@@ -635,12 +657,12 @@ export async function joinOrCreateRealtimeTable(currentUser: {
 }
 
 // Leave table (meticulously prunes local storage, notifies broadcast channel & informs server)
-export function leaveRealtimeTable(
+export async function leaveRealtimeTable(
   identifier?: string,
   targetRoomId?: string,
   extra?: { tabSessionId?: string; deviceId?: string; playerId?: string }
-): RealtimeTableState | null {
-  const roomId = targetRoomId || currentRoomId || '888888';
+): Promise<RealtimeTableState | null> {
+  const roomId = targetRoomId || currentRoomId || '666666';
   const playerId = identifier || extra?.playerId || '';
   const tabSessionId = extra?.tabSessionId || getTabSessionId();
   const deviceId = extra?.deviceId || getOrCreateDeviceId();
@@ -648,7 +670,7 @@ export function leaveRealtimeTable(
   const current = getSavedRealtimeTable(roomId);
   if (current && Array.isArray(current.seats)) {
     const remainingSeats = current.seats.filter(s => {
-      const matchId = playerId && (s.id === playerId || s.id.split('_')[0] === playerId.split('_')[0]);
+      const matchId = playerId && (s.id === playerId || s.id.includes(playerId) || playerId.includes(s.id));
       const matchTab = tabSessionId && s.tabSessionId === tabSessionId;
       const matchDev = deviceId && (s as any).deviceId === deviceId;
       return !(matchId || matchTab || matchDev);
@@ -658,8 +680,10 @@ export function leaveRealtimeTable(
     if (current.seats.length === 0) {
       clearRealtimeTable(roomId);
     } else {
-      current.seats.forEach((s, i) => {
-        s.name = s.name.replace(/\(\d+号位\)/g, '').trim() + ` (${i + 1}号位)`;
+      current.seats.forEach(s => {
+        if (s.name) {
+          s.name = s.name.replace(/\(\d+号位\)/g, '').trim();
+        }
       });
       current.dealerIndex = current.dealerIndex % current.seats.length;
       current.dealerId = current.seats[current.dealerIndex]?.id || current.seats[0].id;
@@ -677,24 +701,24 @@ export function leaveRealtimeTable(
   // Always inform server via fetch / sendBeacon so seat is guaranteed pruned on backend
   const payload = JSON.stringify({ roomId, playerId, tabSessionId, deviceId });
   try {
-    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-      const blob = new Blob([payload], { type: 'application/json' });
-      navigator.sendBeacon('/api/table/leave', blob);
-    } else {
-      fetch('/api/table/leave', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: payload,
-        keepalive: true
-      }).catch(() => {});
-    }
-  } catch {
-    fetch('/api/table/leave', {
+    const res = await fetch('/api/table/leave', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: payload,
       keepalive: true
-    }).catch(() => {});
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && data.table) {
+        saveRealtimeTable(data.table, roomId);
+        return data.table;
+      }
+    }
+  } catch {
+    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: 'application/json' });
+      navigator.sendBeacon('/api/table/leave', blob);
+    }
   }
 
   return current;
