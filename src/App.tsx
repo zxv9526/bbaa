@@ -151,6 +151,8 @@ import { saveMatchReplay } from './lib/matchReplay';
 import { triggerHaptic } from './lib/haptics';
 import { ArrowLeftRight, GraduationCap } from 'lucide-react';
 import { TripleVoiceEngine } from './lib/tripleVoiceEngine';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { OfflineIndicator } from './components/OfflineIndicator';
 
 type GameMode = 'realtime' | 'reservation' | 'vs_ai_8p' | 'practice';
 
@@ -810,7 +812,7 @@ export default function App() {
     // 加载并同步实时对战场聊天对讲历史
     const savedChat = getRealtimeChatMessages();
     setMessages(savedChat);
-    fetchRemoteChatHistory(effectiveRoomId).then(remoteChat => {
+    fetchRemoteChatHistory(effectiveRoomId, assignedUser.id).then(remoteChat => {
       if (remoteChat && remoteChat.length > 0) {
         setMessages(remoteChat);
       }
@@ -2134,13 +2136,13 @@ export default function App() {
 
   return (
     <div className="h-full h-[100dvh] max-h-[100dvh] w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden relative box-border">
-      {/* 1. Header Bar: Minimalist */}
+      {/* 1. Header Bar: Minimalist with PWA Install Button */}
       {gameState === 'menu' && (
-        <header className="w-full shrink-0 z-30 px-4 sm:px-8 pt-4 pb-2 flex items-center justify-between">
+        <header className="w-full shrink-0 z-30 px-3 sm:px-8 pt-3 sm:pt-4 pb-2 flex items-center justify-between gap-2">
           <button
             id="user-auth-entry-btn"
             onClick={() => setShowAuthModal(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/60 hover:bg-slate-800 backdrop-blur-sm border border-slate-700/50 transition active:scale-95 group"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/60 hover:bg-slate-800 backdrop-blur-sm border border-slate-700/50 transition active:scale-95 group shrink-0"
           >
             <div className="text-xl">{currentAccount?.avatar || '👑'}</div>
             <span className="text-sm font-bold text-white group-hover:text-blue-300 transition max-w-[100px] truncate">
@@ -2148,14 +2150,19 @@ export default function App() {
             </span>
           </button>
 
-          <button
-            id="points-management-entry-btn"
-            onClick={() => setShowPointsModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900/60 hover:bg-slate-800 backdrop-blur-sm border border-amber-500/30 text-amber-400 transition active:scale-95"
-          >
-            <span className="text-sm">🪙</span>
-            <span className="text-sm font-black">{(currentAccount?.points || 0).toLocaleString()}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* 📲 PWA 一键安装 / 添加到主屏幕按钮 */}
+            <PWAInstallButton />
+
+            <button
+              id="points-management-entry-btn"
+              onClick={() => setShowPointsModal(true)}
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-slate-900/60 hover:bg-slate-800 backdrop-blur-sm border border-amber-500/30 text-amber-400 transition active:scale-95 shrink-0"
+            >
+              <span className="text-sm">🪙</span>
+              <span className="text-sm font-black">{(currentAccount?.points || 0).toLocaleString()}</span>
+            </button>
+          </div>
         </header>
       )}
 
@@ -2519,6 +2526,7 @@ export default function App() {
               onOpenHub={() => setShowCarriageHubModal(true)}
               points={currentAccount.points}
               onOpenChat={() => mode === 'realtime' && setShowChatDrawer(true)}
+              unreadChatCount={unreadCount}
               latestMessage={messages[messages.length - 1] || null}
               activeSpeakerId={globalSpeakingUserId || (userIsSpeaking ? ((mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')) : null)}
               onExit={() => setShowExitModal(true)}
@@ -2962,6 +2970,9 @@ export default function App() {
           onToggleTts={() => setTtsEnabled(!ttsEnabled)}
         />
       )}
+
+      {/* 📴 PWA 离线状态全局浮动提示 */}
+      <OfflineIndicator />
     </div>
   );
 }

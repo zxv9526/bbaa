@@ -3,6 +3,13 @@
 
 const globalChatMessages = [];
 
+function normalizeRoomId(rawRoomId) {
+  if (!rawRoomId) return "666666";
+  const clean = String(rawRoomId).trim().replace(/^realtime_room_/, "");
+  if (clean === "8888" || clean === "888888") return "666666";
+  return clean || "666666";
+}
+
 export async function onRequest(context) {
   const headers = {
     'Content-Type': 'application/json;charset=UTF-8',
@@ -23,7 +30,7 @@ export async function onRequest(context) {
   if (subAction === 'send' && context.request.method === 'POST') {
     try {
       const body = await context.request.json();
-      const roomId = String(body.roomId || '888888').trim().replace(/^realtime_room_/, "") || '888888';
+      const roomId = normalizeRoomId(body.roomId);
       const message = body.message;
 
       if (!message || !message.senderId) {
@@ -56,12 +63,12 @@ export async function onRequest(context) {
 
   // GET /api/chat/history?roomId=...
   if (subAction === 'history' && context.request.method === 'GET') {
-    const rawRoom = url.searchParams.get('roomId') || '888888';
-    const roomId = rawRoom.replace(/^realtime_room_/, '') || '888888';
+    const rawRoom = url.searchParams.get('roomId');
+    const roomId = normalizeRoomId(rawRoom);
     const limit = Math.min(100, parseInt(url.searchParams.get('limit') || '50', 10));
 
     const messages = globalChatMessages
-      .filter(m => m.roomId === roomId)
+      .filter(m => normalizeRoomId(m.roomId) === roomId)
       .slice(-limit);
 
     return new Response(JSON.stringify({ ok: true, messages }), { headers });
@@ -69,13 +76,13 @@ export async function onRequest(context) {
 
   // GET /api/chat/poll?roomId=...&userId=...&since=...
   if (subAction === 'poll' && context.request.method === 'GET') {
-    const rawRoom = url.searchParams.get('roomId') || '888888';
-    const roomId = rawRoom.replace(/^realtime_room_/, '') || '888888';
+    const rawRoom = url.searchParams.get('roomId');
+    const roomId = normalizeRoomId(rawRoom);
     const userId = url.searchParams.get('userId') || '';
     const since = parseInt(url.searchParams.get('since') || '0', 10);
 
     const newMessages = globalChatMessages.filter(
-      m => m.roomId === roomId && m.senderId !== userId && m.timestamp > since
+      m => normalizeRoomId(m.roomId) === roomId && m.senderId !== userId && m.timestamp > since
     );
 
     return new Response(JSON.stringify({ ok: true, timestamp: Date.now(), messages: newMessages }), { headers });

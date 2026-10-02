@@ -93,7 +93,7 @@ export function ChatDrawer({
   ttsEnabled,
   onToggleTts
 }: ChatDrawerProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('quick');
+  const [activeTab, setActiveTab] = useState<TabType>('history');
   const [inputText, setInputText] = useState('');
   const [historyFilter, setHistoryFilter] = useState<'all' | 'voice' | 'text' | 'emoji'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -241,6 +241,7 @@ export function ChatDrawer({
     onSendMessage('text', content);
     setInputText('');
     setReplyTarget(null);
+    setActiveTab('history');
     if (ttsEnabled) {
       speakTextMessage(trimmed);
     }
@@ -249,16 +250,16 @@ export function ChatDrawer({
   // 2. Quick Phrase Send
   const handleSendQuickPhrase = (phrase: string) => {
     onSendMessage('quick', phrase);
+    setActiveTab('history');
     if (ttsEnabled) {
       speakTextMessage(phrase);
     }
-    onClose();
   };
 
   // 3. Emoji Send
   const handleSendEmoji = (emoji: string) => {
     onSendMessage('emoji', emoji);
-    onClose();
+    setActiveTab('history');
   };
 
   // 4. Voice Recording Flow (Robust State Machine)
@@ -282,7 +283,7 @@ export function ChatDrawer({
           const res = await recorder.stop();
           if (res.duration >= 1) {
             onSendMessage('voice', `[语音消息 ${res.duration}"]`, res.audioUrl, res.duration);
-            onClose();
+            setActiveTab('history');
           }
         } catch {}
         recordPhaseRef.current = 'idle';
@@ -340,7 +341,7 @@ export function ChatDrawer({
 
       if (result.duration >= 1) {
         onSendMessage('voice', `[语音消息 ${result.duration}"]`, result.audioUrl, result.duration);
-        onClose();
+        setActiveTab('history');
       } else {
         setRecordError('说话时间太短 (需大于1秒)');
       }

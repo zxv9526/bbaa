@@ -1,7 +1,21 @@
 import React, { Component, StrictMode, ReactNode, ErrorInfo } from 'react';
 import { createRoot } from 'react-dom/client';
+import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
+
+// 🚀 注册 PWA Service Worker (支持离线缓存和无缝自动更新)
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      console.log('十三水 PWA 发现新版本，准备自动更新资源...');
+    },
+    onOfflineReady() {
+      console.log('十三水 PWA 离线缓存资源已就绪，支持离线畅玩');
+    },
+  });
+}
 
 // 🛡️ 核心 DOM 防御补丁：防止浏览器内置翻译（如 Chrome / Edge 翻译插件）或第三方扩展篡改 DOM 导致 React 抛出
 // "Failed to execute 'removeChild' on 'Node': The Node to be returned is not a child of this node."

@@ -610,9 +610,15 @@ export function ShowdownStage({
               <span>{playAgainLabel || '下一局 · 轮换发牌'}</span>
             </button>
 
-            
-
-            
+            {onOpenChat && (
+              <button
+                onClick={onOpenChat}
+                className="px-5 py-3.5 rounded-2xl bg-indigo-950/90 hover:bg-indigo-900 border-2 border-indigo-500/60 text-indigo-200 font-black text-sm flex items-center gap-2 transition active:scale-95 cursor-pointer shadow-lg shadow-indigo-950/50"
+              >
+                <MessageSquare className="w-4 h-4 text-indigo-400" />
+                <span>牌桌对讲 · 聊天</span>
+              </button>
+            )}
 
             <button
               onClick={onBackToMenu}

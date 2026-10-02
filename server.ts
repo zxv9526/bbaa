@@ -736,7 +736,7 @@ app.get("/api/voice/poll", (req, res) => {
 // 2b. Real-time Multi-Device Chat Message Send & Broadcast
 app.post("/api/chat/send", (req, res) => {
   try {
-    const { roomId = "888888", message } = req.body;
+    const { roomId = "666666", message } = req.body;
     if (!message || !message.senderId) {
       res.status(400).json({ ok: false, error: "Missing message payload" });
       return;
@@ -776,7 +776,7 @@ app.post("/api/chat/send", (req, res) => {
 // 2c. Real-time Multi-Device Chat Message Poll (for HTTP fallback)
 app.get("/api/chat/poll", (req, res) => {
   try {
-    const cleanRoomId = normalizeRoomId(req.query.roomId || "888888");
+    const cleanRoomId = normalizeRoomId(req.query.roomId || "666666");
     const userId = String(req.query.userId || "");
     const since = parseInt(String(req.query.since || "0"), 10);
 
@@ -797,7 +797,7 @@ app.get("/api/chat/poll", (req, res) => {
 // 2d. Chat History Fetch (for joining table or refreshing)
 app.get("/api/chat/history", (req, res) => {
   try {
-    const cleanRoomId = normalizeRoomId(req.query.roomId || "888888");
+    const cleanRoomId = normalizeRoomId(req.query.roomId || "666666");
     const limit = Math.min(100, parseInt(String(req.query.limit || "50"), 10));
 
     const history = chatMessagesBuffer
@@ -1203,7 +1203,7 @@ async function startServer() {
 
           // Real-time table state subscription / request
           case "TABLE_SUBSCRIBE": {
-            const tableRoomId = normalizeRoomId(msg.roomId || (currentClient ? currentClient.roomId : "888888"));
+            const tableRoomId = normalizeRoomId(msg.roomId || (currentClient ? currentClient.roomId : "666666"));
             if (!currentClient) {
               currentClient = {
                 ws,
@@ -1216,7 +1216,14 @@ async function startServer() {
               wsClients.add(currentClient);
             } else {
               currentClient.roomId = tableRoomId;
+              if (msg.userId) currentClient.userId = String(msg.userId);
+              if (msg.name) currentClient.name = String(msg.name);
             }
+            if (!roomPeersMap.has(tableRoomId)) {
+              roomPeersMap.set(tableRoomId, new Set());
+            }
+            roomPeersMap.get(tableRoomId)?.add(currentClient.userId);
+
             ws.send(JSON.stringify({
               type: "TABLE_SYNC",
               table: getOrCreateTable(tableRoomId)
@@ -1226,7 +1233,7 @@ async function startServer() {
 
           // Real-time table event/action pass-through
           case "TABLE_ACTION": {
-            const tableRoomId = normalizeRoomId(msg.roomId || (currentClient ? currentClient.roomId : "888888"));
+            const tableRoomId = normalizeRoomId(msg.roomId || (currentClient ? currentClient.roomId : "666666"));
             const action = msg.action;
             if (action && action.type) {
               const table = getOrCreateTable(tableRoomId);

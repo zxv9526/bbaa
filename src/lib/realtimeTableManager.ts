@@ -130,9 +130,11 @@ function ensureTableWsConnected() {
 
     tableWs.onopen = () => {
       if (tableWs && tableWs.readyState === WebSocket.OPEN) {
+        const myId = getPlayerUniqueId();
         tableWs.send(JSON.stringify({
           type: 'TABLE_SUBSCRIBE',
-          roomId: currentRoomId
+          roomId: currentRoomId,
+          userId: myId
         }));
       }
     };
@@ -265,7 +267,10 @@ export function getRealtimeChatMessages(): ChatMessage[] {
 export function saveAndBroadcastChatMessage(msg: ChatMessage): void {
   try {
     const existing = getRealtimeChatMessages();
-    const updated = [...existing.slice(-49), msg];
+    const map = new Map<string, ChatMessage>();
+    existing.forEach(m => map.set(m.id, m));
+    map.set(msg.id, msg);
+    const updated = Array.from(map.values()).slice(-60);
     localStorage.setItem(TABLE_CHAT_STORAGE_KEY, JSON.stringify(updated));
   } catch {}
   broadcastEvent({ type: 'CHAT_MESSAGE', message: msg });
@@ -286,7 +291,7 @@ export function clearRealtimeChatMessages(): void {
 }
 
 // Fetch remote chat history
-export async function fetchRemoteChatHistory(roomId = currentRoomId): Promise<ChatMessage[]> {
+export async function fetchRemoteChatHistory(roomId = currentRoomId, currentUserId?: string): Promise<ChatMessage[]> {
   try {
     const res = await fetch(`/api/chat/history?roomId=${encodeURIComponent(roomId)}&limit=50`);
     if (res.ok) {
@@ -296,13 +301,14 @@ export async function fetchRemoteChatHistory(roomId = currentRoomId): Promise<Ch
         const map = new Map<string, ChatMessage>();
         local.forEach(m => map.set(m.id, m));
         data.messages.forEach((m: any) => {
+          const isUser = currentUserId ? m.senderId === currentUserId : Boolean(m.isUser);
           if (!map.has(m.id)) {
             map.set(m.id, {
               id: m.id,
               senderId: m.senderId,
               senderName: m.senderName,
               senderAvatar: m.senderAvatar,
-              isUser: Boolean(m.isUser),
+              isUser,
               type: m.type,
               content: m.content,
               audioUrl: m.audioUrl,
@@ -311,6 +317,10 @@ export async function fetchRemoteChatHistory(roomId = currentRoomId): Promise<Ch
               seatIndex: m.seatIndex,
               isDealer: m.isDealer
             });
+          } else {
+            // Update isUser if currentUserId is now known
+            const existing = map.get(m.id)!;
+            existing.isUser = isUser;
           }
         });
         const merged = Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp).slice(-50);

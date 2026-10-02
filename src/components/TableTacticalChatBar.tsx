@@ -812,50 +812,69 @@ export function TableTacticalChatBar({
         </div>
       )}
 
-      {/* Active Speaker Dynamic Audio Wave */}
-      {activeSpeaker && activeSpeaker.isVoice && (
-        <div className="w-full mb-1 flex items-center justify-center gap-1.5 px-2 animate-in fade-in zoom-in duration-300">
-           <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-bold bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700">
-             <span className="truncate max-w-[80px]">{activeSpeaker.name}</span>
-             <div className="flex items-end gap-0.5 h-3">
-               {[...Array(5)].map((_, i) => (
-                 <span
-                   key={i}
-                   className="w-0.5 rounded-full bg-emerald-400 animate-pulse"
-                   style={{
-                     height: `${Math.random() * 80 + 20}%`,
-                     animationDelay: `${i * 150}ms`
-                   }}
-                 />
-               ))}
-             </div>
-           </div>
+      {/* Active Speaker Dynamic Audio Wave & Notification Pill (Never replaces the text input) */}
+      {activeSpeaker && (
+        <div
+          onClick={onOpenFullChat}
+          className="w-full mb-1 flex items-center justify-between px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-950/95 via-slate-900/95 to-emerald-950/95 border border-emerald-500/60 shadow-lg text-emerald-200 animate-in fade-in slide-in-from-bottom-1 cursor-pointer transition hover:border-emerald-400"
+          title="点击查看消息记录"
+        >
+          <div className="flex items-center gap-2 truncate">
+            <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
+              <span className="relative text-sm">{activeSpeaker.avatar}</span>
+            </div>
+            <div className="flex items-center gap-1.5 truncate text-xs">
+              {activeSpeaker.seatBadge && (
+                <span className="px-1 py-0.2 rounded text-[9px] font-black bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 shrink-0">
+                  {activeSpeaker.seatBadge}
+                </span>
+              )}
+              {activeSpeaker.dealerBadge && (
+                <span className="px-1 py-0.2 rounded text-[9px] font-black bg-amber-500/30 text-amber-200 border border-amber-400/40 shrink-0">
+                  👑庄
+                </span>
+              )}
+              <span className="font-bold text-amber-300 max-w-[80px] truncate">{activeSpeaker.name}:</span>
+              <span className="text-slate-200 truncate">{activeSpeaker.text}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0 text-[10px] text-emerald-400">
+            {activeSpeaker.isVoice && (
+              <div className="flex items-end gap-0.5 h-3">
+                <span className="w-0.5 h-1.5 bg-emerald-400 animate-pulse rounded-full" />
+                <span className="w-0.5 h-3 bg-emerald-300 animate-bounce rounded-full" />
+                <span className="w-0.5 h-2 bg-emerald-400 animate-pulse rounded-full" />
+              </div>
+            )}
+            <span className="text-slate-400 text-[10px]">查看 &gt;</span>
+          </div>
         </div>
       )}
 
-      {/* Main Redesigned Tactical Bar (Spacious, Ergonomic, Large Touch Targets, Zero Overflow) */}
-      <div className="w-full bg-slate-900/95 border-2 border-slate-700/80 rounded-xl p-1 shadow-2xl flex items-center justify-between gap-1 shrink-0 backdrop-blur-xl">
+      {/* Main Tactical Bar (Spacious, Ergonomic, Large Touch Targets, Zero Overflow) */}
+      <div className="w-full bg-slate-900/95 border-2 border-slate-700/80 rounded-xl p-1 shadow-2xl flex items-center justify-between gap-1 sm:gap-1.5 shrink-0 backdrop-blur-xl">
         
         {/* 1. Left Action Deck: Voice Mic & Quick Interaction */}
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           
           {/* Active PTT Recording Widget */}
           {isRecording ? (
             <div
               onPointerMove={handlePointerMove}
-              className="flex items-center gap-1.5 animate-in fade-in select-none"
+              className="flex items-center gap-1 animate-in fade-in select-none"
             >
               <button
                 onPointerUp={handlePointerUp}
                 onClick={handleMicButtonClick}
-                className={`h-9 px-2 rounded-lg text-white font-black text-[10px] flex items-center gap-1 shadow-xl transition active:scale-95 cursor-pointer touch-none ${
+                className={`h-9 px-2.5 rounded-lg text-white font-black text-xs flex items-center gap-1 shadow-xl transition active:scale-95 cursor-pointer touch-none ${
                   isSlideCancel
                     ? 'bg-amber-600 ring-2 ring-amber-400'
                     : 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/70 animate-pulse'
                 }`}
                 title="点击发送对讲语音，或松开发送"
               >
-                <Radio className="w-3 h-3 animate-spin" />
+                <Radio className="w-3.5 h-3.5 animate-spin" />
                 <span>{isSlideCancel ? '取消' : `${recordingSeconds}s`}</span>
 
                 {/* Real-time Sound Wave Equalizer from Mic Volume */}
@@ -875,10 +894,10 @@ export function TableTacticalChatBar({
 
               <button
                 onClick={cancelVoiceRecord}
-                className="h-10 w-10 flex items-center justify-center text-slate-400 hover:text-rose-300 rounded-xl bg-slate-800 hover:bg-slate-750 text-xs transition cursor-pointer border border-slate-700"
+                className="h-9 w-8 flex items-center justify-center text-slate-400 hover:text-rose-300 rounded-lg bg-slate-800 text-xs transition cursor-pointer border border-slate-700"
                 title="取消录音"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
           ) : voiceMode === 'openMic' ? (
@@ -886,63 +905,37 @@ export function TableTacticalChatBar({
             <div className="flex items-center gap-1">
               <button
                 onClick={toggleMuteOpenMic}
-                className={`h-10 sm:h-11 px-3 rounded-xl border-2 text-xs sm:text-sm font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-lg ${
+                className={`h-9 px-2.5 rounded-xl border text-xs font-black flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-md ${
                   isOpenMicMuted
-                    ? 'bg-rose-950/80 border-rose-500 text-rose-300 shadow-rose-950/40'
-                    : 'bg-emerald-950/80 border-emerald-500 text-emerald-300 shadow-emerald-950/40'
+                    ? 'bg-rose-950/80 border-rose-500 text-rose-300'
+                    : 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
                 }`}
                 title={isOpenMicMuted ? '点击取消麦克风静音' : '自由麦已开启 (点击临时静音)'}
               >
                 {isOpenMicMuted ? <MicOff className="w-3.5 h-3.5 text-rose-400" /> : <Mic className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />}
-                <span>{isOpenMicMuted ? '已静音' : '自由麦'}</span>
-
-                {/* Real-time Level Bars */}
-                {!isOpenMicMuted && (
-                  <div className="flex items-end gap-0.5 h-2.5 ml-0.5">
-                    {[1, 2, 3, 4, 5].map((lvl) => (
-                      <span
-                        key={lvl}
-                        className={`w-0.5 rounded-full transition-all duration-75 ${
-                          volumeLevel >= lvl ? 'bg-emerald-400 h-2.5' : 'bg-emerald-950 h-1'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                )}
+                <span>{isOpenMicMuted ? '静音' : '自由麦'}</span>
               </button>
 
-              {/* Mode Switch Button (Back to PTT) */}
               <button
                 onClick={toggleOpenMicMode}
-                className="h-10 px-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white text-xs font-bold transition cursor-pointer border border-slate-700 flex items-center gap-1"
-                title="切换回按键对讲 (PTT)"
+                className="h-9 px-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white text-xs transition cursor-pointer border border-slate-700"
+                title="切回按键对讲"
               >
                 <Sliders className="w-3 h-3" />
-                <span className="hidden md:inline">按键</span>
               </button>
             </div>
           ) : (
-            /* 🎙️ Default PTT Voice Button (Generous Touch Target) */
-            <div className="flex items-center gap-1 sm:gap-1.5">
+            /* 🎙️ Default PTT Voice Button */
+            <div className="flex items-center gap-1">
               <button
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerUp}
                 onClick={handleMicButtonClick}
-                className="h-10 sm:h-11 px-3 sm:px-4 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-black text-xs sm:text-sm flex items-center gap-1.5 transition active:scale-95 shadow-lg shadow-indigo-950/60 ring-1 ring-white/20 cursor-pointer select-none touch-none"
+                className="h-9 sm:h-10 px-2.5 sm:px-3 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-black text-xs flex items-center gap-1 transition active:scale-95 shadow-md shadow-indigo-950/60 ring-1 ring-white/20 cursor-pointer select-none touch-none shrink-0"
                 title="点击或按住对讲说话"
               >
-                <Mic className="w-4 h-4 text-emerald-200 animate-pulse" />
-                <span>按住对讲</span>
-              </button>
-
-              {/* Toggle to Open Mic (自由麦) */}
-              <button
-                onClick={toggleOpenMicMode}
-                className="h-10 px-2 sm:px-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-300 hover:text-emerald-300 text-xs font-bold transition active:scale-95 cursor-pointer shadow-md flex items-center gap-1"
-                title="开启自由麦 (免按键说话)"
-              >
-                <Headphones className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden md:inline">自由麦</span>
+                <Mic className="w-3.5 h-3.5 text-emerald-200 animate-pulse" />
+                <span className="hidden min-[380px]:inline">对讲</span>
               </button>
 
               {/* ⚡ Quick Voice Tactical Phrases Button */}
@@ -951,15 +944,15 @@ export function TableTacticalChatBar({
                   setShowQuickVoice(!showQuickVoice);
                   setShowQuickEmoji(false);
                 }}
-                className={`h-10 px-2.5 sm:px-3 rounded-xl border-2 text-xs font-black flex items-center gap-1 transition active:scale-95 shadow-md cursor-pointer ${
+                className={`h-9 sm:h-10 px-2 sm:px-2.5 rounded-xl border text-xs font-black flex items-center gap-1 transition active:scale-95 shadow-md cursor-pointer shrink-0 ${
                   showQuickVoice
-                    ? 'bg-amber-500/25 border-amber-400 text-amber-300 shadow-amber-950/50'
-                    : 'bg-slate-800 hover:bg-slate-750 border-amber-500/50 text-amber-300 hover:text-amber-200'
+                    ? 'bg-amber-500/25 border-amber-400 text-amber-300'
+                    : 'bg-slate-800 hover:bg-slate-750 border-amber-500/40 text-amber-300'
                 }`}
-                title="快捷战术语音播报"
+                title="快捷战术常用语"
               >
                 <Zap className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                <span className="hidden xs:inline">常用语</span>
+                <span className="hidden min-[420px]:inline">常用</span>
               </button>
 
               {/* 😀 Quick Emoji Button */}
@@ -968,121 +961,60 @@ export function TableTacticalChatBar({
                   setShowQuickEmoji(!showQuickEmoji);
                   setShowQuickVoice(false);
                 }}
-                className={`h-10 px-2.5 sm:px-3 rounded-xl border-2 text-xs font-black flex items-center gap-1 transition active:scale-95 shadow-md cursor-pointer ${
+                className={`h-9 sm:h-10 px-2 sm:px-2.5 rounded-xl border text-xs font-black flex items-center gap-1 transition active:scale-95 shadow-md cursor-pointer shrink-0 ${
                   showQuickEmoji
-                    ? 'bg-amber-500/25 border-amber-400 text-amber-300 shadow-amber-950/50'
-                    : 'bg-slate-800 hover:bg-slate-750 border-slate-700 text-amber-400 hover:text-amber-300'
+                    ? 'bg-amber-500/25 border-amber-400 text-amber-300'
+                    : 'bg-slate-800 hover:bg-slate-750 border-slate-700 text-amber-400'
                 }`}
                 title="表情与牌桌互动道具"
               >
                 <Smile className="w-3.5 h-3.5" />
-                <span className="hidden xs:inline">表情</span>
+                <span className="hidden min-[420px]:inline">表情</span>
               </button>
             </div>
           )}
-
-          {/* TTS Toggle & Voice Settings */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={onToggleTts}
-              className={`h-10 w-9 sm:w-auto sm:px-2 rounded-xl border text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
-                ttsEnabled
-                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                  : 'bg-slate-800 border-slate-700 text-slate-500'
-              }`}
-              title={ttsEnabled ? '常用语播报已开启 (点击静音)' : '常用语播报已静音 (点击开启)'}
-            >
-              {ttsEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            </button>
-            <button
-              onClick={() => setShowVoiceSettingsModal(true)}
-              className="h-10 w-9 sm:w-auto sm:px-2 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-amber-300 text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1"
-              title="设置常用语播报音色与语速"
-            >
-              <Sliders className="w-3.5 h-3.5" />
-            </button>
-          </div>
         </div>
 
-        {/* 2. Middle Area: Active Voice Speaker Ripple Banner OR Text Input */}
-        {activeSpeaker ? (
-          <div
-            onClick={onOpenFullChat}
-            className="flex-1 h-10 sm:h-11 flex items-center gap-2 px-2.5 rounded-xl bg-emerald-950/80 border-2 border-emerald-500/60 text-emerald-300 min-w-0 cursor-pointer animate-in fade-in transition hover:bg-emerald-950 shadow-lg shadow-emerald-950/50"
-            title="点击查看消息记录"
+        {/* 2. Middle Area: ALWAYS-VISIBLE DIRECT TEXT INPUT FORM */}
+        <form onSubmit={handleSubmitText} className="flex-1 flex items-center gap-1 min-w-[70px] sm:min-w-[120px]">
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder={isRecording ? '正在对讲录音...' : '发条消息聊两句...'}
+            className="w-full h-9 sm:h-10 bg-slate-950 border border-slate-700/80 rounded-xl px-2.5 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition shadow-inner min-w-0"
+          />
+          <button
+            type="submit"
+            disabled={!inputText.trim()}
+            className="h-9 sm:h-10 px-2.5 sm:px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-black text-xs sm:text-sm flex items-center gap-1 transition active:scale-95 cursor-pointer shrink-0 shadow-md shadow-indigo-950/50"
+            title="发送文本消息"
           >
-            {/* 🌟 Pulsing Ripple Avatar */}
-            <div className="relative flex items-center justify-center w-6 h-6 shrink-0">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
-              <span className="absolute -inset-0.5 rounded-full border-2 border-emerald-400 animate-pulse ring-2 ring-emerald-500/40" />
-              <span className="relative z-10 text-sm">{activeSpeaker.avatar}</span>
-            </div>
-
-            {/* Speaker identity & content */}
-            <div className="flex-1 min-w-0 flex items-center justify-between gap-1">
-              <div className="flex items-center gap-1 truncate">
-                {activeSpeaker.seatBadge && (
-                  <span className="px-1 py-0.2 rounded text-[9px] font-black bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 shrink-0">
-                    {activeSpeaker.seatBadge}
-                  </span>
-                )}
-                {activeSpeaker.dealerBadge && (
-                  <span className="px-1 py-0.2 rounded text-[9px] font-black bg-amber-500/30 text-amber-200 border border-amber-400/40 shrink-0">
-                    👑庄
-                  </span>
-                )}
-                <span className="text-xs font-black text-amber-300 truncate max-w-[65px]">
-                  {activeSpeaker.name}
-                </span>
-                <span className="text-xs text-emerald-200 font-medium truncate">
-                  {activeSpeaker.text}
-                </span>
-              </div>
-
-              {/* Equalizer Bars */}
-              <div className="flex items-end gap-0.5 h-3 shrink-0 mr-0.5">
-                <span className="w-0.5 h-1.5 bg-emerald-400 animate-pulse rounded-full" />
-                <span className="w-0.5 h-3 bg-emerald-300 animate-bounce rounded-full" />
-                <span className="w-0.5 h-1.5 bg-emerald-400 animate-pulse rounded-full" />
-                <span className="w-0.5 h-2.5 bg-emerald-300 animate-bounce rounded-full" />
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* Direct Text Input Form */
-          <form onSubmit={handleSubmitText} className="flex-1 flex items-center gap-1.5 min-w-0">
-            <input
-              type="text"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder={isRecording ? '录音中...' : '输入战术喊话...'}
-              className="w-full h-10 sm:h-11 bg-slate-950 border-2 border-slate-700/80 rounded-xl px-3 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition shadow-inner"
-            />
-            <button
-              type="submit"
-              disabled={!inputText.trim()}
-              className="h-10 sm:h-11 px-3 sm:px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-black text-xs sm:text-sm flex items-center gap-1 transition active:scale-95 cursor-pointer shrink-0 shadow-md shadow-indigo-950/50"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">发送</span>
-            </button>
-          </form>
-        )}
+            <Send className="w-3.5 h-3.5" />
+            <span className="hidden min-[380px]:inline">发送</span>
+          </button>
+        </form>
 
         {/* 3. Right Action Deck: Chat Drawer Button & Triple-Tier Voice Diagnostic */}
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-          {/* Triple-Voice Transmission Status Pill */}
+        <div className="flex items-center gap-1 shrink-0">
+          {/* TTS Toggle Button */}
           <button
-            id="btn-voice-tier-indicator"
-            onClick={() => setShowDiagnosticsModal(true)}
-            className={`h-10 px-2 sm:px-2.5 rounded-xl border-2 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer shadow-md active:scale-95 ${
-              voiceStats.activeTier === 'webrtc'
-                ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900/80'
-                : voiceStats.activeTier === 'websocket'
-                ? 'bg-blue-950/80 border-blue-500/60 text-blue-300 hover:bg-blue-900/80'
-                : 'bg-amber-950/80 border-amber-500/60 text-amber-300 hover:bg-amber-900/80'
+            onClick={onToggleTts}
+            className={`h-9 w-8 sm:w-auto sm:px-2 rounded-xl border text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 shrink-0 ${
+              ttsEnabled
+                ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                : 'bg-slate-800 border-slate-700 text-slate-500'
             }`}
-            title="三重语音传输架构：WebRTC P2P + WebSocket高速广播 + HTTP轮询保底 (点击查看实时诊断与链路测试)"
+            title={ttsEnabled ? '语音播报已开启 (点击静音)' : '语音播报已静音 (点击开启)'}
+          >
+            {ttsEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+          </button>
+
+          {/* Voice Diagnostics & Link Status Button */}
+          <button
+            onClick={() => setShowDiagnosticsModal(true)}
+            className="h-9 w-8 sm:w-auto sm:px-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-emerald-300 text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 shrink-0"
+            title="查看三重语音链路状态 (P2P / WebSocket / HTTP)"
           >
             <span
               className={`w-2 h-2 rounded-full ${
@@ -1093,24 +1025,17 @@ export function TableTacticalChatBar({
                   : 'bg-amber-400'
               }`}
             />
-            <span className="hidden lg:inline">
-              {voiceStats.activeTier === 'webrtc'
-                ? 'P2P直连'
-                : voiceStats.activeTier === 'websocket'
-                ? 'WS广播'
-                : 'HTTP保底'}
-            </span>
-            <span className="font-mono text-[10px] sm:text-[11px] opacity-90">{voiceStats.latencyMs}ms</span>
+            <span className="hidden lg:inline text-[10px]">{voiceStats.latencyMs}ms</span>
           </button>
 
           {/* Full Chat Drawer Trigger */}
           <button
             onClick={onOpenFullChat}
-            className="relative h-10 sm:h-11 px-3 sm:px-3.5 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 text-indigo-200 border-2 border-indigo-500/60 text-xs sm:text-sm font-black transition flex items-center gap-1 active:scale-95 cursor-pointer shadow-md shadow-indigo-950/50"
+            className="relative h-9 sm:h-10 px-2.5 sm:px-3 rounded-xl bg-indigo-950/90 hover:bg-indigo-900 text-indigo-200 border border-indigo-500/60 text-xs font-black transition flex items-center gap-1 active:scale-95 cursor-pointer shadow-md shadow-indigo-950/50 shrink-0"
             title="打开完整对讲抽屉与聊天记录"
           >
             <MessageSquare className="w-3.5 h-3.5 text-indigo-300" />
-            <span className="hidden sm:inline">聊天</span>
+            <span className="hidden min-[380px]:inline">聊天</span>
             {unreadCount > 0 && (
               <span className="px-1.5 py-0.2 min-w-[16px] text-center rounded-full bg-rose-500 text-white text-[9px] font-black absolute -top-1 -right-1 shadow-lg ring-2 ring-slate-900 animate-pulse">
                 {unreadCount > 99 ? '99+' : unreadCount}

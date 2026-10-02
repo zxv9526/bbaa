@@ -102,9 +102,32 @@ export const AI_NAMES_POOL = [
   { name: '财神到', avatar: '🎩' }
 ];
 
+export function arrayBufferToBase64DataUrl(buffer: ArrayBuffer, mimeType: string = 'audio/wav'): string {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  const chunkSize = 8192;
+  for (let i = 0; i < len; i += chunkSize) {
+    const sub = bytes.subarray(i, Math.min(i + chunkSize, len));
+    binary += String.fromCharCode.apply(null, Array.from(sub));
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+export function blobToBase64DataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      resolve((reader.result as string) || '');
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(blob);
+  });
+}
+
 /**
- * Generate a simulated voice note audio WAV blob & URL without exhausting AudioContext hardware limits
- * Ensures voice messages can be previewed/played even without mic permissions or in sandboxes
+ * Generate a simulated voice note audio WAV blob & Data URL without exhausting AudioContext hardware limits
+ * Ensures voice messages can be previewed/played across all browsers, remote devices, and offline PWA
  */
 export function createSimulatedVoiceAudioBlob(durationSec: number = 2, pitchFreq: number = 320): { blob: Blob; url: string } {
   try {
@@ -122,10 +145,9 @@ export function createSimulatedVoiceAudioBlob(durationSec: number = 2, pitchFreq
       data[i] = voiceWave * envelope * 0.4;
     }
 
-    // Convert Float32Array directly to WAV Blob
-    const wavBlob = float32ArrayToWavBlob(data, sampleRate);
-    const url = URL.createObjectURL(wavBlob);
-    return { blob: wavBlob, url };
+    // Convert Float32Array to WAV Buffer and Base64 Data URL
+    const { blob, dataUrl } = float32ArrayToWavBlobAndUrl(data, sampleRate);
+    return { blob, url: dataUrl };
   } catch (err) {
     console.warn('Failed to synthesize voice audio:', err);
     const emptyBlob = new Blob([], { type: 'audio/wav' });
@@ -138,9 +160,9 @@ export function createSimulatedVoiceAudioUrl(durationSec: number = 2, pitchFreq:
 }
 
 /**
- * Helper to encode float32 audio samples directly into a playable PCM WAV Blob
+ * Helper to encode float32 audio samples directly into a playable PCM WAV Blob and Base64 Data URL
  */
-function float32ArrayToWavBlob(channelData: Float32Array, sampleRate: number): Blob {
+function float32ArrayToWavBlobAndUrl(channelData: Float32Array, sampleRate: number): { blob: Blob; dataUrl: string } {
   const numChannels = 1;
   const bufferLength = channelData.length;
   const wavBuffer = new ArrayBuffer(44 + bufferLength * 2);
@@ -186,7 +208,13 @@ function float32ArrayToWavBlob(channelData: Float32Array, sampleRate: number): B
     view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
   }
 
-  return new Blob([wavBuffer], { type: 'audio/wav' });
+  const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+  const dataUrl = arrayBufferToBase64DataUrl(wavBuffer, 'audio/wav');
+  return { blob, dataUrl };
+}
+
+function float32ArrayToWavBlob(channelData: Float32Array, sampleRate: number): Blob {
+  return float32ArrayToWavBlobAndUrl(channelData, sampleRate).blob;
 }
 
 /**
@@ -473,8 +501,11 @@ export class VoiceRecorder {
           try {
             const mime = this.mediaRecorder?.mimeType || 'audio/webm';
             const audioBlob = new Blob(this.audioChunks, { type: mime });
-            const audioUrl = URL.createObjectURL(audioBlob);
-            resolve({ audioBlob, audioUrl, duration });
+            blobToBase64DataUrl(audioBlob).then((dataUrl) => {
+              resolve({ audioBlob, audioUrl: dataUrl || URL.createObjectURL(audioBlob), duration });
+            }).catch(() => {
+              resolve({ audioBlob, audioUrl: URL.createObjectURL(audioBlob), duration });
+            });
             return;
           } catch (e) {
             console.warn('Error creating audio blob from chunks:', e);
