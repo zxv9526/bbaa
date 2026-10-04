@@ -80,6 +80,7 @@ import {
   Palette,
   Crown,
   Coins,
+  Radio,
   Shield,
   ShieldAlert,
   KeyRound,
@@ -113,8 +114,8 @@ import { MatchReplayModal } from './components/MatchReplayModal';
 import { ReservationModal } from './components/ReservationModal';
 import { ReservationSeatModal } from './components/ReservationSeatModal';
 import { ExitMatchModal } from './components/ExitMatchModal';
-import { RealtimeDealerStage, RealtimeSeatPlayer } from './components/RealtimeDealerStage';
 import {
+  RealtimeSeatPlayer,
   joinOrCreateRealtimeTable,
   leaveRealtimeTable,
   broadcastDealerShuffle,
@@ -161,7 +162,7 @@ export default function App() {
   const [playerName, setPlayerName] = useState<string>(() => currentAccount.nickname);
 
   const [mode, setMode] = useState<GameMode>('realtime');
-  const [gameState, setGameState] = useState<'menu' | 'realtime_dealer' | 'arranging' | 'revealing'>('menu');
+  const [gameState, setGameState] = useState<'menu' | 'arranging' | 'revealing'>('menu');
 
   const modeRef = useRef<GameMode>(mode);
   modeRef.current = mode;
@@ -310,6 +311,7 @@ export default function App() {
   const [showReservationModal, setShowReservationModal] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
   const [showSeatModal, setShowSeatModal] = useState(false);
+  const [seatModalMode, setSeatModalMode] = useState<'reservation' | 'realtime'>('reservation');
   const [lobbyRealtimeTable, setLobbyRealtimeTable] = useState<RealtimeTableState | null>(null);
   const [seatModalRound, setSeatModalRound] = useState<number>(1);
   const [seatModalCarriage, setSeatModalCarriage] = useState<Carriage | null>(null);
@@ -554,22 +556,6 @@ export default function App() {
           setRealtimeDealerIndex(event.state.dealerIndex);
           setRealtimeRound(event.state.round);
         }
-      } else if (event.type === 'DEALER_SHUFFLE') {
-        setSyncedShuffleCount(event.shuffleCount);
-      } else if (event.type === 'DEALER_CUT') {
-        setSyncedCutPos(event.cutSliderPos);
-        setSyncedCutCard(event.cutCard);
-      } else if (event.type === 'DEALER_DEAL') {
-        setSyncedIsDealing(true);
-        handleRealtimeDealComplete(event.dealtHands, event.dealerIndex);
-      } else if (event.type === 'NEXT_ROUND') {
-        setRealtimeRound(event.round);
-        setRealtimeDealerIndex(event.dealerIndex);
-        setSyncedShuffleCount(0);
-        setSyncedCutCard(null);
-        setSyncedIsDealing(false);
-        setGameState('realtime_dealer');
-        gameStateRef.current = 'realtime_dealer';
       } else if (event.type === 'CHAT_MESSAGE') {
         const incoming = event.message;
         setMessages((prev) => {
@@ -733,7 +719,7 @@ export default function App() {
 
     const targetRound = typeof round === 'number' ? Math.max(1, round) : getPlayerCarriageIndexProgress('reservation');
     
-    const cycleInfo = getReservationCycleInfo(targetRound);
+    const cycleInfo = getReservationCycleInfo(targetRound, 'reservation');
     
     // 如果处于 10局周期的第 2-10 局且已锁定座位，直接跳过选座面板
     if (!cycleInfo.canChooseSeat && cycleInfo.lockedSeatIndex !== null) {
@@ -743,6 +729,7 @@ export default function App() {
     }
 
     const carriage = getCarriageByRound(targetRound, 'reservation');
+    setSeatModalMode('reservation');
     setSeatModalRound(targetRound);
     setSeatModalCarriage(carriage);
     setPreviousRoundResult(prevResult || null);
@@ -752,18 +739,64 @@ export default function App() {
   const handleSelectReservationSeat = (seatIndex: number, roundIndex: number) => {
     setShowSeatModal(false);
     // 📅 记住该 10 局周期的选座：首局选定后后续 9 局默认保持该位置
-    setReservationCycleSeat(roundIndex, seatIndex);
+    setReservationCycleSeat(roundIndex, seatIndex, 'reservation');
     startNewMatch('reservation', seatIndex, roundIndex, true);
   };
 
-  // ⚡ 实时对战场入口：进入轮流发牌与洗牌切牌舞台 (支持指定选座 1-8 号)
-  const startRealtimeMatch = async (targetRoomId?: string, targetSeatIndex?: number) => {
+  // ⚡ 实时对战场选座面板 (10局周期制)
+  const openRealtimeSeatSelection = (round?: number, prevResult?: any) => {
+    if (!isUserLoggedIn(currentAccount)) {
+      setShowAuthModal(true);
+      setCarriageToast({
+        show: true,
+        msg: '⚠️ 实时对战场必须登录已授权的手机号，请先登录！',
+        pts: 0
+      });
+      setTimeout(() => setCarriageToast(null), 3500);
+      return;
+    }
+
+    if (currentAccount.points <= 0) {
+      setShowNoPointsModal(true);
+      setCarriageToast({
+        show: true,
+        msg: '⚠️ 您的积分为 0，无法进入实时对战场！请联系管理员充值上分。',
+        pts: 0
+      });
+      setTimeout(() => setCarriageToast(null), 3500);
+      return;
+    }
+
+    const targetRound = typeof round === 'number' ? Math.max(1, round) : getPlayerCarriageIndexProgress('realtime');
+    const cycleInfo = getReservationCycleInfo(targetRound, 'realtime');
+
+    if (!cycleInfo.canChooseSeat && cycleInfo.lockedSeatIndex !== null) {
+      startNewMatch('realtime', cycleInfo.lockedSeatIndex, targetRound, true);
+      return;
+    }
+
+    const carriage = getCarriageByRound(targetRound, 'realtime');
+    setSeatModalMode('realtime');
+    setSeatModalRound(targetRound);
+    setSeatModalCarriage(carriage);
+    setPreviousRoundResult(prevResult || null);
+    setShowSeatModal(true);
+  };
+
+  const handleSelectRealtimeSeat = (seatIndex: number, roundIndex: number) => {
+    setShowSeatModal(false);
+    setReservationCycleSeat(roundIndex, seatIndex, 'realtime');
+    startNewMatch('realtime', seatIndex, roundIndex, true);
+  };
+
+  // ⚡ 实时对战场入口：采用 10 局预发牌存储机制与独立全双工实时聊天室
+  const startRealtimeMatch = async (targetRoomId?: string, targetSeatIndex?: number, roundOverride?: number) => {
     // 🛡️ 账号限制：必须登录已授权手机号，没有游客
     if (!isUserLoggedIn(currentAccount)) {
       setShowAuthModal(true);
       setCarriageToast({
         show: true,
-        msg: '⚠️ 实时发牌赛场必须登录已授权手机号，请先登录！',
+        msg: '⚠️ 实时对战场必须登录已授权手机号，请先登录！',
         pts: 0
       });
       setTimeout(() => setCarriageToast(null), 3500);
@@ -785,7 +818,7 @@ export default function App() {
     if (targetRoomId) {
       setCurrentRoomId(targetRoomId);
     }
-    const effectiveRoomId = targetRoomId || getCurrentRoomId();
+    const effectiveRoomId = targetRoomId || getCurrentRoomId() || '666666';
 
     const distinctUserId = getPlayerUniqueId(currentAccount.phone || currentAccount.id);
     const myName = currentAccount.nickname || playerName || '十三水雀神';
@@ -798,74 +831,22 @@ export default function App() {
       return;
     }
 
-    const tabSessionId = getTabSessionId();
-    const chosenSlot = typeof targetSeatIndex === 'number' && targetSeatIndex >= 0 && targetSeatIndex <= 7
-      ? targetSeatIndex
-      : 0;
+    const targetRound = typeof roundOverride === 'number' ? Math.max(1, roundOverride) : getPlayerCarriageIndexProgress('realtime');
 
-    // 🛡️ 立即初始化本人席位，确保进入瞬间 100% 显示 1/8 人与本人头像，彻底告别 0/8 延迟闪烁
-    const initialPlayer: RealtimeSeatPlayer = {
-      id: distinctUserId,
-      tabSessionId,
-      name: `${myName.replace(/\(\d+号位\)/g, '').trim()} (${chosenSlot + 1}号位)`,
-      avatar: myAvatar,
-      isAi: false,
-      score: 0,
-      seatIndex: chosenSlot,
-      seatNumber: chosenSlot + 1
-    };
-
-    setRealtimeUserId(distinctUserId);
-    realtimeUserIdRef.current = distinctUserId;
-    setRealtimePlayers([initialPlayer]);
-    setRealtimeRound(1);
-    setRealtimeDealerIndex(chosenSlot);
-
-    setMode('realtime');
-    modeRef.current = 'realtime';
-    setGameState('realtime_dealer');
-    gameStateRef.current = 'realtime_dealer';
-    setErrorMsg('');
-    setMatchResults(null);
-    setUseSpecialHand(false);
-    setSyncedShuffleCount(0);
-    setSyncedCutCard(null);
-    setSyncedIsDealing(false);
-
-    // 加入多人实时牌桌：向服务端权威接口入座 (指定座位编号或首个可用槽位)
-    const { table, assignedUser, seatIndex } = await joinOrCreateRealtimeTable({
-      id: distinctUserId,
-      name: myName,
-      avatar: myAvatar,
-      tabSessionId
-    }, effectiveRoomId, targetSeatIndex);
-
-    setRealtimeUserId(assignedUser.id);
-    realtimeUserIdRef.current = assignedUser.id;
-
-    // 确保席位列表必含当前玩家
-    let finalSeats = table && Array.isArray(table.seats) ? table.seats.filter(s => !s.isAi) : [];
-    if (!finalSeats.some(s => s.id === assignedUser.id || s.tabSessionId === tabSessionId)) {
-      finalSeats.push({
-        id: assignedUser.id,
-        tabSessionId,
-        name: assignedUser.name,
-        avatar: assignedUser.avatar,
-        isAi: false,
-        score: 0,
-        seatIndex: seatIndex,
-        seatNumber: seatIndex + 1
-      });
-    }
-    const uniqueSeats = Array.from(new Map(finalSeats.map(p => [p.id, p])).values());
-    setRealtimePlayers(uniqueSeats);
-    setRealtimeRound(table.round || 1);
-    setRealtimeDealerIndex(table.dealerIndex || 0);
+    // 🚀 向服务端权威入座并初始化聊天室
+    try {
+      joinOrCreateRealtimeTable({
+        id: distinctUserId,
+        name: myName,
+        avatar: myAvatar,
+        tabSessionId: getTabSessionId()
+      }, effectiveRoomId, targetSeatIndex).catch(() => {});
+    } catch {}
 
     // 加载并同步实时对战场聊天对讲历史
     const savedChat = getRealtimeChatMessages();
     setMessages(savedChat);
-    fetchRemoteChatHistory(effectiveRoomId, assignedUser.id).then(remoteChat => {
+    fetchRemoteChatHistory(effectiveRoomId, distinctUserId).then(remoteChat => {
       if (remoteChat && remoteChat.length > 0) {
         setMessages(remoteChat);
       }
@@ -875,11 +856,18 @@ export default function App() {
     // 🚀 初始化三重语音架构引擎 (WebRTC P2P + WebSocket高速广播 + HTTP轮询保底)
     TripleVoiceEngine.getInstance().init({
       roomId: effectiveRoomId,
-      userId: assignedUser.id,
-      name: assignedUser.name,
-      avatar: assignedUser.avatar,
-      seatIndex: Math.max(0, seatIndex)
+      userId: distinctUserId,
+      name: myName,
+      avatar: myAvatar,
+      seatIndex: targetSeatIndex ?? 0
     });
+
+    if (typeof targetSeatIndex === 'number' && targetSeatIndex >= 0 && targetSeatIndex <= 7) {
+      setReservationCycleSeat(targetRound, targetSeatIndex, 'realtime');
+      startNewMatch('realtime', targetSeatIndex, targetRound, true);
+    } else {
+      openRealtimeSeatSelection(targetRound);
+    }
   };
 
   // ⚡ 彻底退出实时对战场并瞬时清理席位残留 (确保大厅对应红座瞬间变绿)
@@ -937,7 +925,55 @@ export default function App() {
     const effectiveUserId = (mode === 'realtime' && realtimeUserId) 
       ? realtimeUserId 
       : (currentAccount.phone || currentAccount.id || 'player_user');
-    const myHand = sortCards(dealtHands[effectiveUserId] || dealtHands['player_user'] || dealtHands[realtimePlayers[0]?.id] || []);
+    const tabId = getTabSessionId();
+    const devId = getOrCreateDeviceId();
+
+    // 确定自己在同桌中的席位索引
+    const mySeat = realtimePlayers.find(p => p.id === effectiveUserId || (p.tabSessionId && p.tabSessionId === tabId) || ((p as any).deviceId && (p as any).deviceId === devId));
+    const mySeatIdx = mySeat && typeof mySeat.seatIndex === 'number'
+      ? mySeat.seatIndex
+      : realtimePlayers.findIndex(p => p.id === effectiveUserId || (p.tabSessionId && p.tabSessionId === tabId));
+
+    // 全维度兼容性手牌抓取 (手机号, sessionID, 设备ID, 座位号, 槽位索引)
+    let myCards: Card[] | undefined = undefined;
+    if (dealtHands) {
+      if (dealtHands[effectiveUserId] && dealtHands[effectiveUserId].length >= 13) {
+        myCards = dealtHands[effectiveUserId];
+      } else if (tabId && dealtHands[tabId] && dealtHands[tabId].length >= 13) {
+        myCards = dealtHands[tabId];
+      } else if (devId && dealtHands[devId] && dealtHands[devId].length >= 13) {
+        myCards = dealtHands[devId];
+      } else if (currentAccount.phone && dealtHands[currentAccount.phone] && dealtHands[currentAccount.phone].length >= 13) {
+        myCards = dealtHands[currentAccount.phone];
+      } else if (currentAccount.id && dealtHands[currentAccount.id] && dealtHands[currentAccount.id].length >= 13) {
+        myCards = dealtHands[currentAccount.id];
+      } else if (mySeatIdx >= 0) {
+        if (dealtHands[`seat_${mySeatIdx}`] && dealtHands[`seat_${mySeatIdx}`].length >= 13) {
+          myCards = dealtHands[`seat_${mySeatIdx}`];
+        } else if (dealtHands[String(mySeatIdx)] && dealtHands[String(mySeatIdx)].length >= 13) {
+          myCards = dealtHands[String(mySeatIdx)];
+        } else if (dealtHands[`player_${mySeatIdx}`] && dealtHands[`player_${mySeatIdx}`].length >= 13) {
+          myCards = dealtHands[`player_${mySeatIdx}`];
+        }
+      }
+
+      // 若未精准匹配，按同桌排位顺序索取对应序号手牌
+      if (!myCards || myCards.length < 13) {
+        const playerPos = Math.max(0, realtimePlayers.findIndex(p => p.id === effectiveUserId || (p.tabSessionId && p.tabSessionId === tabId)));
+        const keys = Object.keys(dealtHands).filter(k => !k.startsWith('seat_') && !k.startsWith('player_'));
+        if (keys[playerPos] && dealtHands[keys[playerPos]] && dealtHands[keys[playerPos]].length >= 13) {
+          myCards = dealtHands[keys[playerPos]];
+        }
+      }
+    }
+
+    // 绝对安全保底：若因网络抖动仍未拿到手牌，即刻从标准洗牌牌堆派发13张，绝不让玩家空白
+    if (!myCards || myCards.length < 13) {
+      const fallbackDeck = shuffle(createDeck());
+      myCards = fallbackDeck.slice(0, 13);
+    }
+
+    const myHand = sortCards(myCards);
     setOriginalHand(myHand);
     setPool([]);
     setSelectedCardIds([]);
@@ -984,8 +1020,20 @@ export default function App() {
     }
 
     // 构建实时场参战玩家列表（全员真实选手，无AI补位）
-    const matchPlayersList = realtimePlayers.map((p) => {
-      const pCards = dealtHands[p.id] || [];
+    const matchPlayersList = realtimePlayers.map((p, pIdx) => {
+      let pCards: Card[] = [];
+      if (dealtHands) {
+        pCards = dealtHands[p.id]
+          || (p.tabSessionId ? dealtHands[p.tabSessionId] : undefined)
+          || (typeof p.seatIndex === 'number' ? dealtHands[`seat_${p.seatIndex}`] : undefined)
+          || (typeof p.seatIndex === 'number' ? dealtHands[String(p.seatIndex)] : undefined)
+          || dealtHands[`player_${pIdx}`]
+          || [];
+      }
+      if (!pCards || pCards.length < 13) {
+        pCards = shuffle(createDeck()).slice(0, 13);
+      }
+
       if (p.id === effectiveUserId || p.id === 'player_user') {
         return {
           id: effectiveUserId,
@@ -1029,6 +1077,7 @@ export default function App() {
 
     setPlayersInMatch(matchPlayersList);
     setGameState('arranging');
+    gameStateRef.current = 'arranging';
 
     // 🛡️ 严格遵守契约精神：发牌完成后立即保存进行中牌局，不允许退出重置
     saveActiveMatchSession({
@@ -1084,12 +1133,6 @@ export default function App() {
       }
     }
 
-    // ⚡ 实时场直接路由至轮流发牌模式
-    if (selectedMode === 'realtime') {
-      startRealtimeMatch();
-      return;
-    }
-
     // 🛡️ 契约精神核心防线：检查是否存在该账号未提交的真实牌局，不允许玩家因牌烂而中途放弃
     const saved = loadActiveMatchSession(currentAccount.phone);
     if (saved && saved.originalHand && saved.originalHand.length === 13) {
@@ -1097,9 +1140,13 @@ export default function App() {
       return;
     }
 
-    // 📅 预约场首要规则：进入后必须选择1-8号位置对应8副手牌
+    // 📅 预约场与⚡实时场首要规则：进入后必须选择1-8号位置对应8副手牌
     if (selectedMode === 'reservation' && seatOverride === undefined) {
       openReservationSeatSelection(roundOverride);
+      return;
+    }
+    if (selectedMode === 'realtime' && seatOverride === undefined) {
+      openRealtimeSeatSelection(roundOverride);
       return;
     }
 
@@ -1110,7 +1157,7 @@ export default function App() {
     setUseSpecialHand(false);
 
     // 🚆 8人巅峰场 / 实时对战场 / 预约场：使用包厢存储与牌池系统
-    const poolMode = selectedMode === 'reservation' ? 'reservation' : 'vs_ai_8p';
+    const poolMode = (selectedMode === 'reservation' || selectedMode === 'realtime') ? selectedMode : 'vs_ai_8p';
     const activeSeat = typeof seatOverride === 'number' ? seatOverride : carriageSeatIndex;
     const { carriage, seatIndex, handCards, stats, isFull } = getOrCreateCurrentCarriage(
       activeSeat,
@@ -1801,132 +1848,8 @@ export default function App() {
       return;
     }
 
-    // ⚡ 实时对战场模式：不使用存储牌局，纯动态结算与轮流庄家顺延
-    if (mode === 'realtime') {
-      try {
-        const effectiveId = (mode === 'realtime' && realtimeUserId) 
-          ? realtimeUserId 
-          : (currentAccount.phone || currentAccount.id || 'player_user');
-
-        const fullPlayersList = playersInMatch.map(p => {
-          if (p.id === effectiveId || p.id === 'player_user') {
-            return {
-              ...p,
-              arrangement: userArrangement
-            };
-          }
-          return p;
-        });
-
-        // 动态两两对比算分 (支持2至8人场)
-        const allResults = calculateMatchScores(fullPlayersList);
-        const myResult = allResults.find(r => r.playerId === effectiveId || r.playerId === 'player_user') || allResults[0];
-
-        if (myResult.finalPoints > 0) {
-          sounds.playVictory();
-          confetti({ particleCount: 80, spread: 75, origin: { y: 0.45 } });
-        } else {
-          sounds.playDunWin();
-        }
-
-        const deltaStr = myResult.finalPoints >= 0 ? `+${myResult.finalPoints}` : `${myResult.finalPoints}`;
-
-        // 扣增积分与记录流水
-        if (myResult.finalPoints !== 0) {
-          addPoints(
-            myResult.finalPoints,
-            myResult.finalPoints > 0 ? 'MATCH_WIN' : 'MATCH_LOSS',
-            `实时对战第${realtimeRound}局得失`
-          );
-          const updatedAcc = getCurrentAccount();
-          setCurrentAccount(updatedAcc);
-        }
-
-        // 保存复盘记录
-        try {
-          const replayPlayers = allResults.map(r => ({
-            id: r.playerId,
-            name: r.name,
-            avatar: r.avatar,
-            isAi: r.isAi,
-            isMe: r.playerId === 'player_user',
-            specialHand: r.specialHand,
-            front: r.arrangement?.front || [],
-            mid: r.arrangement?.middle || [],
-            back: r.arrangement?.back || [],
-            frontEval: r.frontScore ? {
-              typeName: HAND_TYPE_CN[r.frontScore.type],
-              desc: r.frontScore.description,
-              bonus: r.frontScore.bonusPoints || 0
-            } : undefined,
-            midEval: r.midScore ? {
-              typeName: HAND_TYPE_CN[r.midScore.type],
-              desc: r.midScore.description,
-              bonus: r.midScore.bonusPoints || 0
-            } : undefined,
-            backEval: r.backScore ? {
-              typeName: HAND_TYPE_CN[r.backScore.type],
-              desc: r.backScore.description,
-              bonus: r.backScore.bonusPoints || 0
-            } : undefined,
-            finalScore: r.finalPoints,
-            isHomeRun: r.isHomeRun
-          }));
-
-          saveMatchReplay(currentAccount.phone, {
-            phone: currentAccount.phone,
-            mode: 'realtime',
-            carriageIndex: realtimeRound,
-            seatNumber: 1,
-            myScore: myResult.finalPoints,
-            players: replayPlayers,
-            summaryText: `实时对战第 ${realtimeRound} 局 • 本局总得失: ${deltaStr} 水`
-          });
-        } catch (e) {
-          console.error('Failed to record realtime replay:', e);
-        }
-
-        clearActiveMatchSession(currentAccount.phone);
-
-        if (action === 'exit') {
-          setCarriageToast({
-            show: true,
-            msg: `🎉 实时对战第 ${realtimeRound} 局提交成功！本局总得失: ${deltaStr} 水！`,
-            pts: myResult.finalPoints
-          });
-          setTimeout(() => setCarriageToast(null), 4000);
-          setGameState('menu');
-          refreshPlayerStats(currentAccount.nickname || playerName);
-          return;
-        }
-
-        if (action === 'quick_next') {
-          setCarriageToast({
-            show: true,
-            msg: `🎉 第 ${realtimeRound} 局结算完成 (${deltaStr} 水)！庄家顺延轮换，准备进入第 ${realtimeRound + 1} 局...`,
-            pts: myResult.finalPoints
-          });
-          setTimeout(() => setCarriageToast(null), 3500);
-
-          setRealtimeRound(r => r + 1);
-          setRealtimeDealerIndex(d => (d + 1) % realtimePlayers.length);
-          setGameState('realtime_dealer');
-          refreshPlayerStats(currentAccount.nickname || playerName);
-          return;
-        }
-
-        // action === 'reveal'
-        setMatchResults(allResults);
-        setGameState('revealing');
-        refreshPlayerStats(currentAccount.nickname || playerName);
-      } catch (err: any) {
-        setErrorMsg(err.message || '理牌提交失败');
-      }
-      return;
-    }
-
-    // 🚆 8人模式 / 预约场：使用包厢存储与牌池系统
-    if (mode === 'vs_ai_8p' || mode === 'reservation') {
+    // 🚆 8人巅峰场 / 预约场 / ⚡ 实时对战场：统一使用 10 局预发牌存储机制与包厢系统
+    if (mode === 'vs_ai_8p' || mode === 'reservation' || mode === 'realtime') {
       try {
         const res = await submitCarriageHandAndAdvance({
           carriageId,
@@ -2009,9 +1932,9 @@ export default function App() {
         }
 
         if (action === 'quick_next') {
-          if (mode === 'reservation') {
-            const nextCycle = getReservationCycleInfo(res.nextCarriageData.carriage.index);
-            // 📅 预约场核心业务流程：理牌提交后，弹出选座窗口选择下一局席位继续牌局
+          if (mode === 'reservation' || mode === 'realtime') {
+            const nextCycle = getReservationCycleInfo(res.nextCarriageData.carriage.index, mode);
+            // 📅 预约场与⚡实时场核心业务流程：理牌提交后，弹出选座窗口或自动连战下一局
             setCarriageToast({
               show: true,
               msg: `🎉 第 ${carriageIndex} 局 (${carriageSeatIndex + 1}号位) 提交成功！获得 ${deltaStr} 水！${nextCycle.canChooseSeat ? `请选择第 ${res.nextCarriageData.carriage.index} 局座位继续牌局...` : `已自动带入锁定位置进入第 ${res.nextCarriageData.carriage.index} 局...`}`,
@@ -2021,14 +1944,25 @@ export default function App() {
               setCarriageToast(null);
             }, 4000);
 
-            openReservationSeatSelection(
-              res.nextCarriageData.carriage.index,
-              {
-                roundIndex: carriageIndex,
-                seatNumber: carriageSeatIndex + 1,
-                pointsWon: res.playerResult.finalPoints
-              }
-            );
+            if (mode === 'realtime') {
+              openRealtimeSeatSelection(
+                res.nextCarriageData.carriage.index,
+                {
+                  roundIndex: carriageIndex,
+                  seatNumber: carriageSeatIndex + 1,
+                  pointsWon: res.playerResult.finalPoints
+                }
+              );
+            } else {
+              openReservationSeatSelection(
+                res.nextCarriageData.carriage.index,
+                {
+                  roundIndex: carriageIndex,
+                  seatNumber: carriageSeatIndex + 1,
+                  pointsWon: res.playerResult.finalPoints
+                }
+              );
+            }
             refreshPlayerStats(currentAccount.nickname || playerName);
             return;
           }
@@ -2336,13 +2270,13 @@ export default function App() {
                       </div>
 
                       <span className="text-[10px] sm:text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                        <Crown className="w-3 h-3 text-amber-400" />
-                        <span>≥2人开局 · 轮流坐庄</span>
+                        <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
+                        <span>10局一场 · 预先发牌 · 语音聊天室</span>
                       </span>
                     </div>
 
                     <p className="text-xs text-slate-300 leading-relaxed">
-                      请自选 <strong className="text-amber-300">1~8 号</strong> 专属席位入座开局。已有玩家位置变红，空位点击即可直接入座！
+                      采用 <strong className="text-amber-300">10 局预先发牌存储机制</strong>，自选 <strong className="text-amber-300">1~8 号</strong> 专属席位入座。实时语音聊天室已连通，随时语音对讲互动！
                     </p>
                   </div>
 
@@ -2468,48 +2402,7 @@ export default function App() {
           />
         )}
 
-        {/* 3. Realtime Dealer Stage (Shuffle & Cut Phase) */}
-        {gameState === 'realtime_dealer' && (
-          <RealtimeDealerStage
-            round={realtimeRound}
-            dealerIndex={realtimeDealerIndex}
-            players={realtimePlayers}
-            currentUserId={(mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')}
-            roomId={getCurrentRoomId()}
-            onStartDeal={handleRealtimeDealComplete}
-            onBackToMenu={() => handleExitRealtimeTableToLobby()}
-            onSendMessage={handleSendMessage}
-            onOpenFullChat={handleOpenChatDrawer}
-            unreadCount={unreadCount}
-            ttsEnabled={ttsEnabled}
-            onToggleTts={() => setTtsEnabled(!ttsEnabled)}
-            latestMessage={messages[messages.length - 1] || null}
-            onUserSpeakingChange={setUserIsSpeaking}
-            syncedShuffleCount={syncedShuffleCount}
-            syncedCutPos={syncedCutPos}
-            syncedCutCard={syncedCutCard}
-            syncedIsDealing={syncedIsDealing}
-            onDealerShuffle={(count) => {
-              const uid = (mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user');
-              broadcastDealerShuffle(count, uid);
-            }}
-            onDealerCut={(pos, card) => {
-              const uid = (mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user');
-              broadcastDealerCut(pos, card, uid);
-            }}
-            onDealerDeal={(hands, dIdx) => {
-              const uid = (mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user');
-              broadcastDealerDeal(hands, dIdx, uid);
-            }}
-            onRotateDealer={(newDIdx) => {
-              setRealtimeDealerIndex(newDIdx);
-              rotateRealtimeDealer(newDIdx);
-            }}
-            activeSpeakerId={globalSpeakingUserId || (userIsSpeaking ? ((mode === 'realtime' && realtimeUserId) ? realtimeUserId : (currentAccount.phone || currentAccount.id || 'player_user')) : null)}
-          />
-        )}
-
-        {/* 4. Active Game Table (Arranging / Revealing) */}
+        {/* 3. Active Game Table (Arranging / Revealing) */}
         {gameState === 'revealing' && matchResults && (
           <div className="w-full max-w-6xl flex flex-col items-center gap-6 overflow-y-auto pb-safe p-2 sm:p-4 pb-[max(env(safe-area-inset-bottom,0px),24px)]">
             <ShowdownStage
@@ -2519,34 +2412,19 @@ export default function App() {
                 if (mode === 'reservation') {
                   openReservationSeatSelection();
                 } else if (mode === 'realtime') {
-                  const updatedTable = advanceToNextRealtimeRound();
-                  if (updatedTable) {
-                    setRealtimeRound(updatedTable.round);
-                    setRealtimeDealerIndex(updatedTable.dealerIndex);
-                  } else {
-                    setRealtimeRound(r => r + 1);
-                    setRealtimeDealerIndex(d => (d + 1) % realtimePlayers.length);
-                  }
-                  setSyncedShuffleCount(0);
-                  setSyncedCutCard(null);
-                  setSyncedIsDealing(false);
-                  setGameState('realtime_dealer');
+                  openRealtimeSeatSelection();
                 } else {
                   startNewMatch(mode);
                 }
               }}
               playAgainLabel={
-                mode === 'reservation'
-                  ? (getReservationCycleInfo(getPlayerCarriageIndexProgress('reservation')).canChooseSeat ? '重选座位进入下一局' : '连战模式 · 直接进入下一局')
-                  : mode === 'realtime'
-                  ? '轮流发牌 · 进入下一局'
+                mode === 'reservation' || mode === 'realtime'
+                  ? (getReservationCycleInfo(getPlayerCarriageIndexProgress(mode), mode).canChooseSeat ? '重选座位进入下一局' : '连战模式 · 直接进入下一局')
                   : '下一局 · 重新发牌'
               }
               quickPlayAgainLabel={
-                mode === 'reservation'
-                  ? (getReservationCycleInfo(getPlayerCarriageIndexProgress('reservation')).canChooseSeat ? '选座继续' : '连战继续')
-                  : mode === 'realtime'
-                  ? '轮换庄家发牌'
+                mode === 'reservation' || mode === 'realtime'
+                  ? (getReservationCycleInfo(getPlayerCarriageIndexProgress(mode), mode).canChooseSeat ? '选座继续' : '连战继续')
                   : '极速再来一局 (自动发牌)'
               }
               onBackToMenu={() => {
@@ -2980,10 +2858,30 @@ export default function App() {
         carriageIndex={seatModalRound}
         carriage={seatModalCarriage}
         currentUserId={currentAccount.id || 'player_user'}
-        onSelectSeat={(seatIndex) => handleSelectReservationSeat(seatIndex, seatModalRound)}
+        title={seatModalMode === 'realtime' ? '⚡ 实时对战场 · 选定席位 (10局制)' : '📅 预约场 · 选定席位 (10局周期)'}
+        subtitle={seatModalMode === 'realtime' ? '实时语音聊天室已接入 · 选座后直接进入 10 局对战' : '每10局仅需选择一次位置 · 选定后后续9局将默认保持该席位'}
+        onSelectSeat={(seatIndex) => {
+          if (seatModalMode === 'realtime') {
+            handleSelectRealtimeSeat(seatIndex, seatModalRound);
+          } else {
+            handleSelectReservationSeat(seatIndex, seatModalRound);
+          }
+        }}
         previousRoundResult={previousRoundResult}
-        onSwitchRound={(newRound) => openReservationSeatSelection(newRound)}
-        onAdvanceToNextRound={() => openReservationSeatSelection(seatModalRound + 1)}
+        onSwitchRound={(newRound) => {
+          if (seatModalMode === 'realtime') {
+            openRealtimeSeatSelection(newRound);
+          } else {
+            openReservationSeatSelection(newRound);
+          }
+        }}
+        onAdvanceToNextRound={() => {
+          if (seatModalMode === 'realtime') {
+            openRealtimeSeatSelection(seatModalRound + 1);
+          } else {
+            openReservationSeatSelection(seatModalRound + 1);
+          }
+        }}
       />
 
       <ExitMatchModal

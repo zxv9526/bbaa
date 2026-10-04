@@ -149,6 +149,14 @@ function ensureTableWsConnected() {
           }
           saveRealtimeTable(table);
           wsSubscribers.forEach(cb => cb({ type: 'SYNC_STATE', state: table }));
+          if (table.status === 'arranging' && table.dealtHands) {
+            wsSubscribers.forEach(cb => cb({
+              type: 'DEALER_DEAL',
+              dealtHands: table.dealtHands!,
+              dealerIndex: table.dealerIndex,
+              timestamp: table.lastUpdated || Date.now()
+            }));
+          }
         } else if (msg.type === 'TABLE_ACTION' && msg.action) {
           const action = msg.action;
           if (action.type === 'DEALER_DEAL') {
@@ -888,6 +896,18 @@ export function broadcastDealerDeal(
     timestamp: Date.now()
   });
 
+  // Fast WebSocket broadcast to all players in the room
+  sendTableWs({
+    type: 'TABLE_ACTION',
+    roomId: currentRoomId,
+    action: {
+      type: 'DEALER_DEAL',
+      dealtHands,
+      dealerIndex,
+      dealerId
+    }
+  });
+
   fetch('/api/table/action', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1074,16 +1094,30 @@ export function subscribeRealtimeTable(
             saveRealtimeTable(remoteTable, currentRoomId);
             onEvent({ type: 'SYNC_STATE', state: remoteTable });
           }
+
+          // If table transitioned to arranging with dealtHands, trigger deal for waiting players
+          if (remoteTable.status === 'arranging' && remoteTable.dealtHands) {
+            onEvent({
+              type: 'DEALER_DEAL',
+              dealtHands: remoteTable.dealtHands,
+              dealerIndex: remoteTable.dealerIndex,
+              timestamp: remoteTable.lastUpdated || Date.now()
+            });
+          }
         }
       }
 
-      // Safeguard poll for chat messages (Isolated to Serv00; errors never affect the table)
+      // Safeguard poll for chat messages (Serv00 first, auto-fallback to Cloudflare Pages Functions)
       try {
-        const chatRes = await fetch(
-          getEffectiveChatHttpUrl(`/api/chat/poll?roomId=${encodeURIComponent(currentRoomId)}&userId=${encodeURIComponent(myId)}&since=${lastChatPollTime}&_t=${Date.now()}`),
-          { credentials: 'include', signal: AbortSignal.timeout(3500) }
-        );
-        if (chatRes.ok) {
+        const pollPath = `/api/chat/poll?roomId=${encodeURIComponent(currentRoomId)}&userId=${encodeURIComponent(myId)}&since=${lastChatPollTime}&_t=${Date.now()}`;
+        const primaryChatPoll = getEffectiveChatHttpUrl(pollPath);
+        let chatRes = await fetch(primaryChatPoll, { credentials: 'include', signal: AbortSignal.timeout(3000) }).catch(() => null);
+        if (!chatRes || !chatRes.ok) {
+          if (primaryChatPoll !== pollPath) {
+            chatRes = await fetch(pollPath, { credentials: 'include', signal: AbortSignal.timeout(3000) }).catch(() => null);
+          }
+        }
+        if (chatRes && chatRes.ok) {
           const chatData = await chatRes.json();
           if (chatData.ok && Array.isArray(chatData.messages) && chatData.messages.length > 0) {
             lastChatPollTime = Math.max(lastChatPollTime, ...chatData.messages.map((m: any) => m.timestamp));
@@ -1092,9 +1126,7 @@ export function subscribeRealtimeTable(
             });
           }
         }
-      } catch {
-        // Serv00 offline is completely safe - game runs 100% uninterrupted
-      }
+      } catch {}
     } catch {}
   };
 

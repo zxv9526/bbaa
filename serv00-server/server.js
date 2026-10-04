@@ -865,29 +865,103 @@ wss.on('connection', (ws) => {
 
         // 5. Voice Frame Relay (Walkie-Talkie Stream)
         case 'VOICE_FRAME': {
-          if (!currentClient) return;
-          broadcastToRoom(currentClient.roomId, {
-            type: 'VOICE_FRAME',
-            senderId: currentClient.userId,
-            senderName: currentClient.name,
-            senderAvatar: currentClient.avatar,
-            seatIndex: currentClient.seatIndex,
+          const roomId = normalizeRoomId(msg.roomId || (currentClient ? currentClient.roomId : '666666'));
+          const senderId = msg.senderId || (currentClient ? currentClient.userId : '');
+          const senderName = msg.senderName || (currentClient ? currentClient.name : '玩家');
+          const senderAvatar = msg.senderAvatar || (currentClient ? currentClient.avatar : '🎙️');
+          const seatIndex = typeof msg.seatIndex === 'number' ? msg.seatIndex : (currentClient ? currentClient.seatIndex : -1);
+
+          if (!voiceFramesStore.has(roomId)) {
+            voiceFramesStore.set(roomId, []);
+          }
+          const frames = voiceFramesStore.get(roomId);
+          const frameRecord = {
+            id: `voice_${now}_${Math.random().toString(36).slice(2, 6)}`,
+            roomId,
+            senderId,
+            senderName,
+            senderAvatar,
+            seatIndex,
+            type: 'voice_frame',
             audioData: msg.audioData,
-            duration: msg.duration,
-            mimeType: msg.mimeType
+            duration: msg.duration || 2,
+            mimeType: msg.mimeType,
+            timestamp: now
+          };
+          frames.push(frameRecord);
+          if (frames.length > 80) frames.splice(0, frames.length - 80);
+
+          broadcastToRoom(roomId, {
+            type: 'VOICE_FRAME',
+            senderId,
+            senderName,
+            senderAvatar,
+            seatIndex,
+            audioData: msg.audioData,
+            duration: msg.duration || 2,
+            mimeType: msg.mimeType,
+            timestamp: now
+          }, ws);
+          break;
+        }
+
+        // 5b. Quick Tactical Voice Phrase Relay
+        case 'VOICE_PHRASE': {
+          const roomId = normalizeRoomId(msg.roomId || (currentClient ? currentClient.roomId : '666666'));
+          const senderId = msg.senderId || (currentClient ? currentClient.userId : '');
+          const senderName = msg.senderName || (currentClient ? currentClient.name : '玩家');
+          const senderAvatar = msg.senderAvatar || (currentClient ? currentClient.avatar : '📢');
+          const seatIndex = typeof msg.seatIndex === 'number' ? msg.seatIndex : (currentClient ? currentClient.seatIndex : -1);
+
+          if (!voiceFramesStore.has(roomId)) {
+            voiceFramesStore.set(roomId, []);
+          }
+          const frames = voiceFramesStore.get(roomId);
+          const frameRecord = {
+            id: `phrase_${now}_${Math.random().toString(36).slice(2, 6)}`,
+            roomId,
+            senderId,
+            senderName,
+            senderAvatar,
+            seatIndex,
+            type: 'phrase',
+            phrase: msg.phrase,
+            category: msg.category || '战术播报',
+            icon: msg.icon || '📢',
+            duration: 2,
+            timestamp: now
+          };
+          frames.push(frameRecord);
+          if (frames.length > 80) frames.splice(0, frames.length - 80);
+
+          broadcastToRoom(roomId, {
+            type: 'VOICE_PHRASE',
+            senderId,
+            senderName,
+            senderAvatar,
+            seatIndex,
+            phrase: msg.phrase,
+            category: msg.category || '战术播报',
+            icon: msg.icon || '📢',
+            timestamp: now
           }, ws);
           break;
         }
 
         // 6. Voice Activity Indicator (Speaking ripple)
         case 'VOICE_ACTIVITY': {
-          if (!currentClient) return;
-          broadcastToRoom(currentClient.roomId, {
+          const roomId = normalizeRoomId(msg.roomId || (currentClient ? currentClient.roomId : '666666'));
+          const senderId = msg.senderId || (currentClient ? currentClient.userId : '');
+          const senderName = msg.senderName || (currentClient ? currentClient.name : '玩家');
+          const senderAvatar = msg.senderAvatar || (currentClient ? currentClient.avatar : '🎙️');
+          const seatIndex = typeof msg.seatIndex === 'number' ? msg.seatIndex : (currentClient ? currentClient.seatIndex : -1);
+
+          broadcastToRoom(roomId, {
             type: 'VOICE_ACTIVITY',
-            senderId: currentClient.userId,
-            senderName: currentClient.name,
-            senderAvatar: currentClient.avatar,
-            seatIndex: currentClient.seatIndex,
+            senderId,
+            senderName,
+            senderAvatar,
+            seatIndex,
             isSpeaking: Boolean(msg.isSpeaking),
             volume: msg.volume || 0
           }, ws);

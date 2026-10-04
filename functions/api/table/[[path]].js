@@ -99,12 +99,14 @@ async function loadAuthoritativeTable(db, roomId, customName) {
 export async function onRequest(context) {
   const env = context.env || {};
   const db = env.DB || env.D1 || env.DATABASE || env.THIRTEEN_WATER_DB;
+  const serv00Base = (env.SERV00_SERVER_URL || env.SERV00_CHAT_HTTP_URL || env.SERV00_URL || '').trim().replace(/\/+$/, '');
 
   const headers = {
     'Content-Type': 'application/json;charset=UTF-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
+    'Cache-Control': 'no-store, no-cache, must-revalidate'
   };
 
   if (context.request.method === 'OPTIONS') {
@@ -118,6 +120,34 @@ export async function onRequest(context) {
   const url = new URL(context.request.url);
   const pathParts = url.pathname.split('/').filter(Boolean);
   const subAction = pathParts[pathParts.length - 1] || 'state';
+
+  // 🚀 If Serv00 Node Server is configured, proxy table requests to maintain single authoritative state across all edge nodes!
+  if (serv00Base) {
+    try {
+      const targetUrl = `${serv00Base}/api/table/${subAction}${url.search}`;
+      let remoteRes;
+      if (context.request.method === 'POST') {
+        const bodyClone = await context.request.clone().text();
+        remoteRes = await fetch(targetUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: bodyClone,
+          signal: AbortSignal.timeout(4000)
+        });
+      } else {
+        remoteRes = await fetch(targetUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(4000)
+        });
+      }
+
+      if (remoteRes && remoteRes.ok) {
+        const data = await remoteRes.json();
+        return new Response(JSON.stringify(data), { headers });
+      }
+    } catch {}
+  }
 
   // 1. GET /api/table/rooms
   if (subAction === 'rooms' && context.request.method === 'GET') {
@@ -411,9 +441,28 @@ export async function onRequest(context) {
           table.status = 'cutting';
         } else if (action.type === 'DEALER_DEAL') {
           table.dealtHands = action.dealtHands;
+          table.dealerIndex = typeof action.dealerIndex === 'number' ? action.dealerIndex : table.dealerIndex;
           table.status = 'arranging';
+        } else if (action.type === 'CLAIM_DEALER') {
+          const newIdx = table.seats.findIndex(s => s.id === action.playerId);
+          if (newIdx !== -1) {
+            table.dealerIndex = newIdx;
+            table.dealerId = action.playerId;
+          }
+        } else if (action.type === 'ROTATE_DEALER') {
+          if (table.seats.length > 0) {
+            table.dealerIndex = (table.dealerIndex + 1) % table.seats.length;
+            table.dealerId = table.seats[table.dealerIndex]?.id || '';
+          }
         } else if (action.type === 'NEXT_ROUND') {
           table.round = (table.round || 1) + 1;
+          if (table.seats.length > 0) {
+            table.dealerIndex = (table.dealerIndex + 1) % table.seats.length;
+            table.dealerId = table.seats[table.dealerIndex]?.id || '';
+          }
+          table.shuffleCount = 0;
+          table.cutCard = null;
+          table.dealtHands = undefined;
           table.status = 'waiting';
         }
         table.lastUpdated = Date.now();

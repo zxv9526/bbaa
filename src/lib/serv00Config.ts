@@ -83,6 +83,23 @@ function getDefaultHttpUrl(path: string = ''): string {
  * Returns current effective WebSocket endpoint for real-time voice and chat
  */
 export function getEffectiveChatWsUrl(): string {
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    if (currentWsUrl && currentWsUrl.startsWith('wss://')) {
+      return currentWsUrl.trim();
+    }
+    // If the WS URL is same-host ws://, we can upgrade to wss://
+    if (currentWsUrl && currentWsUrl.startsWith('ws://')) {
+      try {
+        const parsed = new URL(currentWsUrl);
+        if (parsed.host === window.location.host) {
+          return currentWsUrl.replace(/^ws:\/\//, 'wss://');
+        }
+      } catch {}
+    }
+    // For external non-SSL host (e.g. serv00 custom port without TLS), fallback to same-origin wss
+    const proto = 'wss:';
+    return `${proto}//${window.location.host}/api/ws`;
+  }
   if (currentWsUrl && currentWsUrl.trim()) {
     return currentWsUrl.trim();
   }
@@ -94,6 +111,14 @@ export function getEffectiveChatWsUrl(): string {
  */
 export function getEffectiveChatHttpUrl(path: string = ''): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    // If the configured endpoint is insecure http://, browser will block it via Mixed Content.
+    // Instead route via same-origin (e.g. /api/chat/...) which Cloudflare securely reverse-proxies server-to-server!
+    if (currentHttpUrl && currentHttpUrl.startsWith('https://')) {
+      return `${currentHttpUrl.replace(/\/+$/, '')}${cleanPath}`;
+    }
+    return cleanPath;
+  }
   if (currentHttpUrl && currentHttpUrl.trim()) {
     return `${currentHttpUrl.replace(/\/+$/, '')}${cleanPath}`;
   }

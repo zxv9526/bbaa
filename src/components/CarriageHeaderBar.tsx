@@ -97,15 +97,22 @@ export function CarriageHeaderBar({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-            <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap">
-              {isReservation ? '📅 预约场' : '⚡ 实时场'} · 第<span className="text-amber-400 font-mono px-0.5">{currentCarriageIndex}</span>局
-            </span>
+            {(() => {
+              const roundInCycle = ((currentCarriageIndex - 1) % 10) + 1;
+              const matchNum = Math.floor((currentCarriageIndex - 1) / 10) + 1;
+              return (
+                <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap">
+                  {isReservation ? '📅 预约场' : '⚡ 实时场'} · 第<span className="text-amber-400 font-mono px-0.5">{roundInCycle}</span>/10局
+                  <span className="text-[10px] text-slate-400 font-normal ml-1">(第{matchNum}场)</span>
+                </span>
+              );
+            })()}
 
-            {/* 👑 Realtime dealer rotation label */}
-            {mode === 'realtime' && typeof dealerIndex === 'number' && (
-              <span className="flex items-center gap-1 text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-400/30">
-                <span>👑</span>
-                <span>庄家: {dealerIndex + 1}号位</span>
+            {/* 🎙️ 实时语音连麦徽章 */}
+            {mode === 'realtime' && (
+              <span className="flex items-center gap-1 text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-400/30">
+                <span className="text-emerald-400">●</span>
+                <span>语音聊天室</span>
               </span>
             )}
 

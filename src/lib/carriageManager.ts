@@ -42,7 +42,7 @@ export interface CarriagePoolStats {
   currentPlayingIndex: number;
 }
 
-// 📅 预约场 10 局周期选座规则：每 10 局只能选一次位置，第 1 局选定后后续 9 局默认保持该位置
+// 📅 预约场与⚡实时场 10 局周期选座规则：每 10 局一场，第 1 局选定后后续 9 局默认保持该位置
 export interface ReservationCycleInfo {
   cycleBlock: number; // 0: 1-10局, 1: 11-20局, 2: 21-30局...
   roundIndex: number; // 当前局数
@@ -53,16 +53,19 @@ export interface ReservationCycleInfo {
 }
 
 const RESERVATION_CYCLE_KEY = 'thirteen_water_reservation_cycle_seat_v1';
+const REALTIME_CYCLE_KEY = 'thirteen_water_realtime_cycle_seat_v1';
 
-export function getReservationCycleInfo(roundIndex: number): ReservationCycleInfo {
+export function getReservationCycleInfo(roundIndex: number, mode: PoolMode = 'reservation'): ReservationCycleInfo {
   const round = Math.max(1, roundIndex);
   const cycleBlock = Math.floor((round - 1) / 10);
   const roundInCycle = ((round - 1) % 10) + 1; // 1 to 10
   const remainingRoundsInCycle = 10 - roundInCycle;
 
+  const storageKey = mode === 'realtime' ? REALTIME_CYCLE_KEY : RESERVATION_CYCLE_KEY;
+
   let lockedSeatIndex: number | null = null;
   try {
-    const raw = localStorage.getItem(RESERVATION_CYCLE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (raw) {
       const data = JSON.parse(raw);
       if (data && data.cycleBlock === cycleBlock && typeof data.seatIndex === 'number') {
@@ -81,12 +84,13 @@ export function getReservationCycleInfo(roundIndex: number): ReservationCycleInf
   };
 }
 
-export function setReservationCycleSeat(roundIndex: number, seatIndex: number): void {
+export function setReservationCycleSeat(roundIndex: number, seatIndex: number, mode: PoolMode = 'reservation'): void {
   const round = Math.max(1, roundIndex);
   const cycleBlock = Math.floor((round - 1) / 10);
+  const storageKey = mode === 'realtime' ? REALTIME_CYCLE_KEY : RESERVATION_CYCLE_KEY;
   try {
     localStorage.setItem(
-      RESERVATION_CYCLE_KEY,
+      storageKey,
       JSON.stringify({
         cycleBlock,
         seatIndex: Math.max(0, Math.min(7, seatIndex))
@@ -105,6 +109,12 @@ function getStorageKeys(mode: PoolMode = 'vs_ai_8p') {
     return {
       CARRIAGE_STORAGE_KEY: 'thirteen_water_carriage_pool_reservation_v2',
       PLAYER_PROGRESS_KEY: 'thirteen_water_player_carriage_progress_reservation_v2'
+    };
+  }
+  if (mode === 'realtime') {
+    return {
+      CARRIAGE_STORAGE_KEY: 'thirteen_water_carriage_pool_realtime_v2',
+      PLAYER_PROGRESS_KEY: 'thirteen_water_player_carriage_progress_realtime_v2'
     };
   }
   return { CARRIAGE_STORAGE_KEY: CARRIAGE_STORAGE_KEY_8P, PLAYER_PROGRESS_KEY: PLAYER_PROGRESS_KEY_8P };
@@ -201,8 +211,8 @@ function initialize300Carriages(currentTotal: number, existingCarriages: Carriag
 
 export function checkAndReplenishCarriages(mode: PoolMode = 'vs_ai_8p'): CarriagePoolStats {
   const storage = loadCarriageStorage(mode);
-  // 📅 预约场：按需自动发牌存储，严禁预生成300局牌池
-  if (mode === 'reservation') {
+  // 📅 预约场与⚡实时场：按需自动发牌存储，严禁预生成300局牌池
+  if (mode === 'reservation' || mode === 'realtime') {
     return getCarriageStats(storage.carriages, storage.totalGeneratedCount, mode);
   }
   if (storage.carriages.length < 50) {
@@ -370,11 +380,11 @@ export function getOrCreateCurrentCarriage(
     saveCarriageStorage(storage, mode);
   }
 
-  // 如果是预约场：若没有指定强制位置，检查当前 10 局周期是否已有锁定位置
+  // 📅 预约场与⚡实时场：若没有指定强制位置，检查当前 10 局周期是否已有锁定位置
   let validSeat = Math.max(0, Math.min(maxSeat, preferredSeatIndex));
-  if (mode === 'reservation') {
+  if (mode === 'reservation' || mode === 'realtime') {
     if (!forceExactSeat) {
-      const cycle = getReservationCycleInfo(playerIndex);
+      const cycle = getReservationCycleInfo(playerIndex, mode);
       if (cycle.lockedSeatIndex !== null) {
         validSeat = cycle.lockedSeatIndex;
       }

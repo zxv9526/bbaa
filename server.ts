@@ -1218,6 +1218,28 @@ async function startServer() {
             break;
           }
 
+          // Tactical voice phrase relay
+          case "VOICE_PHRASE": {
+            const targetRoomId = normalizeRoomId(msg.roomId || (currentClient ? currentClient.roomId : "666666"));
+            const senderId = msg.senderId || (currentClient ? currentClient.userId : "");
+            const senderName = msg.senderName || (currentClient ? currentClient.name : "玩家");
+            const senderAvatar = msg.senderAvatar || (currentClient ? currentClient.avatar : "📢");
+            const seatIndex = typeof msg.seatIndex === "number" ? msg.seatIndex : (currentClient ? currentClient.seatIndex : 0);
+
+            broadcastToRoom(targetRoomId, {
+              type: "VOICE_PHRASE",
+              senderId,
+              senderName,
+              senderAvatar,
+              seatIndex,
+              phrase: msg.phrase,
+              category: msg.category || "战术播报",
+              icon: msg.icon || "📢",
+              timestamp: Date.now()
+            }, senderId);
+            break;
+          }
+
           // Speaking presence indicator (isSpeaking, volume, tier)
           case "VOICE_ACTIVITY": {
             if (!currentClient) return;

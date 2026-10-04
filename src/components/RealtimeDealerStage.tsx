@@ -299,8 +299,18 @@ export function RealtimeDealerStage({
     const cardsPerPlayer = 13;
     const hands: { [playerId: string]: Card[] } = {};
 
-    players.forEach((p, idx) => {
-      hands[p.id] = workingDeck.slice(idx * cardsPerPlayer, (idx + 1) * cardsPerPlayer);
+    effectivePlayers.forEach((p, idx) => {
+      const handSlice = workingDeck.slice(idx * cardsPerPlayer, (idx + 1) * cardsPerPlayer);
+      hands[p.id] = handSlice;
+      if (p.name) hands[p.name] = handSlice;
+      if (p.tabSessionId) hands[p.tabSessionId] = handSlice;
+      if ((p as any).deviceId) hands[(p as any).deviceId] = handSlice;
+      if (typeof p.seatIndex === 'number') {
+        hands[`seat_${p.seatIndex}`] = handSlice;
+        hands[String(p.seatIndex)] = handSlice;
+      }
+      hands[`player_${idx}`] = handSlice;
+      hands[String(idx)] = handSlice;
     });
 
     if (onDealerDeal) {

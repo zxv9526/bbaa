@@ -678,21 +678,26 @@ export class TripleVoiceEngine {
       }
 
       // Tier 2: WebSocket High-Speed Audio Broadcast
-      if ((!sentViaP2P && this.wsConnected) || this.activeTier === 'websocket') {
+      if (this.wsConnected || this.activeTier === 'websocket') {
         this.sendWsMessage({
           type: 'VOICE_FRAME',
+          roomId: this.roomId,
+          senderId: this.userId,
+          senderName: this.userName,
+          senderAvatar: this.userAvatar,
+          seatIndex: this.userSeatIndex,
           audioData: base64Data,
           duration: durationSec,
           mimeType: blob.type
         });
-      } else if (!sentViaP2P && !this.wsConnected) {
-        // Tier 3: HTTP Polling Fallback
-        this.sendViaHttpFallback({
-          type: 'voice_frame',
-          audioData: base64Data,
-          duration: durationSec
-        });
       }
+
+      // Tier 3: HTTP Polling Fallback (Always send HTTP as high-reliability guarantee)
+      this.sendViaHttpFallback({
+        type: 'voice_frame',
+        audioData: base64Data,
+        duration: durationSec
+      });
 
       this.notifyStats();
     };
@@ -726,6 +731,7 @@ export class TripleVoiceEngine {
     if (this.activeTier === 'webrtc') {
       const payload = JSON.stringify({
         type: 'VOICE_PHRASE',
+        roomId: this.roomId,
         senderId: this.userId,
         senderName: this.userName,
         senderAvatar: this.userAvatar,
@@ -748,17 +754,24 @@ export class TripleVoiceEngine {
     if (this.wsConnected) {
       this.sendWsMessage({
         type: 'VOICE_PHRASE',
+        roomId: this.roomId,
+        senderId: this.userId,
+        senderName: this.userName,
+        senderAvatar: this.userAvatar,
+        seatIndex: this.userSeatIndex,
         phrase,
         category,
         icon
       });
-    } else if (!sentP2P) {
-      // 3. Send via HTTP Polling fallback
-      this.sendViaHttpFallback({
-        type: 'phrase',
-        phrase
-      });
     }
+
+    // 3. Guarantee via HTTP Polling fallback
+    this.sendViaHttpFallback({
+      type: 'phrase',
+      phrase,
+      category,
+      icon
+    });
 
     this.notifyStats();
   }
@@ -1115,6 +1128,14 @@ export class TripleVoiceEngine {
         if (msg.table) {
           saveRealtimeTable(msg.table);
           broadcastEvent({ type: 'SYNC_STATE', state: msg.table });
+          if (msg.table.status === 'arranging' && msg.table.dealtHands) {
+            broadcastEvent({
+              type: 'DEALER_DEAL',
+              dealtHands: msg.table.dealtHands,
+              dealerIndex: msg.table.dealerIndex,
+              timestamp: msg.table.lastUpdated || Date.now()
+            });
+          }
         }
         break;
       }
@@ -1168,13 +1189,16 @@ export class TripleVoiceEngine {
         break;
       }
 
+      case 'VOICE_FRAME':
       case 'VOICE_FRAME_INCOMING': {
-        const rec = msg.record;
-        if (rec && rec.senderId !== this.userId && rec.audioData) {
+        const rec = msg.record || msg;
+        const senderId = rec.senderId || msg.senderId;
+        const audio = rec.audioData || rec.audioUrl || msg.audioData || msg.audioUrl;
+        if (senderId && senderId !== this.userId && audio) {
           this.packetsReceived += 1;
-          this.playReceivedAudio(rec.audioData);
+          this.playReceivedAudio(audio);
 
-          const p = this.peers.get(rec.senderId);
+          const p = this.peers.get(senderId);
           if (p) {
             p.packetsReceived += 1;
             p.lastActive = Date.now();
@@ -1189,13 +1213,13 @@ export class TripleVoiceEngine {
           if (this.onIncomingVoice) {
             this.onIncomingVoice({
               id: rec.id || ('voice_ws_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
-              senderId: rec.senderId,
-              senderName: rec.senderName || '牌友',
-              senderAvatar: rec.senderAvatar || '😎',
-              seatIndex: rec.seatIndex,
-              audioUrl: rec.audioData,
-              duration: rec.duration || 2,
-              timestamp: rec.timestamp || Date.now(),
+              senderId,
+              senderName: rec.senderName || msg.senderName || '牌友',
+              senderAvatar: rec.senderAvatar || msg.senderAvatar || '😎',
+              seatIndex: rec.seatIndex ?? msg.seatIndex,
+              audioUrl: audio,
+              duration: rec.duration || msg.duration || 2,
+              timestamp: rec.timestamp || msg.timestamp || Date.now(),
               tier: 'websocket'
             });
           }
@@ -1203,26 +1227,35 @@ export class TripleVoiceEngine {
         break;
       }
 
+      case 'VOICE_PHRASE':
       case 'VOICE_PHRASE_INCOMING': {
         this.handleIncomingPhrase(msg, 'websocket');
         break;
       }
 
+      case 'CHAT_MESSAGE':
       case 'CHAT_MESSAGE_INCOMING': {
-        if (msg.message) {
-          this.handleIncomingChatMessage(msg.message, 'websocket');
+        const chat = msg.message || msg.record || msg;
+        if (chat) {
+          this.handleIncomingChatMessage(chat, 'websocket');
         }
         break;
       }
 
+      case 'VOICE_ACTIVITY':
       case 'PEER_VOICE_ACTIVITY': {
-        const { userId, isSpeaking, volume, activeTier } = msg;
-        const p = this.peers.get(userId);
-        if (p) {
-          p.isSpeaking = isSpeaking;
-          p.volume = volume;
-          if (activeTier) p.tier = activeTier;
-          this.notifyPeers();
+        const userId = msg.userId || (msg.record && msg.record.userId);
+        const isSpeaking = typeof msg.isSpeaking === 'boolean' ? msg.isSpeaking : (msg.record && msg.record.isSpeaking);
+        const volume = typeof msg.volume === 'number' ? msg.volume : 0;
+        const activeTier = msg.activeTier || 'websocket';
+        if (userId) {
+          const p = this.peers.get(userId);
+          if (p) {
+            p.isSpeaking = Boolean(isSpeaking);
+            p.volume = volume;
+            p.tier = activeTier;
+            this.notifyPeers();
+          }
         }
         break;
       }
@@ -1260,20 +1293,37 @@ export class TripleVoiceEngine {
       // Only poll when WebSocket is down or when testing HTTP mode
       if (!this.wsConnected || this.tierPreference === 'http') {
         try {
-          const res = await fetch(
-            `/api/voice/poll?roomId=${encodeURIComponent(this.roomId)}&userId=${encodeURIComponent(this.userId)}&since=${this.lastPollTimestamp}`
+          const pollSince = Math.max(0, this.lastPollTimestamp - 2500);
+          const voicePollUrl = getEffectiveChatHttpUrl(
+            `/api/voice/poll?roomId=${encodeURIComponent(this.roomId)}&userId=${encodeURIComponent(this.userId)}&since=${pollSince}`
           );
-          if (res.ok) {
+          let res = await fetch(voicePollUrl, { signal: AbortSignal.timeout(3000) }).catch(() => null);
+          if (!res || !res.ok) {
+            if (voicePollUrl !== `/api/voice/poll?roomId=${encodeURIComponent(this.roomId)}&userId=${encodeURIComponent(this.userId)}&since=${pollSince}`) {
+              res = await fetch(`/api/voice/poll?roomId=${encodeURIComponent(this.roomId)}&userId=${encodeURIComponent(this.userId)}&since=${pollSince}`, { signal: AbortSignal.timeout(3000) }).catch(() => null);
+            }
+          }
+          if (res && res.ok) {
             const data = await res.json();
             if (data.ok && Array.isArray(data.frames)) {
-              this.lastPollTimestamp = data.timestamp || Date.now();
+              if (data.timestamp) {
+                this.lastPollTimestamp = Math.max(this.lastPollTimestamp, data.timestamp);
+              }
               data.frames.forEach((f: any) => {
                 if (f.senderId !== this.userId) {
+                  const frameKey = f.id || `f_${f.senderId}_${f.timestamp}`;
+                  if (this.receivedChatIds.has(frameKey)) return;
+                  this.receivedChatIds.add(frameKey);
+                  if (this.receivedChatIds.size > 300) {
+                    const first = this.receivedChatIds.values().next().value;
+                    if (first) this.receivedChatIds.delete(first);
+                  }
+
                   if (f.type === 'voice_frame' && f.audioData) {
                     this.playReceivedAudio(f.audioData);
                     if (this.onIncomingVoice) {
                       this.onIncomingVoice({
-                        id: f.id || ('voice_http_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
+                        id: frameKey,
                         senderId: f.senderId,
                         senderName: f.senderName,
                         senderAvatar: f.senderAvatar,
@@ -1310,10 +1360,15 @@ export class TripleVoiceEngine {
 
         // Poll for real-time chat messages (Tier 3 HTTP fallback)
         try {
-          const chatRes = await fetch(
-            getEffectiveChatHttpUrl(`/api/chat/poll?roomId=${encodeURIComponent(this.roomId)}&userId=${encodeURIComponent(this.userId)}&since=${this.lastPollTimestamp - 5000}`)
-          );
-          if (chatRes.ok) {
+          const pollPath = `/api/chat/poll?roomId=${encodeURIComponent(this.roomId)}&userId=${encodeURIComponent(this.userId)}&since=${this.lastPollTimestamp - 5000}`;
+          const primaryChatPollUrl = getEffectiveChatHttpUrl(pollPath);
+          let chatRes = await fetch(primaryChatPollUrl, { signal: AbortSignal.timeout(3000) }).catch(() => null);
+          if (!chatRes || !chatRes.ok) {
+            if (primaryChatPollUrl !== pollPath) {
+              chatRes = await fetch(pollPath, { signal: AbortSignal.timeout(3000) }).catch(() => null);
+            }
+          }
+          if (chatRes && chatRes.ok) {
             const chatData = await chatRes.json();
             if (chatData.ok && Array.isArray(chatData.messages)) {
               chatData.messages.forEach((m: any) => {
