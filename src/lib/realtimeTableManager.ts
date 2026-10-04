@@ -1,5 +1,6 @@
 import { Card, ChatMessage } from '../types';
 import { getRegisteredCommunityPlayers } from './accountManager';
+import { getEffectiveChatWsUrl, getEffectiveChatHttpUrl } from './serv00Config';
 
 export interface RealtimeSeatPlayer {
   id: string; // phone or unique player id
@@ -114,9 +115,7 @@ let tableWs: WebSocket | null = null;
 let wsSubscribers = new Set<(event: RealtimeTableEvent) => void>();
 
 function getWsUrl(): string {
-  if (typeof window === 'undefined') return 'ws://localhost:3000/api/ws';
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${window.location.host}/api/ws`;
+  return getEffectiveChatWsUrl();
 }
 
 function ensureTableWsConnected() {
@@ -275,12 +274,24 @@ export function saveAndBroadcastChatMessage(msg: ChatMessage): void {
   } catch {}
   broadcastEvent({ type: 'CHAT_MESSAGE', message: msg });
 
-  // Post to server chat API
-  fetch('/api/chat/send', {
+  // Post to server chat API (Serv00 first, automatic Cloudflare Pages fallback if Serv00 offline)
+  const primaryUrl = getEffectiveChatHttpUrl('/api/chat/send');
+  fetch(primaryUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ roomId: currentRoomId, message: msg })
-  }).catch(() => {});
+    body: JSON.stringify({ roomId: currentRoomId, message: msg }),
+    signal: AbortSignal.timeout(3000)
+  }).catch(() => {
+    // If custom Serv00 node is offline, gracefully post to Cloudflare Pages Functions
+    if (primaryUrl !== '/api/chat/send') {
+      fetch('/api/chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: currentRoomId, message: msg }),
+        signal: AbortSignal.timeout(3000)
+      }).catch(() => {});
+    }
+  });
 }
 
 // Clear table chat messages
@@ -290,11 +301,17 @@ export function clearRealtimeChatMessages(): void {
   } catch {}
 }
 
-// Fetch remote chat history
+// Fetch remote chat history (Serv00 first, automatic Cloudflare Pages fallback if Serv00 offline)
 export async function fetchRemoteChatHistory(roomId = currentRoomId, currentUserId?: string): Promise<ChatMessage[]> {
+  const primaryUrl = getEffectiveChatHttpUrl(`/api/chat/history?roomId=${encodeURIComponent(roomId)}&limit=50`);
   try {
-    const res = await fetch(`/api/chat/history?roomId=${encodeURIComponent(roomId)}&limit=50`);
-    if (res.ok) {
+    let res = await fetch(primaryUrl, { signal: AbortSignal.timeout(3000) }).catch(() => null);
+    if (!res || !res.ok) {
+      if (primaryUrl !== `/api/chat/history?roomId=${encodeURIComponent(roomId)}&limit=50`) {
+        res = await fetch(`/api/chat/history?roomId=${encodeURIComponent(roomId)}&limit=50`, { signal: AbortSignal.timeout(3000) }).catch(() => null);
+      }
+    }
+    if (res && res.ok) {
       const data = await res.json();
       if (data.ok && Array.isArray(data.messages)) {
         const local = getRealtimeChatMessages();
@@ -445,7 +462,7 @@ export async function cleanStaleServerSeats(roomId = currentRoomId): Promise<num
   return 0;
 }
 
-// Fetch authoritative realtime table state for lobby seats display
+// Fetch authoritative realtime table state for lobby seats display (Handled 100% by Cloudflare Pages Functions)
 export async function fetchRealtimeRoomState(roomId = currentRoomId): Promise<RealtimeTableState | null> {
   try {
     const res = await fetch(`/api/table/state?roomId=${encodeURIComponent(roomId)}&_t=${Date.now()}`, {
@@ -1025,19 +1042,23 @@ export function subscribeRealtimeTable(
         }
       }
 
-      // Safeguard poll for chat messages
-      const chatRes = await fetch(
-        `/api/chat/poll?roomId=${encodeURIComponent(currentRoomId)}&userId=${encodeURIComponent(myId)}&since=${lastChatPollTime}&_t=${Date.now()}`,
-        { credentials: 'include' }
-      );
-      if (chatRes.ok) {
-        const chatData = await chatRes.json();
-        if (chatData.ok && Array.isArray(chatData.messages) && chatData.messages.length > 0) {
-          lastChatPollTime = Math.max(lastChatPollTime, ...chatData.messages.map((m: any) => m.timestamp));
-          chatData.messages.forEach((m: ChatMessage) => {
-            onEvent({ type: 'CHAT_MESSAGE', message: m });
-          });
+      // Safeguard poll for chat messages (Isolated to Serv00; errors never affect the table)
+      try {
+        const chatRes = await fetch(
+          getEffectiveChatHttpUrl(`/api/chat/poll?roomId=${encodeURIComponent(currentRoomId)}&userId=${encodeURIComponent(myId)}&since=${lastChatPollTime}&_t=${Date.now()}`),
+          { credentials: 'include', signal: AbortSignal.timeout(3500) }
+        );
+        if (chatRes.ok) {
+          const chatData = await chatRes.json();
+          if (chatData.ok && Array.isArray(chatData.messages) && chatData.messages.length > 0) {
+            lastChatPollTime = Math.max(lastChatPollTime, ...chatData.messages.map((m: any) => m.timestamp));
+            chatData.messages.forEach((m: ChatMessage) => {
+              onEvent({ type: 'CHAT_MESSAGE', message: m });
+            });
+          }
         }
+      } catch {
+        // Serv00 offline is completely safe - game runs 100% uninterrupted
       }
     } catch {}
   };

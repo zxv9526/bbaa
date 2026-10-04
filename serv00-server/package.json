@@ -1,0 +1,29 @@
+{
+  "name": "triple-voice-serv00-server",
+  "version": "1.0.0",
+  "description": "Real-time WebSocket & Voice/Chat Relay Server for Triple Card Arena on Serv00",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "pm2": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop ecosystem.config.cjs",
+    "pm2:restart": "pm2 restart ecosystem.config.cjs",
+    "pm2:logs": "pm2 logs triple-voice-chat"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "keywords": [
+    "serv00",
+    "websocket",
+    "webrtc",
+    "voice-chat",
+    "realtime-game"
+  ],
+  "author": "Triple Card Arena Team",
+  "license": "MIT"
+}

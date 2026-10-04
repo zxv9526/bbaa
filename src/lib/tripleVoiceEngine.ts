@@ -9,10 +9,12 @@ import {
   playRadioChirpStart,
   playRadioChirpEnd,
   speakTextMessage,
-  setRadioChirpSoundEnabled
+  setRadioChirpSoundEnabled,
+  playBoostedVoiceClip
 } from './chatManager';
 import { ChatMessage } from '../types';
 import { saveRealtimeTable, broadcastEvent } from './realtimeTableManager';
+import { getEffectiveChatWsUrl, getEffectiveChatHttpUrl } from './serv00Config';
 
 export type TransmissionTier = 'webrtc' | 'websocket' | 'http';
 export type TierPreference = 'auto' | 'webrtc' | 'websocket' | 'http';
@@ -111,6 +113,7 @@ export class TripleVoiceEngine {
 
   // Audio Context & Recording
   private localStream: MediaStream | null = null;
+  private processedStream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private gainNode: GainNode | null = null;
@@ -150,6 +153,17 @@ export class TripleVoiceEngine {
 
   constructor() {
     this.loadSettings();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('serv00_server_config_loaded', () => {
+        if (this.roomId && this.userId) {
+          if (this.ws) {
+            try { this.ws.close(); } catch {}
+            this.ws = null;
+          }
+          this.connectWebSocket();
+        }
+      });
+    }
   }
 
   private loadSettings() {
@@ -380,32 +394,74 @@ export class TripleVoiceEngine {
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
+          channelCount: { ideal: 1 },
+          sampleRate: { ideal: 48000 },
+          ...({ voiceIsolation: { ideal: true } } as any)
         }
       });
 
       this.isMicActive = true;
       this.isMuted = false;
 
-      // Attach audio track to all active WebRTC peer connections
-      this.attachLocalStreamToPeers();
-
-      // Initialize AudioContext & Analyser for VU Meter and VAD
+      // 🎛️ Studio Vocal DSP Processing Pipeline
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtxClass) {
         this.audioCtx = new AudioCtxClass();
         const source = this.audioCtx.createMediaStreamSource(this.localStream);
+
+        // 1. Highpass filter to eliminate sub-bass handling rumble & breath pops (<125Hz)
+        const highpass = this.audioCtx.createBiquadFilter();
+        highpass.type = 'highpass';
+        highpass.frequency.value = 125;
+        highpass.Q.value = 0.85;
+
+        // 2. Vocal intelligibility / clarity EQ (+5.5dB around 2800Hz)
+        const clarity = this.audioCtx.createBiquadFilter();
+        clarity.type = 'peaking';
+        clarity.frequency.value = 2800;
+        clarity.Q.value = 1.1;
+        clarity.gain.value = 5.5;
+
+        // 3. High-shelf filter to cut background hiss / static noise (>6200Hz)
+        const noiseCut = this.audioCtx.createBiquadFilter();
+        noiseCut.type = 'highshelf';
+        noiseCut.frequency.value = 6200;
+        noiseCut.gain.value = -7.5;
+
+        // 4. Studio compressor to level out speech volume & boost quiet words
+        const compressor = this.audioCtx.createDynamicsCompressor();
+        compressor.threshold.value = -32;
+        compressor.knee.value = 12;
+        compressor.ratio.value = 5.5;
+        compressor.attack.value = 0.002;
+        compressor.release.value = 0.18;
+
+        // 5. Clean High Gain Booster (4.5x ~ +13dB volume boost)
+        this.gainNode = this.audioCtx.createGain();
+        this.gainNode.gain.value = 4.5; // 🔊 450% Volume Boost
+
+        // 6. MediaStreamDestination for WebRTC & Chunk recording
+        const dest = this.audioCtx.createMediaStreamDestination();
+
+        source.connect(highpass);
+        highpass.connect(clarity);
+        clarity.connect(noiseCut);
+        noiseCut.connect(compressor);
+        compressor.connect(this.gainNode);
+        this.gainNode.connect(dest);
+
         this.analyser = this.audioCtx.createAnalyser();
         this.analyser.fftSize = 256;
-        
-        this.gainNode = this.audioCtx.createGain();
-        this.gainNode.gain.value = 2.0; // 🎤 Boost mic gain by 2x
-        
-        source.connect(this.gainNode);
         this.gainNode.connect(this.analyser);
         this.startVUMonitor();
+
+        this.processedStream = dest.stream;
+        this.attachLocalStreamToPeers();
+      } else {
+        this.attachLocalStreamToPeers();
       }
 
       this.notifyStats();
@@ -432,6 +488,11 @@ export class TripleVoiceEngine {
     if (this.localStream) {
       this.localStream.getTracks().forEach(t => t.stop());
       this.localStream = null;
+    }
+
+    if (this.processedStream) {
+      this.processedStream.getTracks().forEach(t => t.stop());
+      this.processedStream = null;
     }
 
     if (this.audioCtx && this.audioCtx.state !== 'closed') {
@@ -730,16 +791,27 @@ export class TripleVoiceEngine {
       });
     }
 
-    // 3. Guarantee via HTTP backend
+    // 3. Guarantee via HTTP backend (Serv00 first, auto Cloudflare Pages fallback)
     try {
-      fetch('/api/chat/send', {
+      const primaryUrl = getEffectiveChatHttpUrl('/api/chat/send');
+      fetch(primaryUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           roomId: this.roomId,
           message: msg
-        })
-      }).catch(() => {});
+        }),
+        signal: AbortSignal.timeout(3000)
+      }).catch(() => {
+        if (primaryUrl !== '/api/chat/send') {
+          fetch('/api/chat/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ roomId: this.roomId, message: msg }),
+            signal: AbortSignal.timeout(3000)
+          }).catch(() => {});
+        }
+      });
     } catch {}
 
     this.notifyStats();
@@ -949,8 +1021,7 @@ export class TripleVoiceEngine {
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/ws`;
+    const wsUrl = getEffectiveChatWsUrl();
 
     try {
       this.ws = new WebSocket(wsUrl);
@@ -1225,7 +1296,7 @@ export class TripleVoiceEngine {
         // Poll for pending WebRTC signals
         try {
           const sigRes = await fetch(
-            `/api/voice/signal/poll?roomId=${encodeURIComponent(this.roomId)}&userId=${encodeURIComponent(this.userId)}&since=${this.lastPollTimestamp - 5000}`
+            getEffectiveChatHttpUrl(`/api/voice/signal/poll?roomId=${encodeURIComponent(this.roomId)}&userId=${encodeURIComponent(this.userId)}&since=${this.lastPollTimestamp - 5000}`)
           );
           if (sigRes.ok) {
             const sigData = await sigRes.json();
@@ -1240,7 +1311,7 @@ export class TripleVoiceEngine {
         // Poll for real-time chat messages (Tier 3 HTTP fallback)
         try {
           const chatRes = await fetch(
-            `/api/chat/poll?roomId=${encodeURIComponent(this.roomId)}&userId=${encodeURIComponent(this.userId)}&since=${this.lastPollTimestamp - 5000}`
+            getEffectiveChatHttpUrl(`/api/chat/poll?roomId=${encodeURIComponent(this.roomId)}&userId=${encodeURIComponent(this.userId)}&since=${this.lastPollTimestamp - 5000}`)
           );
           if (chatRes.ok) {
             const chatData = await chatRes.json();
@@ -1261,7 +1332,7 @@ export class TripleVoiceEngine {
 
   private async sendViaHttpFallback(payload: any) {
     try {
-      await fetch('/api/voice/send', {
+      await fetch(getEffectiveChatHttpUrl('/api/voice/send'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1398,9 +1469,10 @@ export class TripleVoiceEngine {
     if (this.isDeafened) return;
     if (!this.autoPlayVoice) return;
     try {
-      const audio = new Audio(audioSrc);
-      audio.volume = Math.max(0, Math.min(1, this.outputVolume));
-      audio.play().catch(() => {});
+      playBoostedVoiceClip(audioSrc, {
+        volume: this.outputVolume,
+        boostFactor: 1.8
+      });
     } catch {}
   }
 

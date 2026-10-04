@@ -36,7 +36,9 @@ import {
   CHAT_EMOJIS,
   VoiceRecorder,
   speakTextMessage,
-  previewPhraseVoice
+  previewPhraseVoice,
+  playBoostedVoiceClip,
+  BoostedAudioHandle
 } from '../lib/chatManager';
 import {
   TtsBroadcastEngine,
@@ -198,7 +200,7 @@ export function ChatDrawer({
 
   // Audio Playback State
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
-  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const audioPlayerRef = useRef<BoostedAudioHandle | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -223,7 +225,7 @@ export function ChatDrawer({
         voiceRecorderRef.current = null;
       }
       if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
+        audioPlayerRef.current.stop();
         audioPlayerRef.current = null;
       }
     };
@@ -378,7 +380,7 @@ export function ChatDrawer({
     setRecordSeconds(0);
   };
 
-  // 5. Voice Audio Playback with Master Volume & Deafen Check
+  // 5. Voice Audio Playback with Master Volume, Deafen Check & Gain Booster
   const handlePlayVoice = (msg: ChatMessage) => {
     if (!msg.audioUrl) return;
 
@@ -386,33 +388,35 @@ export function ChatDrawer({
     setPlayedVoiceIds(prev => new Set(prev).add(msg.id));
 
     if (playingAudioId === msg.id && audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
+      audioPlayerRef.current.stop();
+      audioPlayerRef.current = null;
       setPlayingAudioId(null);
       return;
     }
 
     if (audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
+      audioPlayerRef.current.stop();
+      audioPlayerRef.current = null;
     }
 
-    const audio = new Audio(msg.audioUrl);
-    // Adjust volume according to earpiece vs speaker mode
     const baseVol = engine.isUserDeafened() ? 0 : engine.getOutputVolume();
-    audio.volume = audioMode === 'earpiece' ? Math.min(0.4, baseVol * 0.5) : baseVol;
-    audio.playbackRate = playbackSpeed;
-    audioPlayerRef.current = audio;
+    const effectiveVol = audioMode === 'earpiece' ? Math.min(0.4, baseVol * 0.5) : baseVol;
+    const boostFactor = audioMode === 'earpiece' ? 1.0 : 1.8; // 180% volume boost on speaker
+
     setPlayingAudioId(msg.id);
 
-    audio.onended = () => {
-      setPlayingAudioId(null);
-    };
-    audio.onerror = () => {
-      setPlayingAudioId(null);
-    };
-
-    audio.play().catch((err) => {
-      console.warn('Playback error:', err);
-      setPlayingAudioId(null);
+    audioPlayerRef.current = playBoostedVoiceClip(msg.audioUrl, {
+      volume: effectiveVol,
+      boostFactor,
+      playbackRate: playbackSpeed,
+      onEnded: () => {
+        setPlayingAudioId(null);
+        audioPlayerRef.current = null;
+      },
+      onError: () => {
+        setPlayingAudioId(null);
+        audioPlayerRef.current = null;
+      }
     });
   };
 

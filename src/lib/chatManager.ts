@@ -137,12 +137,12 @@ export function createSimulatedVoiceAudioBlob(durationSec: number = 2, pitchFreq
 
     for (let i = 0; i < totalSamples; i++) {
       const t = i / sampleRate;
-      // Synthesize walkie-talkie / voice radio wave harmonics
+      // Synthesize walkie-talkie / voice radio wave harmonics with crisp high amplitude
       const mainFreq = pitchFreq + Math.sin(t * 18) * 50;
       const subFreq = mainFreq * 1.5;
       const envelope = Math.sin((i / totalSamples) * Math.PI);
-      const voiceWave = Math.sin(2 * Math.PI * mainFreq * t) * 0.6 + Math.sin(2 * Math.PI * subFreq * t) * 0.3;
-      data[i] = voiceWave * envelope * 0.4;
+      const voiceWave = Math.sin(2 * Math.PI * mainFreq * t) * 0.7 + Math.sin(2 * Math.PI * subFreq * t) * 0.3;
+      data[i] = voiceWave * envelope * 0.85; // 🔊 Enhanced loudness & clarity
     }
 
     // Convert Float32Array to WAV Buffer and Base64 Data URL
@@ -313,6 +313,100 @@ export function playIncomingRadioBeep() {
 }
 
 /**
+ * High-Gain Voice Clip Audio Player with Presence Filter & Volume Booster
+ * Amplifies voice playback up to 180%-200% so quiet voices sound loud & crystal clear!
+ */
+export interface BoostedAudioHandle {
+  stop: () => void;
+}
+
+export function playBoostedVoiceClip(
+  audioUrl: string,
+  options?: {
+    volume?: number;
+    boostFactor?: number;
+    playbackRate?: number;
+    onEnded?: () => void;
+    onError?: () => void;
+  }
+): BoostedAudioHandle {
+  const vol = typeof options?.volume === 'number' ? options.volume : 1.0;
+  const boost = typeof options?.boostFactor === 'number' ? options.boostFactor : 1.8;
+  const rate = options?.playbackRate || 1.0;
+
+  if (!audioUrl) {
+    if (options?.onError) options.onError();
+    return { stop: () => {} };
+  }
+
+  const ctx = getSharedAudioContext();
+  let stopped = false;
+  let sourceNode: AudioBufferSourceNode | null = null;
+  let htmlAudio: HTMLAudioElement | null = null;
+
+  if (ctx && (audioUrl.startsWith('data:') || audioUrl.startsWith('blob:'))) {
+    fetch(audioUrl)
+      .then(res => res.arrayBuffer())
+      .then(ab => ctx.decodeAudioData(ab))
+      .then(decoded => {
+        if (stopped) return;
+        sourceNode = ctx.createBufferSource();
+        sourceNode.buffer = decoded;
+        sourceNode.playbackRate.value = rate;
+
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = Math.max(0, vol * boost);
+
+        // Vocal presence filter on playback to enhance phone speaker audibility
+        const presence = ctx.createBiquadFilter();
+        presence.type = 'peaking';
+        presence.frequency.value = 2400;
+        presence.gain.value = 3.0;
+
+        sourceNode.connect(presence);
+        presence.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        sourceNode.onended = () => {
+          if (!stopped && options?.onEnded) options.onEnded();
+        };
+
+        sourceNode.start();
+      })
+      .catch(() => {
+        if (stopped) return;
+        htmlAudio = new Audio(audioUrl);
+        htmlAudio.volume = Math.max(0, Math.min(1.0, vol));
+        htmlAudio.playbackRate = rate;
+        htmlAudio.onended = () => { if (!stopped && options?.onEnded) options.onEnded(); };
+        htmlAudio.onerror = () => { if (!stopped && options?.onError) options.onError(); };
+        htmlAudio.play().catch(() => { if (!stopped && options?.onError) options.onError(); });
+      });
+  } else {
+    htmlAudio = new Audio(audioUrl);
+    htmlAudio.volume = Math.max(0, Math.min(1.0, vol));
+    htmlAudio.playbackRate = rate;
+    htmlAudio.onended = () => { if (!stopped && options?.onEnded) options.onEnded(); };
+    htmlAudio.onerror = () => { if (!stopped && options?.onError) options.onError(); };
+    htmlAudio.play().catch(() => { if (!stopped && options?.onError) options.onError(); });
+  }
+
+  return {
+    stop: () => {
+      stopped = true;
+      if (sourceNode) {
+        try { sourceNode.stop(); } catch {}
+        sourceNode = null;
+      }
+      if (htmlAudio) {
+        try { htmlAudio.pause(); } catch {}
+        htmlAudio = null;
+      }
+    }
+  };
+}
+
+/**
  * 🎙️ 常用语与对局语音播报系统 (调用专业级 TtsBroadcastEngine)
  */
 export function speakTextMessage(text: string, options?: { overrideRole?: TtsVoiceRole; isLocalPreview?: boolean; onEnd?: () => void }) {
@@ -362,25 +456,76 @@ export class VoiceRecorder {
       try {
         this.stream = await navigator.mediaDevices.getUserMedia({
           audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
+            echoCancellation: { ideal: true },
+            noiseSuppression: { ideal: true },
+            autoGainControl: { ideal: true },
+            channelCount: { ideal: 1 },
+            sampleRate: { ideal: 48000 },
+            // Modern WebKit / Safari Voice Isolation Hint
+            ...({ voiceIsolation: { ideal: true } } as any)
           }
         });
 
-        // Initialize AudioContext Analyser for real-time VU meter
+        let recordingStream = this.stream;
+
+        // 🎛️ Studio Vocal DSP Processing Pipeline (Noise Reduction + Highpass + Presence EQ + Compressor + High Gain Booster)
         try {
           const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
           if (AudioContextClass) {
             this.audioCtx = new AudioContextClass();
             const source = this.audioCtx.createMediaStreamSource(this.stream);
+
+            // 1. Highpass filter to eliminate sub-bass handling rumble & breath pops (<125Hz)
+            const highpass = this.audioCtx.createBiquadFilter();
+            highpass.type = 'highpass';
+            highpass.frequency.value = 125;
+            highpass.Q.value = 0.85;
+
+            // 2. Vocal intelligibility / clarity EQ (+5.5dB around 2800Hz)
+            const clarity = this.audioCtx.createBiquadFilter();
+            clarity.type = 'peaking';
+            clarity.frequency.value = 2800;
+            clarity.Q.value = 1.1;
+            clarity.gain.value = 5.5;
+
+            // 3. High-shelf filter to cut background hiss / static noise (>6200Hz)
+            const noiseCut = this.audioCtx.createBiquadFilter();
+            noiseCut.type = 'highshelf';
+            noiseCut.frequency.value = 6200;
+            noiseCut.gain.value = -7.5;
+
+            // 4. Studio compressor to level out speech volume & boost quiet words
+            const compressor = this.audioCtx.createDynamicsCompressor();
+            compressor.threshold.value = -32;
+            compressor.knee.value = 12;
+            compressor.ratio.value = 5.5;
+            compressor.attack.value = 0.002;
+            compressor.release.value = 0.18;
+
+            // 5. Clean High Gain Booster (4.5x ~ +13dB volume boost for crystal clear voice)
+            const gainNode = this.audioCtx.createGain();
+            gainNode.gain.value = 4.5; // 🔊 450% Volume Boost
+
+            // 6. MediaStreamDestination for studio-quality MediaRecorder
+            const dest = this.audioCtx.createMediaStreamDestination();
+
+            source.connect(highpass);
+            highpass.connect(clarity);
+            clarity.connect(noiseCut);
+            noiseCut.connect(compressor);
+            compressor.connect(gainNode);
+            gainNode.connect(dest);
+
+            // Analyser for VU Meter
             this.analyser = this.audioCtx.createAnalyser();
             this.analyser.fftSize = 256;
-            source.connect(this.analyser);
+            gainNode.connect(this.analyser);
             this.monitorVolume();
+
+            recordingStream = dest.stream;
           }
         } catch (e) {
-          console.warn('Volume meter initialization note:', e);
+          console.warn('Audio DSP setup note:', e);
         }
 
         let mimeType: string | undefined = undefined;
@@ -396,7 +541,7 @@ export class VoiceRecorder {
           }
         }
 
-        this.mediaRecorder = mimeType ? new MediaRecorder(this.stream, { mimeType }) : new MediaRecorder(this.stream);
+        this.mediaRecorder = mimeType ? new MediaRecorder(recordingStream, { mimeType, audioBitsPerSecond: 128000 }) : new MediaRecorder(recordingStream);
         this.mediaRecorder.ondataavailable = (event) => {
           if (event.data && event.data.size > 0) {
             this.audioChunks.push(event.data);
@@ -567,6 +712,7 @@ export class VoiceRecorder {
  */
 export class OpenMicListener {
   private stream: MediaStream | null = null;
+  private recordingStream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private animFrameId: number | null = null;
@@ -589,19 +735,63 @@ export class OpenMicListener {
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
+          channelCount: { ideal: 1 },
+          sampleRate: { ideal: 48000 },
+          ...({ voiceIsolation: { ideal: true } } as any)
         }
       });
+
+      this.recordingStream = this.stream;
 
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioContextClass) {
         this.audioCtx = new AudioContextClass();
         const source = this.audioCtx.createMediaStreamSource(this.stream);
+
+        // DSP Chain: Highpass + Peaking clarity + Noise cutoff + Compressor + High Gain booster
+        const highpass = this.audioCtx.createBiquadFilter();
+        highpass.type = 'highpass';
+        highpass.frequency.value = 125;
+        highpass.Q.value = 0.85;
+
+        const clarity = this.audioCtx.createBiquadFilter();
+        clarity.type = 'peaking';
+        clarity.frequency.value = 2800;
+        clarity.Q.value = 1.1;
+        clarity.gain.value = 5.5;
+
+        const noiseCut = this.audioCtx.createBiquadFilter();
+        noiseCut.type = 'highshelf';
+        noiseCut.frequency.value = 6200;
+        noiseCut.gain.value = -7.5;
+
+        const compressor = this.audioCtx.createDynamicsCompressor();
+        compressor.threshold.value = -32;
+        compressor.knee.value = 12;
+        compressor.ratio.value = 5.5;
+        compressor.attack.value = 0.002;
+        compressor.release.value = 0.18;
+
+        const gainNode = this.audioCtx.createGain();
+        gainNode.gain.value = 4.5;
+
+        const dest = this.audioCtx.createMediaStreamDestination();
+
+        source.connect(highpass);
+        highpass.connect(clarity);
+        clarity.connect(noiseCut);
+        noiseCut.connect(compressor);
+        compressor.connect(gainNode);
+        gainNode.connect(dest);
+
         this.analyser = this.audioCtx.createAnalyser();
         this.analyser.fftSize = 256;
-        source.connect(this.analyser);
+        gainNode.connect(this.analyser);
+
+        this.recordingStream = dest.stream;
         this.loop();
       }
       return true;
@@ -671,7 +861,8 @@ export class OpenMicListener {
   }
 
   private startSnippetRecord() {
-    if (!this.stream) return;
+    const activeStream = this.recordingStream || this.stream;
+    if (!activeStream) return;
     this.recordedChunks = [];
     this.recordingStartTime = Date.now();
     try {
@@ -679,7 +870,7 @@ export class OpenMicListener {
       if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
         mimeType = 'audio/webm;codecs=opus';
       }
-      this.mediaRecorder = new MediaRecorder(this.stream, { mimeType });
+      this.mediaRecorder = new MediaRecorder(activeStream, { mimeType, audioBitsPerSecond: 128000 });
       this.mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) this.recordedChunks.push(e.data);
       };

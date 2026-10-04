@@ -222,6 +222,39 @@ app.post("/api/history", (req, res) => {
   res.json({ ok: true, saved: true });
 });
 
+// Dynamic configuration endpoint (returns Cloudflare/Node environment configured chat server)
+app.get("/api/config", (req, res) => {
+  const rawServer = process.env.SERV00_SERVER_URL || process.env.VITE_SERV00_SERVER_URL || '';
+  const rawWs = process.env.SERV00_CHAT_WS_URL || process.env.VITE_SERV00_CHAT_WS_URL || '';
+  const rawHttp = process.env.SERV00_CHAT_HTTP_URL || process.env.VITE_SERV00_CHAT_HTTP_URL || '';
+
+  let wsUrl = rawWs.trim();
+  let httpUrl = rawHttp.trim().replace(/\/+$/, '');
+
+  if (rawServer && rawServer.trim()) {
+    const cleanServer = rawServer.trim().replace(/\/+$/, '');
+    if (!httpUrl) httpUrl = cleanServer;
+    if (!wsUrl) {
+      if (cleanServer.startsWith('https://')) {
+        wsUrl = cleanServer.replace(/^https:\/\//, 'wss://') + '/api/ws';
+      } else if (cleanServer.startsWith('http://')) {
+        wsUrl = cleanServer.replace(/^http:\/\//, 'ws://') + '/api/ws';
+      } else {
+        wsUrl = 'ws://' + cleanServer + '/api/ws';
+      }
+    }
+  }
+
+  const hasServ00 = Boolean(wsUrl || httpUrl);
+  res.json({
+    ok: true,
+    hasServ00,
+    wsUrl,
+    httpUrl,
+    serverType: hasServ00 ? 'serv00' : 'default'
+  });
+});
+
 // -------------------------------------------------------------
 // Real-time Table & Room Management Endpoints (Server Authoritative)
 // -------------------------------------------------------------

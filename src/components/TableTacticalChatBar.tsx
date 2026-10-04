@@ -1010,22 +1010,28 @@ export function TableTacticalChatBar({
             {ttsEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
           </button>
 
-          {/* Voice Diagnostics & Link Status Button */}
+          {/* Audio Settings & Diagnostics Button */}
           <button
             onClick={() => setShowDiagnosticsModal(true)}
-            className="h-9 w-8 sm:w-auto sm:px-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-emerald-300 text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 shrink-0"
-            title="查看三重语音链路状态 (P2P / WebSocket / HTTP)"
+            className="h-9 px-2 sm:px-2.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-emerald-300 text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 shrink-0 shadow-sm"
+            title={
+              voiceStats.wsConnected
+                ? '语音对讲正常运行 (点击打开音效与麦克风设置)'
+                : '对讲重连中 (对局正常运行，点击打开音效设置)'
+            }
           >
             <span
               className={`w-2 h-2 rounded-full ${
                 voiceStats.activeTier === 'webrtc'
                   ? 'bg-emerald-400 animate-pulse'
-                  : voiceStats.activeTier === 'websocket'
+                  : voiceStats.wsConnected
                   ? 'bg-blue-400 animate-pulse'
                   : 'bg-amber-400'
               }`}
             />
-            <span className="hidden lg:inline text-[10px]">{voiceStats.latencyMs}ms</span>
+            <span className="hidden sm:inline text-[11px] font-mono">
+              {voiceStats.activeTier === 'webrtc' ? 'P2P' : voiceStats.wsConnected ? '对讲' : '重连中'}
+            </span>
           </button>
 
           {/* Full Chat Drawer Trigger */}
