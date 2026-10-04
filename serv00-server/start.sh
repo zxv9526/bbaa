@@ -40,7 +40,7 @@ fi
 
 echo ""
 echo "🎉 部署完成！"
-echo "👉 请在游戏设置 / 前端配置中填入你的 Serv00 节点地址，例如:"
-echo "   http://你的用户名.serv00.net:$PORT"
-echo "   或 (若开启SSL) https://你的域名:$PORT"
+echo "👉 当前运行端点:"
+echo "   http://0.0.0.0:$PORT"
+echo "   已与 Cloudflare Pages 前端实现全自动无缝连接！"
 echo "=========================================================="

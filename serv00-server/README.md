@@ -77,11 +77,26 @@ npm run pm2:logs
 
 ---
 
+## ⏰ 设置开机自启与每10分钟自动保活巡检 (防止服务器重启后服务中断)
+
+在 Serv00 终端中运行以下**单行命令**即可一键安装定时保活与开机自启任务：
+
+```bash
+(crontab -l 2>/dev/null; echo "@reboot cd ~/bbaa-game/serv00-server && ./start.sh 20888"; echo "*/10 * * * * cd ~/bbaa-game/serv00-server && ./keepalive.sh 20888 >/dev/null 2>&1") | crontab -
+```
+
+> **原理说明**：
+> - `@reboot`：当 Serv00 物理机重启或维护恢复时，系统自动启动对讲服务。
+> - `*/10 * * * *`：每 10 分钟自动检测一次服务是否正常，若被杀掉会自动重新拉起。
+
+---
+
 ## 🛠 常用维护命令
 
 | 操作 | 命令 |
 | :--- | :--- |
-| **查看实时日志** | `tail -f ~/triple-game/serv00-server/server.log` 或 `pm2 logs` |
-| **重启对讲服务** | `cd ~/triple-game/serv00-server && ./start.sh 你的端口` |
-| **健康检查测试** | `curl http://127.0.0.1:你的端口/health` |
-| **拉取 GitHub 最新代码并重启** | `git pull && ./start.sh 你的端口` |
+| **查看实时日志** | `tail -f ~/bbaa-game/serv00-server/server.log` 或 `pm2 logs` |
+| **重启对讲服务** | `cd ~/bbaa-game/serv00-server && ./start.sh 20888` |
+| **健康检查测试** | `curl http://127.0.0.1:20888/health` |
+| **查看定时任务** | `crontab -l` |
+| **拉取 GitHub 最新代码并重启** | `git pull && ./start.sh 20888` |
