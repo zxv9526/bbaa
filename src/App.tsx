@@ -81,6 +81,7 @@ import {
   Crown,
   Coins,
   Radio,
+  Bot,
   Shield,
   ShieldAlert,
   KeyRound,
@@ -200,6 +201,11 @@ export default function App() {
   const [carriageSubmissions, setCarriageSubmissions] = useState<{ [seatIndex: number]: CarriageSubmission }>({});
   const [showCarriageHubModal, setShowCarriageHubModal] = useState<boolean>(false);
   const [carriageToast, setCarriageToast] = useState<{ show: boolean; msg: string; pts: number } | null>(null);
+
+  // 🤖 智能托管自动理牌提交状态
+  const [isAutoHosting, setIsAutoHosting] = useState<boolean>(false);
+  const [autoHostCountdown, setAutoHostCountdown] = useState<number | null>(null);
+  const autoHostTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Audio mute state
   const [isMuted, setIsMuted] = useState(false);
@@ -652,6 +658,117 @@ export default function App() {
       }
     };
   }, [mode, realtimeUserId, showChatDrawer, ttsEnabled]);
+
+  // 🤖 智能托管模式切换
+  const handleToggleAutoHost = () => {
+    const next = !isAutoHosting;
+    setIsAutoHosting(next);
+    triggerHaptic(next ? 'success' : 'light');
+    if (next) {
+      sounds.playSwap();
+      setCarriageToast({
+        show: true,
+        msg: '🤖 智能托管已开启！系统将自动理牌并极速提交对局',
+        pts: 0
+      });
+      setTimeout(() => setCarriageToast(null), 2500);
+    } else {
+      if (autoHostTimerRef.current) {
+        clearInterval(autoHostTimerRef.current);
+        autoHostTimerRef.current = null;
+      }
+      setAutoHostCountdown(null);
+      setCarriageToast({
+        show: true,
+        msg: '✋ 托管已取消，已恢复手动理牌模式',
+        pts: 0
+      });
+      setTimeout(() => setCarriageToast(null), 2000);
+    }
+  };
+
+  // 🤖 智能托管自动理牌提交控制器 (10局自动连战托管)
+  useEffect(() => {
+    if (gameState !== 'arranging' || !isAutoHosting) {
+      if (autoHostTimerRef.current) {
+        clearInterval(autoHostTimerRef.current);
+        autoHostTimerRef.current = null;
+      }
+      setAutoHostCountdown(null);
+      return;
+    }
+
+    // 1. 自动计算并应用最佳合法理牌方案 (优先特殊牌型，其次智能最高分方案)
+    let chosenArrangement: PlayerArrangement | null = null;
+    if (specialHand) {
+      setUseSpecialHand(true);
+      chosenArrangement = {
+        front: [],
+        middle: [],
+        back: [],
+        specialHand,
+        isValid: true,
+        isDaoShui: false
+      };
+    } else if (suggestions && suggestions.length > 0) {
+      const best = suggestions[0];
+      setFront(best.front);
+      setMid(best.middle);
+      setBack(best.back);
+      setPool([]);
+      setSelectedCardIds([]);
+      setErrorMsg('');
+      setUseSpecialHand(false);
+      chosenArrangement = {
+        front: best.front,
+        middle: best.middle,
+        back: best.back,
+        isValid: true,
+        isDaoShui: false
+      };
+    } else if (originalHand.length === 13) {
+      const autoArr = aiArrangeCards(originalHand);
+      setFront(autoArr.front);
+      setMid(autoArr.middle);
+      setBack(autoArr.back);
+      setPool([]);
+      setSelectedCardIds([]);
+      chosenArrangement = autoArr;
+    }
+
+    if (!chosenArrangement) return;
+
+    // 2. 启动 1.5 秒自动提交倒计时
+    let timeLeft = 2;
+    setAutoHostCountdown(timeLeft);
+    if (autoHostTimerRef.current) {
+      clearInterval(autoHostTimerRef.current);
+    }
+
+    autoHostTimerRef.current = setInterval(() => {
+      timeLeft -= 1;
+      if (timeLeft <= 0) {
+        if (autoHostTimerRef.current) {
+          clearInterval(autoHostTimerRef.current);
+          autoHostTimerRef.current = null;
+        }
+        setAutoHostCountdown(null);
+        // 自动极速提交并进入下一局
+        if (chosenArrangement) {
+          settleMatch(chosenArrangement, 'quick_next');
+        }
+      } else {
+        setAutoHostCountdown(timeLeft);
+      }
+    }, 1000);
+
+    return () => {
+      if (autoHostTimerRef.current) {
+        clearInterval(autoHostTimerRef.current);
+        autoHostTimerRef.current = null;
+      }
+    };
+  }, [gameState, isAutoHosting, originalHand, carriageIndex, specialHand]);
 
   const refreshPlayerStats = async (name: string) => {
     try {
@@ -2464,7 +2581,44 @@ export default function App() {
               players={playersInMatch}
               barrageEnabled={barrageEnabled}
               onToggleBarrage={() => setBarrageEnabled(b => !b)}
+              isAutoHosting={isAutoHosting}
+              onToggleAutoHost={handleToggleAutoHost}
             />
+
+            {/* 🤖 Auto-Host Active HUD Banner */}
+            {isAutoHosting && (
+              <div className="w-full px-3 py-1.5 bg-gradient-to-r from-amber-950 via-slate-900 to-amber-950 border-2 border-amber-400 rounded-2xl flex items-center justify-between gap-2 shadow-lg shadow-amber-950/70 animate-in fade-in shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-6 h-6 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-black animate-bounce shrink-0 text-xs">
+                    🤖
+                  </div>
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="text-xs font-black text-amber-300 whitespace-nowrap">
+                      智能托管运行中
+                    </span>
+                    <span className="text-[11px] text-slate-200 truncate">
+                      {autoHostCountdown !== null ? `将在 ${autoHostCountdown} 秒后自动极速提交...` : '已选定最优合法牌型...'}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => {
+                      handleSubmitArrangement();
+                    }}
+                    className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow transition active:scale-95 cursor-pointer"
+                  >
+                    立即提交
+                  </button>
+                  <button
+                    onClick={handleToggleAutoHost}
+                    className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 hover:text-white font-bold text-xs border border-slate-700 transition active:scale-95 cursor-pointer"
+                  >
+                    取消托管
+                  </button>
+                </div>
+              </div>
+            )}
 
 
             {/* Special Hand Alert Banner (Compact) */}
@@ -2738,6 +2892,21 @@ export default function App() {
                     <span>变换牌型</span>
                   </button>
                 )}
+
+                {/* 🤖 智能托管按钮 */}
+                <button
+                  id="btn-toggle-auto-host"
+                  onClick={handleToggleAutoHost}
+                  className={`h-11 sm:h-12 px-3 sm:px-4 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-lg transition active:scale-95 cursor-pointer shrink-0 ${
+                    isAutoHosting
+                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-amber-500/50 animate-pulse'
+                      : 'bg-slate-850 hover:bg-slate-800 border-2 border-slate-700 text-slate-300 hover:text-white'
+                  }`}
+                  title={isAutoHosting ? '点击取消自动托管理牌' : '开启智能托管：自动计算最佳合法方案并自动提交连战'}
+                >
+                  <Bot className={`w-4 h-4 ${isAutoHosting ? 'text-slate-950' : 'text-amber-400'}`} />
+                  <span>{isAutoHosting ? '取消托管' : '一键托管'}</span>
+                </button>
 
                 <button
                   id="btn-submit-arrangement"

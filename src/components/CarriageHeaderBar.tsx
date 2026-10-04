@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, ChevronRight, Users, Coins, ArrowLeft, MessageSquare, Mic, VolumeX, Radio } from 'lucide-react';
+import { Sparkles, ChevronRight, Users, Coins, ArrowLeft, MessageSquare, Mic, VolumeX, Radio, Bot, Zap } from 'lucide-react';
 import { CarriagePoolStats, CarriageSubmission } from '../lib/carriageManager';
 import { ChatMessage } from '../types';
 
@@ -21,6 +21,8 @@ interface CarriageHeaderBarProps {
   players?: { id: string; name: string; avatar: string; isAi: boolean }[];
   barrageEnabled?: boolean;
   onToggleBarrage?: () => void;
+  isAutoHosting?: boolean;
+  onToggleAutoHost?: () => void;
 }
 
 export function CarriageHeaderBar({
@@ -40,7 +42,9 @@ export function CarriageHeaderBar({
   onExit,
   players = [],
   barrageEnabled = true,
-  onToggleBarrage
+  onToggleBarrage,
+  isAutoHosting = false,
+  onToggleAutoHost
 }: CarriageHeaderBarProps) {
   const totalSeats = 8;
   const isReservation = mode === 'reservation';
@@ -137,6 +141,27 @@ export function CarriageHeaderBar({
               {points.toLocaleString()}
             </span>
           </div>
+
+          {/* 🤖 托管按钮 */}
+          {onToggleAutoHost && (
+            <button
+              onClick={onToggleAutoHost}
+              className={`px-2 sm:px-2.5 py-1 rounded-xl text-xs font-black transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-sm ${
+                isAutoHosting
+                  ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-300 shadow-amber-500/40 animate-pulse'
+                  : 'bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700'
+              }`}
+              title={isAutoHosting ? '点击取消自动托管理牌' : '开启智能托管：自动计算最佳合法方案并极速提交'}
+            >
+              <Bot className={`w-3.5 h-3.5 ${isAutoHosting ? 'text-slate-950' : 'text-amber-400'}`} />
+              <span className="hidden min-[380px]:inline">{isAutoHosting ? '托管中' : '托管'}</span>
+              <span className={`text-[9px] px-1 py-0.2 rounded font-mono ${
+                isAutoHosting ? 'bg-slate-950 text-amber-300' : 'bg-slate-900 text-slate-400'
+              }`}>
+                {isAutoHosting ? '开' : '关'}
+              </span>
+            </button>
+          )}
 
           {mode === 'realtime' && (
             <>
