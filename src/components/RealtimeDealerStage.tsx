@@ -83,13 +83,35 @@ export function RealtimeDealerStage({
   unreadCount = 0,
   activeSpeakerId: externalSpeakerId
 }: RealtimeDealerStageProps) {
-  const seatedCount = players.length;
-  const currentDealer = players[dealerIndex] || players[0];
   const tabId = getTabSessionId();
-  const mySeat = players.find(p => p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId));
+
+  // 🛡️ Defensive Guarantee: Since this player has entered RealtimeDealerStage,
+  // ensure effectivePlayers ALWAYS includes at least the current player!
+  const effectivePlayers = React.useMemo(() => {
+    const list = Array.isArray(players) ? players.filter(p => !p.isAi) : [];
+    const hasMe = list.some(p => p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId));
+    if (hasMe && list.length > 0) {
+      return list;
+    }
+    const myFallback: RealtimeSeatPlayer = {
+      id: currentUserId,
+      tabSessionId: tabId,
+      name: '我 (1号位)',
+      avatar: '😎',
+      isAi: false,
+      score: 0,
+      seatIndex: 0,
+      seatNumber: 1
+    };
+    return list.length === 0 ? [myFallback] : [myFallback, ...list];
+  }, [players, currentUserId, tabId]);
+
+  const seatedCount = effectivePlayers.length;
+  const currentDealer = effectivePlayers[dealerIndex] || effectivePlayers[0];
+  const mySeat = effectivePlayers.find(p => p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId));
   const mySeatIndex = mySeat && typeof mySeat.seatIndex === 'number'
     ? mySeat.seatIndex
-    : players.findIndex(p => p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId));
+    : effectivePlayers.findIndex(p => p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId));
   const isHumanDealer = Boolean(currentDealer && mySeatIndex !== -1 && dealerIndex === mySeatIndex);
 
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
@@ -128,7 +150,7 @@ export function RealtimeDealerStage({
     }
   }, [latestMessage]);
 
-  // 高频防僵尸心跳 (每 1.0 秒向服务器发送存活凭证，2.5秒无心跳服务器自动秒杀离线座位)
+  // 高频防僵尸心跳 (每 1.5 秒向服务器发送存活凭证)
   useEffect(() => {
     const devId = getOrCreateDeviceId();
     const sendHeartbeat = () => {
@@ -138,48 +160,36 @@ export function RealtimeDealerStage({
       }).catch(() => {});
     };
     sendHeartbeat();
-    const interval = setInterval(sendHeartbeat, 1000);
+    const interval = setInterval(sendHeartbeat, 1500);
     return () => clearInterval(interval);
   }, [roomId, currentUserId, tabId]);
 
-  // 手机切后台、锁屏、关闭页面时瞬间发出解绑请求 (sendBeacon 机制)
+  // 页面关闭时发出解绑请求 (sendBeacon 机制，仅在真正关闭页面时触发)
   useEffect(() => {
-    const handleUnloadOrHide = () => {
-      if (document.visibilityState === 'hidden') {
-        const payload = JSON.stringify({
-          roomId,
-          playerId: currentUserId,
-          tabSessionId: tabId
-        });
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon('/api/table/leave', new Blob([payload], { type: 'application/json' }));
-        } else {
-          fetch('/api/table/leave', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: payload,
-            keepalive: true
-          }).catch(() => {});
-        }
+    const handleUnload = () => {
+      const payload = JSON.stringify({
+        roomId,
+        playerId: currentUserId,
+        tabSessionId: tabId
+      });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/table/leave', new Blob([payload], { type: 'application/json' }));
+      } else {
+        fetch('/api/table/leave', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
       }
     };
 
-    window.addEventListener('beforeunload', handleUnloadOrHide);
-    document.addEventListener('visibilitychange', handleUnloadOrHide);
+    window.addEventListener('beforeunload', handleUnload);
     return () => {
-      window.removeEventListener('beforeunload', handleUnloadOrHide);
-      document.removeEventListener('visibilitychange', handleUnloadOrHide);
+      window.removeEventListener('beforeunload', handleUnload);
     };
   }, [roomId, currentUserId, tabId]);
 
-  // 退出实时舞台时自动清理并通知服务器离线释放座位
-  useEffect(() => {
-    return () => {
-      try {
-        leaveRealtimeTable(currentUserId, roomId, { tabSessionId: tabId });
-      } catch {}
-    };
-  }, [currentUserId, roomId, tabId]);
   const [deck, setDeck] = useState<Card[]>(() => {
     return seatedCount <= 4 ? createDeck() : createDoubleDeck();
   });
@@ -442,7 +452,7 @@ export function RealtimeDealerStage({
       <div className="w-full bg-slate-950/70 border border-emerald-950/60 rounded-xl p-1 shrink-0 shadow-inner">
         <div className="w-full flex items-center justify-between gap-1 overflow-x-auto no-scrollbar">
           {Array.from({ length: 8 }).map((_, idx) => {
-            const p = players.find(seat => (typeof seat.seatIndex === 'number' ? seat.seatIndex === idx : players.indexOf(seat) === idx));
+            const p = effectivePlayers.find(seat => (typeof seat.seatIndex === 'number' ? seat.seatIndex === idx : effectivePlayers.indexOf(seat) === idx));
             const isOccupied = !!p;
             const isThisDealer = isOccupied && idx === dealerIndex;
             const isMe = isOccupied && (p.id === currentUserId || (p.tabSessionId && p.tabSessionId === tabId) || (mySeatIndex !== -1 && idx === mySeatIndex));

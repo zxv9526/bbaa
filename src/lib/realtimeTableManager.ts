@@ -1,5 +1,5 @@
 import { Card, ChatMessage } from '../types';
-import { getRegisteredCommunityPlayers } from './accountManager';
+import { getRegisteredCommunityPlayers, getCurrentAccount } from './accountManager';
 import { getEffectiveChatWsUrl, getEffectiveChatHttpUrl } from './serv00Config';
 
 export interface RealtimeSeatPlayer {
@@ -243,8 +243,20 @@ export function getTabSessionId(): string {
 
 // Directly use the user's authentic mobile phone number (or stable distinct tab session) as player ID
 export function getPlayerUniqueId(phoneOrAccount?: string): string {
-  const cleanPhone = (phoneOrAccount || '').trim().replace(/[^\w]/g, '');
+  let raw = phoneOrAccount;
+  if (!raw && typeof window !== 'undefined') {
+    try {
+      const acc = getCurrentAccount();
+      if (acc) {
+        raw = acc.phone || acc.id;
+      }
+    } catch {}
+  }
+  const cleanPhone = (raw || '').trim().replace(/[^\w]/g, '');
   if (cleanPhone && /^1\d{10}$/.test(cleanPhone)) {
+    return cleanPhone;
+  }
+  if (cleanPhone && cleanPhone !== 'guest' && cleanPhone !== 'player_user') {
     return cleanPhone;
   }
   const tabId = getTabSessionId();
@@ -465,7 +477,10 @@ export async function cleanStaleServerSeats(roomId = currentRoomId): Promise<num
 // Fetch authoritative realtime table state for lobby seats display (Handled 100% by Cloudflare Pages Functions)
 export async function fetchRealtimeRoomState(roomId = currentRoomId): Promise<RealtimeTableState | null> {
   try {
-    const res = await fetch(`/api/table/state?roomId=${encodeURIComponent(roomId)}&_t=${Date.now()}`, {
+    const myId = getPlayerUniqueId();
+    const tabId = getTabSessionId();
+    const devId = getOrCreateDeviceId();
+    const res = await fetch(`/api/table/state?roomId=${encodeURIComponent(roomId)}&playerId=${encodeURIComponent(myId)}&tabSessionId=${encodeURIComponent(tabId)}&deviceId=${encodeURIComponent(devId)}&_t=${Date.now()}`, {
       cache: 'no-store',
       headers: { 'Cache-Control': 'no-cache' }
     });
@@ -531,19 +546,38 @@ export async function joinOrCreateRealtimeTable(currentUser: {
         if (Array.isArray(data.table.seats)) {
           data.table.seats = data.table.seats.filter((s: RealtimeSeatPlayer) => !s.isAi);
         }
-        saveRealtimeTable(data.table, roomId);
-        broadcastEvent({ type: 'SYNC_STATE', state: data.table });
 
         const mySeatIdx = typeof data.seatIndex === 'number'
           ? data.seatIndex
           : (typeof targetSeatIndex === 'number' ? targetSeatIndex : data.table.seats.findIndex((s: any) => s.id === currentUser.id || s.tabSessionId === tabSessionId || s.deviceId === deviceId));
 
-        const assignedSeat = data.table.seats.find((s: any) => s.seatIndex === mySeatIdx) || data.table.seats[mySeatIdx] || data.table.seats[data.table.seats.length - 1];
+        const effectiveSeatSlot = Math.max(0, mySeatIdx === -1 ? (typeof targetSeatIndex === 'number' ? targetSeatIndex : 0) : mySeatIdx);
+
+        // Defensive guarantee: Table seats must contain the joining player
+        const hasMe = data.table.seats.some((s: any) => s.id === currentUser.id || s.tabSessionId === tabSessionId || s.deviceId === deviceId);
+        if (!hasMe) {
+          data.table.seats.push({
+            id: currentUser.id,
+            deviceId,
+            tabSessionId,
+            name: `${currentUser.name.replace(/\(\d+号位\)/g, '').trim()} (${effectiveSeatSlot + 1}号位)`,
+            avatar: currentUser.avatar,
+            isAi: false,
+            score: 0,
+            seatIndex: effectiveSeatSlot,
+            seatNumber: effectiveSeatSlot + 1
+          });
+        }
+
+        saveRealtimeTable(data.table, roomId);
+        broadcastEvent({ type: 'SYNC_STATE', state: data.table });
+
+        const assignedSeat = data.table.seats.find((s: any) => s.seatIndex === effectiveSeatSlot) || data.table.seats[effectiveSeatSlot] || data.table.seats[data.table.seats.length - 1];
 
         return {
           table: data.table,
           isNewTable: data.table.seats.length === 1,
-          seatIndex: Math.max(0, mySeatIdx),
+          seatIndex: effectiveSeatSlot,
           assignedUser: {
             id: currentUser.id,
             name: assignedSeat?.name || currentUser.name,
@@ -1021,8 +1055,9 @@ export function subscribeRealtimeTable(
     try {
       const myId = getPlayerUniqueId();
       const tabId = getTabSessionId();
+      const devId = getOrCreateDeviceId();
       const res = await fetch(
-        `/api/table/state?roomId=${encodeURIComponent(currentRoomId)}&playerId=${encodeURIComponent(myId)}&tabSessionId=${encodeURIComponent(tabId)}&_t=${Date.now()}`,
+        `/api/table/state?roomId=${encodeURIComponent(currentRoomId)}&playerId=${encodeURIComponent(myId)}&deviceId=${encodeURIComponent(devId)}&tabSessionId=${encodeURIComponent(tabId)}&_t=${Date.now()}`,
         { credentials: 'include', headers: { 'Cache-Control': 'no-cache' } }
       );
       if (res.ok) {

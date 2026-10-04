@@ -33,8 +33,8 @@ function getOrCreateMemoryTable(rawRoomId, customName) {
   return table;
 }
 
-// Helper: Prune zombie seats inactive for > 8000ms (8 seconds) to handle network jitter gracefully
-function pruneZombieSeats(table, activeThresholdMs = 8000) {
+// Helper: Prune zombie seats inactive for > 25000ms (25 seconds) to handle mobile sleep & network jitter gracefully
+function pruneZombieSeats(table, activeThresholdMs = 25000) {
   if (!table || !Array.isArray(table.seats)) return 0;
   const now = Date.now();
   const beforeCount = table.seats.length;
@@ -154,7 +154,7 @@ export async function onRequest(context) {
     // Refresh active timestamp for requesting client
     if (playerId || deviceId || tabSessionId) {
       const s = table.seats.find(seat =>
-        (playerId && seat.id === playerId) ||
+        (playerId && (seat.id === playerId || seat.id.includes(playerId) || playerId.includes(seat.id))) ||
         (tabSessionId && seat.tabSessionId === tabSessionId) ||
         (deviceId && seat.deviceId === deviceId)
       );
@@ -163,8 +163,8 @@ export async function onRequest(context) {
       }
     }
 
-    // Always prune stale zombies (>8000ms)
-    pruneZombieSeats(table, 8000);
+    // Always prune stale zombies (>25000ms)
+    pruneZombieSeats(table, 25000);
 
     // Sync state with D1 database if bound
     if (db) {
@@ -198,8 +198,8 @@ export async function onRequest(context) {
       const table = await loadAuthoritativeTable(db, roomId, body.roomName);
       const now = Date.now();
 
-      // 3.1 First prune zombies (> 8000ms)
-      pruneZombieSeats(table, 8000);
+      // 3.1 First prune zombies (> 25000ms)
+      pruneZombieSeats(table, 25000);
 
       // 3.2 Parse target seat index (0..7)
       let requestedSeatIdx = undefined;
@@ -374,7 +374,7 @@ export async function onRequest(context) {
         table.cutCard = null;
         table.dealtHands = undefined;
       } else {
-        pruneZombieSeats(table, 2500);
+        pruneZombieSeats(table, 25000);
       }
 
       table.lastUpdated = Date.now();

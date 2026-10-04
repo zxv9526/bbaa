@@ -532,7 +532,22 @@ export default function App() {
 
       if (event.type === 'SYNC_STATE' || event.type === 'PLAYER_JOIN' || event.type === 'PLAYER_LEAVE') {
         if (event.state && Array.isArray(event.state.seats)) {
-          const validSeats = event.state.seats.filter(s => !s.isAi);
+          let validSeats = event.state.seats.filter(s => !s.isAi);
+          const myId = realtimeUserIdRef.current || getPlayerUniqueId(currentAccount.phone || currentAccount.id);
+          const tabId = getTabSessionId();
+          const hasMe = validSeats.some(s => s.id === myId || s.tabSessionId === tabId);
+          if (!hasMe && modeRef.current === 'realtime') {
+            validSeats.push({
+              id: myId,
+              tabSessionId: tabId,
+              name: `${(currentAccount.nickname || playerName || '我').replace(/\(\d+号位\)/g, '').trim()} (1号位)`,
+              avatar: currentAccount.avatar || '😎',
+              isAi: false,
+              score: 0,
+              seatIndex: 0,
+              seatNumber: 1
+            });
+          }
           // 🛑 关键修复：使用 Map 对玩家 ID 进行去重，防止重复玩家入座
           const uniqueSeats = Array.from(new Map(validSeats.map(p => [p.id, p])).values());
           setRealtimePlayers(uniqueSeats);
@@ -783,6 +798,29 @@ export default function App() {
       return;
     }
 
+    const tabSessionId = getTabSessionId();
+    const chosenSlot = typeof targetSeatIndex === 'number' && targetSeatIndex >= 0 && targetSeatIndex <= 7
+      ? targetSeatIndex
+      : 0;
+
+    // 🛡️ 立即初始化本人席位，确保进入瞬间 100% 显示 1/8 人与本人头像，彻底告别 0/8 延迟闪烁
+    const initialPlayer: RealtimeSeatPlayer = {
+      id: distinctUserId,
+      tabSessionId,
+      name: `${myName.replace(/\(\d+号位\)/g, '').trim()} (${chosenSlot + 1}号位)`,
+      avatar: myAvatar,
+      isAi: false,
+      score: 0,
+      seatIndex: chosenSlot,
+      seatNumber: chosenSlot + 1
+    };
+
+    setRealtimeUserId(distinctUserId);
+    realtimeUserIdRef.current = distinctUserId;
+    setRealtimePlayers([initialPlayer]);
+    setRealtimeRound(1);
+    setRealtimeDealerIndex(chosenSlot);
+
     setMode('realtime');
     modeRef.current = 'realtime';
     setGameState('realtime_dealer');
@@ -795,7 +833,6 @@ export default function App() {
     setSyncedIsDealing(false);
 
     // 加入多人实时牌桌：向服务端权威接口入座 (指定座位编号或首个可用槽位)
-    const tabSessionId = getTabSessionId();
     const { table, assignedUser, seatIndex } = await joinOrCreateRealtimeTable({
       id: distinctUserId,
       name: myName,
@@ -805,9 +842,25 @@ export default function App() {
 
     setRealtimeUserId(assignedUser.id);
     realtimeUserIdRef.current = assignedUser.id;
-    setRealtimePlayers(table.seats);
-    setRealtimeRound(table.round);
-    setRealtimeDealerIndex(table.dealerIndex);
+
+    // 确保席位列表必含当前玩家
+    let finalSeats = table && Array.isArray(table.seats) ? table.seats.filter(s => !s.isAi) : [];
+    if (!finalSeats.some(s => s.id === assignedUser.id || s.tabSessionId === tabSessionId)) {
+      finalSeats.push({
+        id: assignedUser.id,
+        tabSessionId,
+        name: assignedUser.name,
+        avatar: assignedUser.avatar,
+        isAi: false,
+        score: 0,
+        seatIndex: seatIndex,
+        seatNumber: seatIndex + 1
+      });
+    }
+    const uniqueSeats = Array.from(new Map(finalSeats.map(p => [p.id, p])).values());
+    setRealtimePlayers(uniqueSeats);
+    setRealtimeRound(table.round || 1);
+    setRealtimeDealerIndex(table.dealerIndex || 0);
 
     // 加载并同步实时对战场聊天对讲历史
     const savedChat = getRealtimeChatMessages();

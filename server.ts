@@ -162,7 +162,7 @@ setInterval(() => {
   });
 }, 10000);
 
-// Active Realtime Zombie Cleaner: runs every 1.5s to evict seats with >8000ms inactivity
+// Active Realtime Zombie Cleaner: runs every 3.0s to evict seats with >25000ms inactivity
 setInterval(() => {
   const now = Date.now();
   tablesMap.forEach((table, rid) => {
@@ -172,8 +172,8 @@ setInterval(() => {
     }
     if (table.seats.length === 0) return;
     const beforeCount = table.seats.length;
-    // Threshold: 8.0 seconds without ping = zombie eviction
-    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 8000);
+    // Threshold: 25.0 seconds without ping = zombie eviction
+    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 25000);
     if (table.seats.length !== beforeCount) {
       if (table.seats.length === 0) {
         table.status = "waiting";
@@ -289,7 +289,7 @@ app.get("/api/table/state", (req, res) => {
   // Update lastActive for current player if specified
   if (playerId || deviceId || tabSessionId) {
     const s = table.seats.find(s => 
-      (playerId && s.id === playerId) ||
+      (playerId && (s.id === playerId || s.id.includes(playerId) || playerId.includes(s.id))) ||
       (tabSessionId && s.tabSessionId === tabSessionId) ||
       (deviceId && s.deviceId === deviceId)
     );
@@ -298,9 +298,9 @@ app.get("/api/table/state", (req, res) => {
     }
   }
 
-  // Prune seats inactive for > 2.5s
+  // Prune seats inactive for > 25s
   const beforeLen = table.seats.length;
-  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 2500);
+  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 25000);
   if (table.seats.length !== beforeLen) {
     table.lastUpdated = now;
     if (table.seats.length === 0) {
@@ -336,8 +336,8 @@ app.post("/api/table/join", (req, res) => {
     const table = getOrCreateTable(roomId, req.body.roomName);
     const now = Date.now();
 
-    // 1. Strict Auto-prune stale seats (older than 2.5s without active ping)
-    table.seats = table.seats.filter(s => (now - (s.lastActive || 0)) < 2500);
+    // 1. Strict Auto-prune stale seats (older than 25s without active ping)
+    table.seats = table.seats.filter(s => (now - (s.lastActive || 0)) < 25000);
 
     // 2. Parse target seat index (0..7)
     let requestedSeatIdx: number | undefined = undefined;
@@ -545,7 +545,7 @@ app.post("/api/table/clean_stale", (req, res) => {
     const roomId = normalizeRoomId(req.body.roomId || "666666");
     const table = getOrCreateTable(roomId);
     const now = Date.now();
-    const activeThreshold = 2500; // 2.5 seconds
+    const activeThreshold = 25000; // 25 seconds
     const beforeCount = table.seats.length;
     
     table.seats = table.seats.filter(s => now - (s.lastActive || 0) < activeThreshold);

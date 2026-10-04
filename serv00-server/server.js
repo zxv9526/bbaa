@@ -172,7 +172,7 @@ app.get('/api/table/state', (req, res) => {
   const now = Date.now();
   if (playerId || deviceId || tabSessionId) {
     const s = table.seats.find(s =>
-      (playerId && s.id === playerId) ||
+      (playerId && (s.id === playerId || s.id.includes(playerId) || playerId.includes(s.id))) ||
       (tabSessionId && s.tabSessionId === tabSessionId) ||
       (deviceId && s.deviceId === deviceId)
     );
@@ -181,9 +181,9 @@ app.get('/api/table/state', (req, res) => {
     }
   }
 
-  // Prune seats inactive for > 2.5s
+  // Prune seats inactive for > 25s
   const beforeLen = table.seats.length;
-  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 2500);
+  table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 25000);
   if (table.seats.length !== beforeLen) {
     table.lastUpdated = now;
     if (table.seats.length === 0) {
@@ -215,8 +215,8 @@ app.post('/api/table/join', (req, res) => {
     const table = getOrCreateTable(roomId, req.body.roomName);
     const now = Date.now();
 
-    // Auto prune stale seats
-    table.seats = table.seats.filter(s => (now - (s.lastActive || 0)) < 2500);
+    // Auto prune stale seats (> 25s)
+    table.seats = table.seats.filter(s => (now - (s.lastActive || 0)) < 25000);
 
     let requestedSeatIdx = undefined;
     if (typeof req.body.targetSeatIndex === 'number' && req.body.targetSeatIndex >= 0 && req.body.targetSeatIndex <= 7) {
@@ -400,7 +400,7 @@ app.post('/api/table/clean_stale', (req, res) => {
     const now = Date.now();
     const beforeCount = table.seats.length;
 
-    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 2500);
+    table.seats = table.seats.filter(s => now - (s.lastActive || 0) < 25000);
     if (table.seats.length !== beforeCount) {
       if (table.seats.length === 0) {
         table.status = 'waiting';
